@@ -541,6 +541,10 @@ If ($ServerLanguagePacks)
 	Write-Host -ForegroundColor White "- Installing SharePoint (Server) Language Packs:"
 	## Get installed languages from registry (HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Office Server\14.0\InstalledLanguages)
     $InstalledOfficeServerLanguages = (Get-Item "HKLM:\Software\Microsoft\Office Server\14.0\InstalledLanguages").GetValueNames() | ? {$_ -ne ""}
+<#
+	## Another way to get installed languages, thanks to Anders Rask (@AndersRask)!
+	##$InstalledOfficeServerLanguages = [Microsoft.SharePoint.SPRegionalSettings]::GlobalInstalledLanguages
+#>
 	ForEach ($LanguagePack in $ServerLanguagePacks)
 	{
         ## Slightly convoluted check to see if language pack is already installed, based on name of language pack file.
@@ -572,9 +576,17 @@ Else {Write-Host -ForegroundColor White " - No language packs found in $bits\Lan
 #$InstalledFoundationLanguages = [system.globalization.cultureinfo]$InstalledFoundationLanguages
 #Write-Host -ForegroundColor White " - Currently installed LCIDs:" $InstalledFoundationLanguages | Select-Object -ExpandProperty DisplayName
 $InstalledOfficeServerLanguages = (Get-Item "HKLM:\Software\Microsoft\Office Server\14.0\InstalledLanguages").GetValueNames() | ? {$_ -ne ""}
+<#
+If ((Get-PsSnapin |?{$_.Name -eq "Microsoft.SharePoint.PowerShell"})-eq $null)
+{
+   	$PSSnapin = Add-PsSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null
+}
+$InstalledOfficeServerLanguages = [Microsoft.SharePoint.SPRegionalSettings]::GlobalInstalledLanguages
+#>
 Write-Host -ForegroundColor White " - Currently installed languages:" 
 ForEach ($Language in $InstalledOfficeServerLanguages)
 {
+	#Write-Host "  -"$Language.DisplayName
 	Write-Host "  -" ([System.Globalization.CultureInfo]::GetCultureInfo($Language).DisplayName)
 }
 #EndRegion
@@ -584,9 +596,9 @@ Write-Progress -Activity "Installing SharePoint (Unattended)" -Status "Creating 
 Write-Host -ForegroundColor White "- Creating & configuring (or joining) farm:"
 Write-Host -ForegroundColor White " - Enabling SP PowerShell cmdlets..."
 If ((Get-PsSnapin |?{$_.Name -eq "Microsoft.SharePoint.PowerShell"})-eq $null)
-	{
-    	$PSSnapin = Add-PsSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null
-	}
+{
+   	$PSSnapin = Add-PsSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null
+}
 
 Start-SPAssignment -Global | Out-Null
 
@@ -613,8 +625,8 @@ If ($SPFarm -eq $null)
 			Else {$FarmMessage = "- Done creating configuration database for farm."}
 		}
 		Else {$FarmMessage = "- Done joining farm."}
-	Write-Host -ForegroundColor White " - Creating Version registry value (required workaround for apparent bug in command shell-based installs)"
-	New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Shared Tools\Web Server Extensions\14.0\' -Name Version -Value '14.0.0.4762' -ErrorAction SilentlyContinue | Out-Null
+	#Write-Host -ForegroundColor White " - Creating Version registry value (workaround for apparent bug in PS-based install)"
+	#New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Shared Tools\Web Server Extensions\14.0\' -Name Version -Value '14.0.0.5114' -ErrorAction SilentlyContinue | Out-Null
 	}
 	catch 
 	{
