@@ -1,0 +1,10 @@
+\SP2010\Scripted\AutoSPInstaller.ps1
+\SP2010\Scripted\config.xml
+\SP2010\Scripted\Launch.bat
+\SP2010\Scripted\README.rtf
+\SP2010\Scripted\SetInputs.xml
+\SP2010\Scripted\Hotfixes\
+\SP2010\Scripted\Hotfixes\Windows6.0-KB971831-x64.msu
+\SP2010\Scripted\Hotfixes\Windows6.1-KB976462-v2-x64.msu
+\SP2010\Scripted\Hotfixes\Windows6.1-KB976462-x64.msu
+\SP2010\LanguagePacks\<ServerLanguagePack_XX-XX.exe>

@@ -1,0 +1,62 @@
+*July 17 2010*
+* FIX: State Service Application Proxy is now properly associated with Default proxy group (thanks @jthake for noting this!)
+* FIX: Service Applications and Instances are now referred to by type instead of just English name - this will improve things for non-English (localized) SP2010 installs. Credit and thanks go to Daniel ([url:scda0001|http://www.codeplex.com/site/users/view/scda0001]) for raising this and providing a sample code fix!
+*June 21 2010*
+* NEW: Can now specify Locale ID (LCID) for Portal and My Sites site collections. Defaults to 1033 (EN-US) if none specified.
+* NEW: Language pack install portion will now detect and display installed languages (Thanks to [url:Anders Rask|http://twitter.com/andersrask] for both suggestions & sample PS script!), plus if named accordingly (e.g. ServerLanguagePack_en-us.exe), will avoid re-installing already applied language packs.
+* FIX: Minor tweaks throughout
+* FIX: Included the suggested path structure within the AutoSPInstaller.zip file
+*June 13 2010*
+* NEW: Script can now actually _start_ the User Profile Synchronization Service (using Farm Account credentials)!
+* FIX: "...User Code Service" renamed to "..._Sandboxed_ Code Service" (didn't even realize that it had changed in RTM!) so service should start properly once again
+* FIX: Fixed syntax error in SetInputs.xml (introduced in the last update)
+*June 6 2010*
+* NEW: Can now specify Portal and My Site app pool accounts (separately from Hosted Services) - thanks [url:acou1304|http://www.codeplex.com/site/users/view/acou1304] for the suggestion!
+* FIX: FarmPassPhrase now processed correctly if it contains spaces or special characters - thanks [url:acou1304|http://www.codeplex.com/site/users/view/acou1304] for bringing this one up too!
+* FIX: Syntax error in SetInputs.xml template - <ConfigFile> was missing slash in closing tag
+* NEW: Portal web app can now be initially configured for Claims-based authentication (Windows Integrated)
+* FIX: <sigh> Script now once again enforces running as Farm Account - SQL database objects get created with inconsistent ownership otherwise, causes problems down the road :( However I believe once the install and intial User Profile Sync setup is done, you can still remove the Farm Account from the local admins
+*June 3 2010*
+* FIX: Script no longer enforces running under Farm Account creds, and will no longer add managed accounts to local admin group
+*May 21 2010*
+* FIX: AssignCert Function now a bit more reliable, can now assign certificate to both Portal and My Sites
+* NEW: Script will try to make the certificate Trusted, to avoid the dreaded "problem with this certificate" message in IE
+*May 16 2010*
+* NEW: _Start-Transcript_ is now used instead of tee.exe for logging to file (file under "Why didn't I think of this before?")
+* NEW: Can now specify SharePoint 2010 config input file to use, via <ConfigFile> parameter in SetInputs.xml - for example for different environments - thanks again jthake (http://www.codeplex.com/site/users/view/jthake)!
+*May 12 2010 (SP2010 launch date special)*
+* NEW: Ability to detect and join the existing farm (based on $ConfigDB), or fall back to just creating the farm and config database if it's not found.
+* NEW: Parameter <CreateCentralAdmin> in SetInputs.xml to control whether to create the Central Admin Site (useful for additional farm servers)
+* NEW: You can now defer specifying the farm passphrase in order to be prompted for it at script runtime - i.e. you can now just leave it blank in SetInputs.xml
+* FIX: Better error detection post-SharePoint binary setup (by parsing the log file)
+* FIX: Script will now verify path of setup.exe when checking installer version, and halt if not found or otherwise unable to determine version
+* FIX: Improved error handling in general
+*May 5 2010:*
+* FIX: Simplified language pack installation since Foundation LP's aren't required prior to Server LP's (per [url:Jie Li's FAQ|http://blogs.msdn.com/opal/archive/2010/04/25/faq-sharepoint-2010-rtm-installation.aspx])
+* NEW: New <DBPrefix> parameter allows you to specify/toggle the common prefix for SP2010 database names
+*April 29 2010:*
+* NEW: Install SharePoint prerequisites in offline mode (by setting <OfflineInstall> to 1 in SetInputs.xml):
+** You will need to have first downloaded all prerequisites to \PreRequisiteInstallerFiles on your source drive/share with exact naming ([url:this script|http://autospinstaller.codeplex.com/releases/view/44442] automates the download).
+** The relative path \PreRequisiteInstallerFiles will now also be the default location for any other hotfixes. It should already exist on your SP2010 source by default.
+* FIX: updated script to parse the most recent PrerequisiteInstaller log for errors instead of relying on $LastExitCode (which never seemed to work). Now, any errors running PrerequisiteInstaller.exe (or pending restarts) should be properly detected, and the script will halt.
+* FIX: Improved granting of rights to the Metadata Service Application. We now grant "Full Access to Term Store" permission to the Portal App Pool Account, required for management of the term store within the Portal site.
+* FIX: Slightly more robust creation of Master Key that can avoid some [url:odd errors|http://autospinstaller.codeplex.com/Thread/View.aspx?ThreadId=205242] when working with the Secure Store serv
+*April 24 2010:*
+* FIX: Minor update to main script involving $DBServer variable
+* FIX: function to test SQL server connection now runs regardless of local server instance or not (to check that service is running). Also, discovered that it's only partially useful at this point, since it doesn't check that the specified farm account actually has dbcreator and securityadmin rights.
+*April 23 2010:*
+* Confirmed that AutoSPInstaller works with the RTM of SharePoint 2010
+* NEW: Added ability to look for, create (if necessary) and assign self-signed SSL certificates to Portal and My Site web apps (if the respective URL in _SetInputs.xml_ starts with "https://"). Make sure certutil.exe (sorry no download link, but more info [url:here|http://technet.microsoft.com/en-us/library/cc773087(WS.10).aspx] is in the path if planning on using this function. Also, if running IIS7 on Win2008 (non-R2), you should download the [url:IIS management cmdlets (MSI)|http://go.microsoft.com/?linkid=9655704] and put it in the \Hotfixes folder.
+* NEW: Added function to test connection and access to the SQL server specified in SetInputs.xml (if not co-located on the SharePoint machine). Thanks to Jeremy Thake for the suggestion!
+* FIX: Improved PowerPivot service app creation function (remains experimental & needs work). This still requires you to have first run the SQL 2008 R2 install wizard and add PowerPivot to the existing farm. In other words, the process would be:
+# Run AutoSPInstaller script as usual to install/configure your farm
+# Edit SetInputs.xml and change <CreatePowerPivot> value to 1
+# Run SQL 2008 R2 installation wizard, add components to existing install, install PowerPivot on existing farm
+# Run AutoSPInstaller script again, and it will pick up the PowerPivot stuff and configure
+* Improved error handling/robustness
+*Apr 7 2010:*
+* NEW: Now installs language packs found in the <root>\LanguagePacks folder; installs Foundation packs first, then Server packs. Thanks to [url:Christophe Fiessinger|http://blogs.msdn.com/chrisfie] for the suggestion!
+* FIX: Launch.bat now properly detects if Powershell 2.0 is installed before proceeding.
+*Mar 29 2010:*
+* NEW: Now supports SSL for Portal and My Site URLs
+** You just need to start the respective URL with https:// in SetInputs.xml; the script will detect & automatically create the web app(s) with -SecureSocketsLayer:$true - thanks Martijn Schouten for the suggeste
