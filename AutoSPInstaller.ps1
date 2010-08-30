@@ -1,9 +1,10 @@
 ############################################################################ 
-## AutoSPInstaller 1.4
+## AutoSPInstaller 1.6
 ## http://autospinstaller.codeplex.com
 ## Partially based on Create-SPFarm by Jos.Verlinde from http://poshcode.org/1485
 ## And on http://sharepoint.microsoft.com/blogs/zach/Lists/Posts/Post.aspx?ID=50
-## Major additions, edits and tweaks by Brian Lalancette
+## Also includes large portions of scripts from Gary Lapointe (Twitter: @glapointe), Søren Nielsen (http://soerennielsen.wordpress.com) and others credited inline
+## Major additions, edits, tweaks and even some scripting from scratch by Brian Lalancette (Twitter: @brianlala)
 ############################################################################
 
 #Region Get XML config file parameters & set install path
@@ -43,6 +44,7 @@ $CreateWSSUsageApp        					= $item.CreateWSSUsageApp
 $CreateWebAnalytics       					= $item.CreateWebAnalytics
 $CreateStateServiceApp    					= $item.CreateStateServiceApp
 $StartSearchQueryAndSiteSettingsService    	= $item.StartSearchQueryAndSiteSettingsService
+$StartEnterpriseSearch				    	= $item.StartEnterpriseSearch
 $CreateSecureStoreServiceApp    			= $item.CreateSecureStoreServiceApp
 $CentralAdminContentDB    					= $item.CentralAdminContentDB
 $CentralAdminContentDB    					= $DBPrefix+$CentralAdminContentDB
@@ -51,7 +53,7 @@ $FarmPassPhrase           					= $item.FarmPassPhrase
 $FarmAcct                 					= $item.FarmAcct
 If (($item.FarmAcctPWD -ne "") -and ($item.FarmAcctPWD -ne $null)) {$FarmAcctPWD = (ConvertTo-SecureString $item.FarmAcctPWD -AsPlainText -force)}
 $FarmAcctEmail            					= $item.FarmAcctEmail
-$ManagedAccountsToAdd     					= ($item.AppPoolAcct)
+$ManagedAccountsToAdd     					= $item.AppPoolAcct
 $AppPoolAcct              					= $item.AppPoolAcct
 If (($item.AppPoolAcctPWD -ne "") -and ($item.AppPoolAcctPWD -ne $null)) {$AppPoolAcctPWD = (ConvertTo-SecureString $item.AppPoolAcctPWD -AsPlainText -force)}
 $CentralAdminPort         					= $item.CentralAdminPort
@@ -338,7 +340,7 @@ else
 #Endregion
 
 #Region Install Prerequisites
-If  (Test-Path "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\14\BIN\stsadm.exe") #Crude way of checking if SP2010 is already installed
+If (Test-Path "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\14\BIN\stsadm.exe") #Crude way of checking if SP2010 is already installed
 {
 	Write-Host -ForegroundColor White "- SP2010 prerequisites appear be already installed - skipping installation."
 }
@@ -753,7 +755,7 @@ Function CreateMetadataServiceApp
     	if($ApplicationPool -eq $null)
 	  	{ 
             $ApplicationPool = New-SPServiceApplicationPool "SharePoint Hosted Services" -account $ManagedAccountGen
-            if (-not $?) { throw "Failed to create an application pool" }
+            If (-not $?) { throw "Failed to create an application pool" }
       	}
  	    ## Create a Metadata Service Application
       	If((Get-SPServiceApplication | ? {$_.GetType().ToString() -eq "Microsoft.SharePoint.Taxonomy.MetadataWebServiceApplication"}) -eq $null)
@@ -761,14 +763,14 @@ Function CreateMetadataServiceApp
 			Write-Host -ForegroundColor White " - Creating Managed Metadata Service:"
             ## Get the service instance
             $MetadataServiceInstance = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.SharePoint.Taxonomy.MetadataWebServiceInstance"}
-            if (-not $?) { throw "- Failed to find Metadata service instance" }
+            If (-not $?) { throw "- Failed to find Metadata service instance" }
 
             ## Start Service instance
             if($MetadataserviceInstance.Status -eq "Disabled")
 			{ 
                   Write-Host -ForegroundColor White " - Starting Metadata Service Instance..."
                   $MetadataServiceInstance | Start-SPServiceInstance | Out-Null
-                  if (-not $?) { throw "- Failed to start Metadata service instance" }
+                  If (-not $?) { throw "- Failed to start Metadata service instance" }
             } 
 
             ## Wait
@@ -784,12 +786,12 @@ Function CreateMetadataServiceApp
 			## Create Service App
    			Write-Host -ForegroundColor White " - Creating Metadata Service Application..."
             $MetaDataServiceApp  = New-SPMetadataServiceApplication -Name "Metadata Service Application" -ApplicationPool $ApplicationPool -DatabaseName $MetaDataDB -AdministratorAccount $FarmAcct -FullAccessAccount $FarmAcct
-            if (-not $?) { throw "- Failed to create Metadata Service Application" }
+            If (-not $?) { throw "- Failed to create Metadata Service Application" }
 
             ## create proxy
 			Write-Host -ForegroundColor White " - Creating Metadata Service Application Proxy..."
             $MetaDataServiceAppProxy  = New-SPMetadataServiceApplicationProxy -Name "Metadata Service Application Proxy" -ServiceApplication $MetaDataServiceApp -DefaultProxyGroup
-            if (-not $?) { throw "- Failed to create Metadata Service Application Proxy" }
+            If (-not $?) { throw "- Failed to create Metadata Service Application Proxy" }
             
 			Write-Host -ForegroundColor White " - Granting rights to Metadata Service Application..."
 			## Get ID of "Managed Metadata Service"
@@ -1263,14 +1265,14 @@ try
 {
 	## Get the service instance
     $SearchQueryAndSiteSettingsService = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Search.Administration.SearchQueryAndSiteSettingsServiceInstance"}
-    if (-not $?) { throw "- Failed to find Search Query and Site Settings service instance" }
+    If (-not $?) { throw "- Failed to find Search Query and Site Settings service instance" }
 
     ## Start Service instance
     Write-Host -ForegroundColor White "- Starting Search Query and Site Settings Service Instance..."
     if($SearchQueryAndSiteSettingsService.Status -eq "Disabled")
 	{ 
         $SearchQueryAndSiteSettingsService | Start-SPServiceInstance | Out-Null
-        if (-not $?) { throw " - Failed to start Search Query and Site Settings service instance" }
+        If (-not $?) { throw " - Failed to start Search Query and Site Settings service instance" }
 
         ## Wait
     	Write-Host -ForegroundColor Blue " - Waiting for Search Query and Site Settings service to start" -NoNewline
@@ -1290,6 +1292,307 @@ catch
 }
 }
 If ($StartSearchQueryAndSiteSettingsService -eq "1") {StartSearchQueryAndSiteSettingsService}
+#EndRegion
+
+#Region Setup Enterprise Search
+
+# Original script for SharePoint 2010 beta2 by Gary Lapointe ()
+#
+# Modified by Søren Laurits Nielsen (soerennielsen.wordpress.com):
+#
+# Modified to fix some errors since some cmdlets have changed a bit since beta 2 and added support for "ShareName" for 
+# the query component. It is required for non DC computers. 
+# 
+# Modified to support "localhost" moniker in config file. 
+#
+# Note: Accounts, Shares and directories specified in the config file must be setup before hand.
+
+function Start-EnterpriseSearch([string]$settingsFile = "$InputFile") {
+    Write-Host -ForegroundColor White "- Setting up Enterprise Search..."
+	#SLN: Added support for local host
+    [xml]$config = (Get-Content $settingsFile) -replace( "localhost", $env:computername )
+    $svcConfig = $config.SP2010Config.Services.EnterpriseSearchService 
+ 
+    $searchSvc = Get-SPEnterpriseSearchServiceInstance -Local
+    If ($searchSvc -eq $null) {
+        throw " - Unable to retrieve search service."
+    }
+
+    #SLN: Does NOT set the service account, uses the default as Set-SPEnterpriseSearchService 
+    # have a hard time understanding it without an actual secure password (which you don't have by looking up the 
+    # manager service account).
+    
+    #Write-Host -ForegroundColor White "Getting $($svcConfig.Account) account for search service..."
+    #$searchSvcManagedAccount = (Get-SPManagedAccount -Identity $svcConfig.Account -ErrorVariable err -ErrorAction SilentlyContinue)
+    #if ($err) {
+    #    $searchSvcAccount = Get-Credential $svcConfig.Account 
+    #    $searchSvcManagedAccount = New-SPManagedAccount -Credential $searchSvcAccount
+    #}
+
+    Get-SPEnterpriseSearchService | Set-SPEnterpriseSearchService  `
+      -ContactEmail $svcConfig.ContactEmail -ConnectionTimeout $svcConfig.ConnectionTimeout `
+      -AcknowledgementTimeout $svcConfig.AcknowledgementTimeout -ProxyType $svcConfig.ProxyType `
+      -IgnoreSSLWarnings $svcConfig.IgnoreSSLWarnings -InternetIdentity $svcConfig.InternetIdentity -PerformanceLevel $svcConfig.PerformanceLevel
+   
+    Write-Host -ForegroundColor White " - Setting default index location on search service..."
+
+    $searchSvc | Set-SPEnterpriseSearchServiceInstance -DefaultIndexLocation $svcConfig.IndexLocation -ErrorAction SilentlyContinue -ErrorVariable err
+
+    $svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication | ForEach-Object {
+        $appConfig = $_
+
+        #Try and get the application pool if it already exists
+        $pool = Get-ApplicationPool $appConfig.ApplicationPool
+        $adminPool = Get-ApplicationPool $appConfig.AdminComponent.ApplicationPool
+
+        $searchApp = Get-SPEnterpriseSearchServiceApplication -Identity $appConfig.Name -ErrorAction SilentlyContinue
+
+        If ($searchApp -eq $null) {
+            Write-Host -ForegroundColor White " - Creating enterprise search service application..."
+            $searchApp = New-SPEnterpriseSearchServiceApplication -Name $appConfig.Name `
+                -DatabaseServer $appConfig.DatabaseServer `
+                -DatabaseName $appConfig.DatabaseName `
+                -FailoverDatabaseServer $appConfig.FailoverDatabaseServer `
+                -ApplicationPool $pool `
+                -AdminApplicationPool $adminPool `
+                -Partitioned:([bool]::Parse($appConfig.Partitioned)) `
+                -SearchApplicationType $appConfig.SearchServiceApplicationType
+        } else {
+            Write-Host -ForegroundColor White " - Enterprise search service application already exists, skipping creation."
+        }
+
+        $installCrawlSvc = (($appConfig.CrawlServers.Server | where {$_.Name -eq $env:computername}) -ne $null)
+        $installQuerySvc = (($appConfig.QueryServers.Server | where {$_.Name -eq $env:computername}) -ne $null)
+        $installAdminCmpnt = (($appConfig.AdminComponent.Server | where {$_.Name -eq $env:computername}) -ne $null)
+        $installSyncSvc = (($appConfig.SearchQueryAndSiteSettingsServers.Server | where {$_.Name -eq $env:computername}) -ne $null)
+
+        If ($searchSvc.Status -ne "Online" -and ($installCrawlSvc -or $installQuerySvc)) {
+            $searchSvc | Start-SPEnterpriseSearchServiceInstance
+        }
+
+        If ($installAdminCmpnt) {
+            Write-Host -ForegroundColor White " - Setting administration component..."
+            Set-SPEnterpriseSearchAdministrationComponent -SearchApplication $searchApp -SearchServiceInstance $searchSvc
+        }
+
+        $crawlTopology = Get-SPEnterpriseSearchCrawlTopology -SearchApplication $searchApp | where {$_.CrawlComponents.Count -gt 0 -or $_.State -eq "Inactive"}
+
+        If ($crawlTopology -eq $null) {
+            Write-Host -ForegroundColor White " - Creating new crawl topology..."
+            $crawlTopology = $searchApp | New-SPEnterpriseSearchCrawlTopology
+        } else {
+            Write-Host -ForegroundColor White " - A crawl topology with crawl components already exists, skipping crawl topology creation."
+        }
+ 
+        If ($installCrawlSvc) {
+            $crawlComponent = $crawlTopology.CrawlComponents | where {$_.ServerName -eq $env:ComputerName}
+            If ($crawlTopology.CrawlComponents.Count -eq 0 -and $crawlComponent -eq $null) {
+                $crawlStore = $searchApp.CrawlStores | where {$_.Name -eq "$($appConfig.DatabaseName)_CrawlStore"}
+                Write-Host -ForegroundColor White " - Creating new crawl component..."
+                $crawlComponent = New-SPEnterpriseSearchCrawlComponent -SearchServiceInstance $searchSvc -SearchApplication $searchApp -CrawlTopology $crawlTopology -CrawlDatabase $crawlStore.Id.ToString() -IndexLocation $appConfig.IndexLocation
+            } else {
+                Write-Host -ForegroundColor White " - Crawl component already exist, skipping crawl component creation."
+            }
+        }
+
+        $queryTopology = Get-SPEnterpriseSearchQueryTopology -SearchApplication $searchApp | where {$_.QueryComponents.Count -gt 0 -or $_.State -eq "Inactive"}
+
+        If ($queryTopology -eq $null) {
+            Write-Host -ForegroundColor White " - Creating new query topology..."
+            $queryTopology = $searchApp | New-SPEnterpriseSearchQueryTopology -Partitions $appConfig.Partitions
+        } else {
+            Write-Host -ForegroundColor White " - A query topology with query components already exists, skipping query topology creation."
+        }
+
+        If ($installQuerySvc) {
+            $queryComponent = $queryTopology.QueryComponents | where {$_.ServerName -eq $env:ComputerName}
+            #If ($true){ #$queryTopology.QueryComponents.Count -eq 0 -and $queryComponent -eq $null) {
+            If ($queryTopology.QueryComponents.Count -eq 0 -and $queryComponent -eq $null) {
+                $partition = ($queryTopology | Get-SPEnterpriseSearchIndexPartition)
+                Write-Host -ForegroundColor White " - Creating new query component..."
+                $queryComponent = New-SPEnterpriseSearchQueryComponent -IndexPartition $partition -QueryTopology $queryTopology -SearchServiceInstance $searchSvc -ShareName $svcConfig.ShareName
+                Write-Host -ForegroundColor White " - Setting index partition and property store database..."
+                $propertyStore = $searchApp.PropertyStores | where {$_.Name -eq "$($appConfig.DatabaseName)_PropertyStore"}
+                $partition | Set-SPEnterpriseSearchIndexPartition -PropertyDatabase $propertyStore.Id.ToString()
+            } else {
+                Write-Host -ForegroundColor White " - Query component already exist, skipping query component creation."
+            }
+        }
+
+        If ($installSyncSvc) {            
+            #SLN: Updated to new syntax
+			$SearchQueryAndSiteSettingsService = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Search.Administration.SearchQueryAndSiteSettingsServiceInstance"}
+    		If (-not $?) { throw "- Failed to find Search Query and Site Settings service instance" }
+			## Start Service instance
+    		If ($SearchQueryAndSiteSettingsService.Status -eq "Disabled")
+			{
+   	    		Write-Host -ForegroundColor White "- Starting Search Query and Site Settings Service Instance..."
+				Start-SPServiceInstance (Get-SPServiceInstance | where { $_.TypeName -eq "Search Query and Site Settings Service"}).Id
+			}
+        }
+
+        #Don't activate until we've added all components
+        $allCrawlServersDone = $true
+        $appConfig.CrawlServers.Server | ForEach-Object {
+            $server = $_.Name
+            $top = $crawlTopology.CrawlComponents | where {$_.ServerName -eq $server}
+            If ($top -eq $null) { $allCrawlServersDone = $false }
+        }
+
+        If ($allCrawlServersDone -and $crawlTopology.State -ne "Active") {
+            Write-Host -ForegroundColor White " - Setting new crawl topology to active..."
+            $crawlTopology | Set-SPEnterpriseSearchCrawlTopology -Active -Confirm:$false
+			Write-Host -ForegroundColor Blue " - Waiting on Crawl Components to provision..." -NoNewLine
+			while ($true) 
+			{
+				$ct = Get-SPEnterpriseSearchCrawlTopology -Identity $crawlTopology -SearchApplication $searchApp
+				$state = $ct.CrawlComponents | where {$_.State -ne "Ready"}
+				If ($ct.State -eq "Active" -and $state -eq $null) 
+				{
+					break
+				}
+				Write-Host -ForegroundColor Blue "." -NoNewLine
+				Start-Sleep 1
+			}
+            Write-Host -BackgroundColor Blue -ForegroundColor Black "Done!"
+
+			# Need to delete the original crawl topology that was created by default
+            $searchApp | Get-SPEnterpriseSearchCrawlTopology | where {$_.State -eq "Inactive"} | Remove-SPEnterpriseSearchCrawlTopology -Confirm:$false
+        }
+
+        $allQueryServersDone = $true
+        $appConfig.QueryServers.Server | ForEach-Object {
+            $server = $_.Name
+            $top = $queryTopology.QueryComponents | where {$_.ServerName -eq $server}
+            If ($top -eq $null) { $allQueryServersDone = $false }
+        }
+
+        #Make sure we have a crawl component added and started before trying to enable the query component
+        If ($allCrawlServersDone -and $allQueryServersDone -and $queryTopology.State -ne "Active") {
+            Write-Host -ForegroundColor White " - Setting query topology as active..."
+            $queryTopology | Set-SPEnterpriseSearchQueryTopology -Active -Confirm:$false -ErrorAction SilentlyContinue -ErrorVariable err
+			Write-Host -ForegroundColor Blue "- Waiting on Query Components to provision..." -NoNewLine
+			while ($true) 
+			{
+				$qt = Get-SPEnterpriseSearchQueryTopology -Identity $queryTopology -SearchApplication $searchApp
+				$state = $qt.QueryComponents | where {$_.State -ne "Ready"}
+				If ($qt.State -eq "Active" -and $state -eq $null) 
+				{
+				break
+				}
+				Write-Host -ForegroundColor Blue "." -NoNewLine
+				Start-Sleep 1
+			}
+            Write-Host -BackgroundColor Blue -ForegroundColor Black "Done!"
+			
+            # Need to delete the original query topology that was created by default
+            $searchApp | Get-SPEnterpriseSearchQueryTopology | where {$_.State -eq "Inactive"} | Remove-SPEnterpriseSearchQueryTopology -Confirm:$false
+        }
+
+        $proxy = Get-SPEnterpriseSearchServiceApplicationProxy -Identity $appConfig.Proxy.Name -ErrorAction SilentlyContinue
+        If ($proxy -eq $null) {
+            Write-Host -ForegroundColor White " - Creating enterprise search service application proxy..."
+            $proxy = New-SPEnterpriseSearchServiceApplicationProxy -Name $appConfig.Proxy.Name -SearchApplication $searchApp -Partitioned:([bool]::Parse($appConfig.Proxy.Partitioned))
+        } else {
+            Write-Host -ForegroundColor White " - Enterprise search service application proxy already exists, skipping creation."
+        }
+
+        If ($proxy.Status -ne "Online") {
+            $proxy.Status = "Online"
+            $proxy.Update()
+        }
+
+        $proxy | Set-ProxyGroupsMembership $appConfig.Proxy.ProxyGroup
+    }
+
+    #SLN: Create the network share (will report an error if exist)
+    #default to primitives 
+    $s = """" + $svcConfig.ShareName + "=" + $svcConfig.IndexLocation + """"
+	## The path to be shared should exist if the Enterprise Search App creation succeeded earlier
+    Write-Host -ForegroundColor White " - Creating network share $s"
+    net share $s "/GRANT:WSS_WPG,CHANGE"
+
+	## Finally, set the crawl start addresses (including the elusive sps3:// URL required for People Search:
+	$CrawlStartAddresses = $PortalURL+":"+$PortalPort+","+$MySiteURL+":"+$MySitePort+",sps3://"+$MySiteHostHeader+":"+$MySitePort
+	Get-SPEnterpriseSearchServiceApplication | Get-SPEnterpriseSearchCrawlContentSource | Set-SPEnterpriseSearchCrawlContentSource -StartAddresses $CrawlStartAddresses
+}
+
+function Set-ProxyGroupsMembership([System.Xml.XmlElement[]]$groups, [Microsoft.SharePoint.Administration.SPServiceApplicationProxy[]]$InputObject)
+{
+    begin {}
+    process {
+        $proxy = $_
+        
+        #Clear any existing proxy group assignments
+        Get-SPServiceApplicationProxyGroup | where {$_.Proxies -contains $proxy} | ForEach-Object {
+            $proxyGroupName = $_.Name
+            If ([string]::IsNullOrEmpty($proxyGroupName)) { $proxyGroupName = "Default" }
+            $group = $null
+            [bool]$matchFound = $false
+            foreach ($g in $groups) {
+                $group = $g.Name
+                If ($group -eq $proxyGroupName) { 
+                    $matchFound = $true
+                    break 
+                }
+            }
+            If (!$matchFound) {
+                Write-Host -ForegroundColor White " - Removing ""$($proxy.DisplayName)"" from ""$proxyGroupName"""
+                $_ | Remove-SPServiceApplicationProxyGroupMember -Member $proxy -Confirm:$false -ErrorAction SilentlyContinue
+            }
+        }
+        
+        foreach ($g in $groups) {
+            $group = $g.Name
+
+            $pg = $null
+            If ($group -eq "Default" -or [string]::IsNullOrEmpty($group)) {
+                $pg = [Microsoft.SharePoint.Administration.SPServiceApplicationProxyGroup]::Default
+            } else {
+                $pg = Get-SPServiceApplicationProxyGroup $group -ErrorAction SilentlyContinue -ErrorVariable err
+                If ($pg -eq $null) {
+                    $pg = New-SPServiceApplicationProxyGroup -Name $name
+                }
+            }
+            
+            $pg = $pg | where {$_.Proxies -notcontains $proxy}
+            If ($pg -ne $null) { 
+                Write-Host -ForegroundColor White " - Adding ""$($proxy.DisplayName)"" to ""$($pg.DisplayName)"""
+                $pg | Add-SPServiceApplicationProxyGroupMember -Member $proxy 
+            }
+        }
+    }
+    end {}
+}
+
+function Get-ApplicationPool([System.Xml.XmlElement]$appPoolConfig) {
+    #Try and get the application pool if it already exists
+    #SLN: Updated names
+    $pool = Get-SPServiceApplicationPool -Identity $appPoolConfig.Name -ErrorVariable err -ErrorAction SilentlyContinue
+    If ($err) {
+        #The application pool does not exist so create.
+        Write-Host -ForegroundColor White " - Getting $($appPoolConfig.Account) account for application pool..."
+        $ManagedAccountSearch = (Get-SPManagedAccount -Identity $appPoolConfig.Account -ErrorVariable err -ErrorAction SilentlyContinue)
+        If ($err) {
+            If (($appPoolConfig.Password -ne "") -and ($appPoolConfig.Password -ne $null)) 
+			{
+				$appPoolConfigPWD = (ConvertTo-SecureString $appPoolConfig.Password -AsPlainText -force)
+				$accountCred = New-Object System.Management.Automation.PsCredential $appPoolConfig.Account,$appPoolConfigPWD
+			}
+			Else
+			{
+				$accountCred = Get-Credential $appPoolConfig.Account
+			}
+            $ManagedAccountSearch = New-SPManagedAccount -Credential $accountCred
+        }
+        Write-Host -ForegroundColor White " - Creating application pool $($appPoolConfig.Name)..."
+        $pool = New-SPServiceApplicationPool -Name $appPoolConfig.Name -Account $ManagedAccountSearch
+    }
+    return $pool
+}
+
+If ($StartEnterpriseSearch -eq "1") {Start-EnterpriseSearch}
+
 #EndRegion
 
 #Region Create PowerPivot Service Application
@@ -1324,7 +1627,7 @@ Stop-SPAssignment -Global | Out-Null
 If ($CreateCentralAdmin -eq "1")
 {
 	## Run Farm configuration Wizard for whatever's left to configure...
-	Write-Host -ForegroundColor White " - Launching Configuration Wizard..."
+	Write-Host -ForegroundColor White "- Launching Configuration Wizard..."
 	Start-Process "http://$($env:COMPUTERNAME):$CentralAdminPort/_admin/adminconfigintro.aspx?scenarioid=adminconfig&welcomestringid=farmconfigurationwizard_welcome" -WindowStyle Normal
 }
 Write-Progress -Activity "Installing SharePoint (Unattended)" -Status "Done." -Completed

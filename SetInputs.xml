@@ -13,6 +13,7 @@
     <CreateStateServiceApp>1</CreateStateServiceApp>
     <CreateSecureStoreServiceApp>1</CreateSecureStoreServiceApp>
     <StartSearchQueryAndSiteSettingsService>1</StartSearchQueryAndSiteSettingsService>
+	<StartEnterpriseSearch>1</StartEnterpriseSearch>
     <CreatePowerPivot>0</CreatePowerPivot>
     <!--Hint: if you leave <DBServer> blank or specify localhost, script will assume the local server for SQL databases-->
     <DBServer>localhost</DBServer>
@@ -71,9 +72,10 @@
 								ProxyType="Default"
 								IgnoreSSLWarnings="false"
 								InternetIdentity="Mozilla/4.0 (compatible; MSIE 4.01; Windows NT; MS Search 6.0 Robot)"
-								IndexLocation="C:\sharepoint\indexes"
+								IndexLocation="C:\Program Files\Microsoft Office Servers\14.0\Data\Office Server\Applications"
 								PerformanceLevel="PartlyReduced"
-								Account="">
+								Account=""
+                                ShareName="SearchShare">
       <EnterpriseSearchServiceApplications>
         <EnterpriseSearchServiceApplication Name="Enterprise Search Service Application"
 													DatabaseServer="localhost"
@@ -82,13 +84,16 @@
 													Partitioned="false"
 													Partitions="1"
 													SearchServiceApplicationType="Regular">
-          <ApplicationPool Name="SharePoint Enterprise Search Application Pool" Account="" />
+          <ApplicationPool Name="SharePoint Enterprise Search Application Pool" Account="" Password="" />
           <CrawlServers>
             <Server Name="localhost" />
           </CrawlServers>
           <QueryServers>
             <Server Name="localhost" />
           </QueryServers>
+                <SearchQueryAndSiteSettingsServers>
+                    <Server Name="localhost" />
+                </SearchQueryAndSiteSettingsServers>
           <AdminComponent>
             <Server Name="localhost" />
             <ApplicationPool Name="SharePoint Enterprise Search Application Pool" Account="" />
