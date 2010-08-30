@@ -1,4 +1,4 @@
-*Aug 2010*
+*Aug 29 2010*
 * NEW: (Major!) Finally incorporates Gary Lapointe's fantastic functions for creating & configuring the Enterprise Search Service (with further mods by Søren Nielsen and myself)
 * NEW: Script now also adds the elusive "sps3://" URL as a crawl start address in the default search content source (needed for people search to work, but usually missing from default installs)
 *July 17 2010*
