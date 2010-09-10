@@ -164,11 +164,12 @@ Else
 ## Check if we are running under Farm Account credentials
 If ($env:USERDOMAIN+"\"+$env:USERNAME -ne $FarmAcct)
 {
-	Write-Host -ForegroundColor Red "- This script should be executed using the `"$FarmAcct`" credentials."
-	Write-Host -ForegroundColor Red "- (Otherwise, database objects will have inconsistent owners)"
-	Write-Host -ForegroundColor Red "- Exiting..."
-	Pause
-	break
+	Write-Host -ForegroundColor Yellow "- If this script isn't run using the `"$FarmAcct`" credentials,"
+	Write-Host -ForegroundColor Yellow "- database objects may have inconsistent ownership"
+	Write-Host -ForegroundColor Yellow "- and you may need to `'fix up`' the database(s) in some scenarios."
+	#Write-Host -ForegroundColor Yellow "- Visit http://<url?> for more details"
+	Write-Host -ForegroundColor Yellow "- CTRL-C to exit, otherwise script will resume in 30 seconds."
+	CMD.EXE /C timeout.exe 30
 }
 
 ## Set aliases for cmdlets which were renamed from Beta2 to RC
@@ -297,15 +298,15 @@ else
     $cred_farm = New-Object System.Management.Automation.PsCredential $FarmAcct,$FarmAcctPWD
 }
 
-<## Add Farm Account to local Administrators group (not needed if we are already running as $FarmAcct)
-Write-Host -ForegroundColor White " - Adding $FarmAcct to the local Administrators group..."
+## Add Farm Account to local Administrators group (not needed if we are already running as $FarmAcct)
+Write-Host -ForegroundColor White "- Adding $FarmAcct to local Administrators (for User Profile Sync)..."
 $FarmAcctDomain,$FarmAcctUser = $FarmAcct -Split "\\"
 try
 {
 	([ADSI]"WinNT://$env:COMPUTERNAME/Administrators,group").Add("WinNT://$FarmAcctDomain/$FarmAcctUser")
 	If (-not $?) {throw}
 }
-catch {Write-Host -ForegroundColor White "- $FarmAcct is already an Administrator, continuing."}#>
+catch {Write-Host -ForegroundColor White " - $FarmAcct is already an Administrator, continuing."}
 
 ## get General App Pool Account
 If ($AppPoolAcct -eq $null -or $AppPoolAcctPWD -eq $null) 
@@ -1311,7 +1312,8 @@ function Start-EnterpriseSearch([string]$settingsFile = "$InputFile") {
     Write-Host -ForegroundColor White "- Setting up Enterprise Search..."
 	#SLN: Added support for local host
     [xml]$config = (Get-Content $settingsFile) -replace( "localhost", $env:computername )
-    $svcConfig = $config.SP2010Config.Services.EnterpriseSearchService 
+    $svcConfig = $config.SP2010Config.Services.EnterpriseSearchService
+	$SearchDB = $DBPrefix+($appConfig.DatabaseName)
  
     $searchSvc = Get-SPEnterpriseSearchServiceInstance -Local
     If ($searchSvc -eq $null) {
@@ -1351,7 +1353,7 @@ function Start-EnterpriseSearch([string]$settingsFile = "$InputFile") {
             Write-Host -ForegroundColor White " - Creating enterprise search service application..."
             $searchApp = New-SPEnterpriseSearchServiceApplication -Name $appConfig.Name `
                 -DatabaseServer $appConfig.DatabaseServer `
-                -DatabaseName $appConfig.DatabaseName `
+                -DatabaseName $($DBPrefix+$appConfig.DatabaseName) `
                 -FailoverDatabaseServer $appConfig.FailoverDatabaseServer `
                 -ApplicationPool $pool `
                 -AdminApplicationPool $adminPool `
@@ -1387,7 +1389,7 @@ function Start-EnterpriseSearch([string]$settingsFile = "$InputFile") {
         If ($installCrawlSvc) {
             $crawlComponent = $crawlTopology.CrawlComponents | where {$_.ServerName -eq $env:ComputerName}
             If ($crawlTopology.CrawlComponents.Count -eq 0 -and $crawlComponent -eq $null) {
-                $crawlStore = $searchApp.CrawlStores | where {$_.Name -eq "$($appConfig.DatabaseName)_CrawlStore"}
+                $crawlStore = $searchApp.CrawlStores | where {$_.Name -eq "$($DBPrefix+$appConfig.DatabaseName)_CrawlStore"}
                 Write-Host -ForegroundColor White " - Creating new crawl component..."
                 $crawlComponent = New-SPEnterpriseSearchCrawlComponent -SearchServiceInstance $searchSvc -SearchApplication $searchApp -CrawlTopology $crawlTopology -CrawlDatabase $crawlStore.Id.ToString() -IndexLocation $appConfig.IndexLocation
             } else {
@@ -1412,7 +1414,7 @@ function Start-EnterpriseSearch([string]$settingsFile = "$InputFile") {
                 Write-Host -ForegroundColor White " - Creating new query component..."
                 $queryComponent = New-SPEnterpriseSearchQueryComponent -IndexPartition $partition -QueryTopology $queryTopology -SearchServiceInstance $searchSvc -ShareName $svcConfig.ShareName
                 Write-Host -ForegroundColor White " - Setting index partition and property store database..."
-                $propertyStore = $searchApp.PropertyStores | where {$_.Name -eq "$($appConfig.DatabaseName)_PropertyStore"}
+                $propertyStore = $searchApp.PropertyStores | where {$_.Name -eq "$($DBPrefix+$appConfig.DatabaseName)_PropertyStore"}
                 $partition | Set-SPEnterpriseSearchIndexPartition -PropertyDatabase $propertyStore.Id.ToString()
             } else {
                 Write-Host -ForegroundColor White " - Query component already exist, skipping query component creation."
