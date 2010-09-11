@@ -1,5 +1,5 @@
 ############################################################################ 
-## AutoSPInstaller 1.6
+## AutoSPInstaller 1.7
 ## http://autospinstaller.codeplex.com
 ## Partially based on Create-SPFarm by Jos.Verlinde from http://poshcode.org/1485
 ## And on http://sharepoint.microsoft.com/blogs/zach/Lists/Posts/Post.aspx?ID=50
@@ -162,15 +162,7 @@ Else
 	$SPBeta = $false
 }
 ## Check if we are running under Farm Account credentials
-If ($env:USERDOMAIN+"\"+$env:USERNAME -ne $FarmAcct)
-{
-	Write-Host -ForegroundColor Yellow "- If this script isn't run using the `"$FarmAcct`" credentials,"
-	Write-Host -ForegroundColor Yellow "- database objects may have inconsistent ownership"
-	Write-Host -ForegroundColor Yellow "- and you may need to `'fix up`' the database(s) in some scenarios."
-	#Write-Host -ForegroundColor Yellow "- Visit http://<url?> for more details"
-	Write-Host -ForegroundColor Yellow "- CTRL-C to exit, otherwise script will resume in 30 seconds."
-	CMD.EXE /C timeout.exe 30
-}
+If ($env:USERDOMAIN+"\"+$env:USERNAME -eq $FarmAcct) {$RunningAsFarmAcct = $true}
 
 ## Set aliases for cmdlets which were renamed from Beta2 to RC
 If ($SPBeta)
@@ -298,16 +290,18 @@ else
     $cred_farm = New-Object System.Management.Automation.PsCredential $FarmAcct,$FarmAcctPWD
 }
 
-## Add Farm Account to local Administrators group (not needed if we are already running as $FarmAcct)
-Write-Host -ForegroundColor White "- Adding $FarmAcct to local Administrators (for User Profile Sync)..."
-$FarmAcctDomain,$FarmAcctUser = $FarmAcct -Split "\\"
-try
+## Add Farm Account to local Administrators group (unless we're running as $FarmAcct)
+If (!($RunningAsFarmAcct))
 {
-	([ADSI]"WinNT://$env:COMPUTERNAME/Administrators,group").Add("WinNT://$FarmAcctDomain/$FarmAcctUser")
-	If (-not $?) {throw}
+	Write-Host -ForegroundColor White "- Adding $FarmAcct to local Administrators (for User Profile Sync)..."
+	$FarmAcctDomain,$FarmAcctUser = $FarmAcct -Split "\\"
+	try
+	{
+		([ADSI]"WinNT://$env:COMPUTERNAME/Administrators,group").Add("WinNT://$FarmAcctDomain/$FarmAcctUser")
+		If (-not $?) {throw}
+	}
+	catch {Write-Host -ForegroundColor White " - $FarmAcct is already an Administrator, continuing."}
 }
-catch {Write-Host -ForegroundColor White " - $FarmAcct is already an Administrator, continuing."}
-
 ## get General App Pool Account
 If ($AppPoolAcct -eq $null -or $AppPoolAcctPWD -eq $null) 
 {
@@ -1072,6 +1066,40 @@ Function CreateUserProfileServiceApplication
 			
 			Write-Host -ForegroundColor White "- Done creating $UserProfileServiceName."
       	}
+        
+		Function Fix-DBOwner
+		{
+			## Thanks to Gary Lapointe via Andrew Woodward for the SQL script below to change dbo to $FarmAcct
+			## Needed if we are using an account other than $FarmAcct to install SharePoint
+			## AMW 09/09/2010 - fix up the database for the profile database ownership
+	        $ProfileServiceApp = Get-SPServiceApplication |?{$_.TypeName -eq $UserProfileServiceName}
+			If ($ProfileServiceApp)
+			{
+				Write-Host -ForegroundColor White "- Fixing SQL ownership for profile database: $DBServer\$ProfileDB..."
+  		        $sqlCmd = New-Object System.Data.SqlClient.SqlCommand
+            	$sqlCmd.CommandType = "Text"
+            	#$sqlCmd.CommandText = "ALTER USER [$FarmAcct]  WITH DEFAULT_SCHEMA=dbo;"
+				$SqlCmd.CommandText = "exec sp_dropuser `'$FarmAcct`'; exec sp_changedbowner `'$FarmAcct`';"
+            	$connString = "Integrated Security=SSPI;Persist Security Info=False;Data Source=$DBServer;Initial Catalog=$ProfileDB;"
+            	$connection = New-Object System.Data.SqlClient.SqlConnection($connString)
+            	try 
+				{
+                   	$connection.Open()
+                   	$sqlCmd.Connection = $connection
+                  	$sqlCmd.ExecuteNonQuery()
+            	}                         
+            	catch 
+				{
+            			Write-Output $_
+            	}
+            	finally 
+				{
+                   $connection.Dispose()
+            	}
+			}
+		}
+		If (!($RunningAsFarmAcct)) {Fix-DBOwner}
+		
 		## Start User Profile Synchronization Service
 		## Get User Profile Service
 		$ProfileServiceApp = Get-SPServiceApplication |?{$_.TypeName -eq $UserProfileServiceName}
@@ -1313,7 +1341,6 @@ function Start-EnterpriseSearch([string]$settingsFile = "$InputFile") {
 	#SLN: Added support for local host
     [xml]$config = (Get-Content $settingsFile) -replace( "localhost", $env:computername )
     $svcConfig = $config.SP2010Config.Services.EnterpriseSearchService
-	$SearchDB = $DBPrefix+($appConfig.DatabaseName)
  
     $searchSvc = Get-SPEnterpriseSearchServiceInstance -Local
     If ($searchSvc -eq $null) {
@@ -1473,7 +1500,7 @@ function Start-EnterpriseSearch([string]$settingsFile = "$InputFile") {
         If ($allCrawlServersDone -and $allQueryServersDone -and $queryTopology.State -ne "Active") {
             Write-Host -ForegroundColor White " - Setting query topology as active..."
             $queryTopology | Set-SPEnterpriseSearchQueryTopology -Active -Confirm:$false -ErrorAction SilentlyContinue -ErrorVariable err
-			Write-Host -ForegroundColor Blue "- Waiting on Query Components to provision..." -NoNewLine
+			Write-Host -ForegroundColor Blue " - Waiting on Query Components to provision..." -NoNewLine
 			while ($true) 
 			{
 				$qt = Get-SPEnterpriseSearchQueryTopology -Identity $queryTopology -SearchApplication $searchApp
@@ -1509,10 +1536,10 @@ function Start-EnterpriseSearch([string]$settingsFile = "$InputFile") {
 
     #SLN: Create the network share (will report an error if exist)
     #default to primitives 
-    $s = """" + $svcConfig.ShareName + "=" + $svcConfig.IndexLocation + """"
+    $PathToShare = """" + $svcConfig.ShareName + "=" + $svcConfig.IndexLocation + """"
 	## The path to be shared should exist if the Enterprise Search App creation succeeded earlier
-    Write-Host -ForegroundColor White " - Creating network share $s"
-    net share $s "/GRANT:WSS_WPG,CHANGE"
+    Write-Host -ForegroundColor White " - Creating network share $PathToShare"
+    net share $PathToShare "/GRANT:WSS_WPG,CHANGE"
 
 	## Finally, set the crawl start addresses (including the elusive sps3:// URL required for People Search:
 	$CrawlStartAddresses = $PortalURL+":"+$PortalPort+","+$MySiteURL+":"+$MySitePort+",sps3://"+$MySiteHostHeader+":"+$MySitePort
