@@ -1659,6 +1659,20 @@ If ($CreateCentralAdmin -eq "1")
 	Write-Host -ForegroundColor White "- Launching Configuration Wizard..."
 	Start-Process "http://$($env:COMPUTERNAME):$CentralAdminPort/_admin/adminconfigintro.aspx?scenarioid=adminconfig&welcomestringid=farmconfigurationwizard_welcome" -WindowStyle Normal
 }
+
+## Remove Farm Account from local Administrators group to avoid big scary warnings in Central Admin
+If (!($RunningAsFarmAcct))
+{
+	Write-Host -ForegroundColor White "- Removing $FarmAcct from local Administrators..."
+	$FarmAcctDomain,$FarmAcctUser = $FarmAcct -Split "\\"
+	try
+	{
+		([ADSI]"WinNT://$env:COMPUTERNAME/Administrators,group").Remove("WinNT://$FarmAcctDomain/$FarmAcctUser")
+		If (-not $?) {throw}
+	}
+	catch {Write-Host -ForegroundColor White " - $FarmAcct already removed from Administrators."}
+}
+
 Write-Progress -Activity "Installing SharePoint (Unattended)" -Status "Done." -Completed
 Write-Host -ForegroundColor White "- Finished!`a"
 $EndDate = Get-Date
