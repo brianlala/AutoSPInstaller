@@ -125,7 +125,7 @@ Write-Host -ForegroundColor White "| Started on: $StartDate |"
 Write-Host -ForegroundColor White "-----------------------------------"
 #EndRegion
 
-#Region Pre-Checks
+#Region Pre-Checks & Common Functions
 Function Pause
 {
 	#From http://www.microsoft.com/technet/scriptcenter/resources/pstips/jan08/pstip0118.mspx
@@ -199,6 +199,39 @@ Function CheckSQLAccess
 	$SqlCmd.Connection.Close()
 }
 CheckSQLAccess
+
+Function Fix-DBSchema
+{
+	Param
+  	(
+    	[parameter(Position=0)]
+    	[String[]]
+    	$DBToFix
+  	)
+	## Thanks to Spencer Harbar, Gary Lapointe & Andrew Woodward for the approach and SQL script below to update $FarmAcct default schema to dbo
+	## Needed if we are using an account other than $FarmAcct to install SharePoint
+	## AMW 09/09/2010 - fix up the database for the profile database ownership
+	Write-Host -ForegroundColor White "- Fixing SQL ownership for database: $DBServer\$DBToFix..."
+	$sqlCmd = New-Object System.Data.SqlClient.SqlCommand
+    $sqlCmd.CommandType = "Text"
+    $sqlCmd.CommandText = "ALTER USER [$FarmAcct]  WITH DEFAULT_SCHEMA=dbo;"
+    $connString = "Integrated Security=SSPI;Persist Security Info=False;Data Source=$DBServer;Initial Catalog=$DBToFix;"
+    $connection = New-Object System.Data.SqlClient.SqlConnection($connString)
+    try 
+	{
+       	$connection.Open()
+       	$sqlCmd.Connection = $connection
+       	$sqlCmd.ExecuteNonQuery()
+    }                         
+    catch 
+	{
+      	Write-Output $_
+    }
+    finally 
+	{
+        $connection.Dispose()
+    }
+}
 
 #EndRegion
 
@@ -1067,39 +1100,13 @@ Function CreateUserProfileServiceApplication
 			Write-Host -ForegroundColor White "- Done creating $UserProfileServiceName."
       	}
         
-		Function Fix-DBOwner
+		## Fix up the schema for $FarmAccount in case we are using a dedicated install account
+		If (!($RunningAsFarmAcct)) 
 		{
-			## Thanks to Gary Lapointe via Andrew Woodward for the SQL script below to change dbo to $FarmAcct
-			## Needed if we are using an account other than $FarmAcct to install SharePoint
-			## AMW 09/09/2010 - fix up the database for the profile database ownership
-	        $ProfileServiceApp = Get-SPServiceApplication |?{$_.TypeName -eq $UserProfileServiceName}
-			If ($ProfileServiceApp)
-			{
-				Write-Host -ForegroundColor White "- Fixing SQL ownership for profile database: $DBServer\$ProfileDB..."
-  		        $sqlCmd = New-Object System.Data.SqlClient.SqlCommand
-            	$sqlCmd.CommandType = "Text"
-            	#$sqlCmd.CommandText = "ALTER USER [$FarmAcct]  WITH DEFAULT_SCHEMA=dbo;"
-				$SqlCmd.CommandText = "exec sp_dropuser `'$FarmAcct`'; exec sp_changedbowner `'$FarmAcct`';"
-            	$connString = "Integrated Security=SSPI;Persist Security Info=False;Data Source=$DBServer;Initial Catalog=$ProfileDB;"
-            	$connection = New-Object System.Data.SqlClient.SqlConnection($connString)
-            	try 
-				{
-                   	$connection.Open()
-                   	$sqlCmd.Connection = $connection
-                  	$sqlCmd.ExecuteNonQuery()
-            	}                         
-            	catch 
-				{
-            			Write-Output $_
-            	}
-            	finally 
-				{
-                   $connection.Dispose()
-            	}
-			}
+			$ProfileServiceApp = Get-SPServiceApplication |?{$_.TypeName -eq $UserProfileServiceName}
+			If ($ProfileServiceApp) {Fix-DBSchema $ProfileDB}
 		}
-		If (!($RunningAsFarmAcct)) {Fix-DBOwner}
-		
+
 		## Start User Profile Synchronization Service
 		## Get User Profile Service
 		$ProfileServiceApp = Get-SPServiceApplication |?{$_.TypeName -eq $UserProfileServiceName}
@@ -1217,12 +1224,13 @@ Function CreateWSSUsageApp
 		}
 		Else {Write-Host -ForegroundColor White "- WSS Usage Application exists, continuing..."}
 	}
-catch
+	catch
 	{
 		Write-Output $_
 	}
 }
 If ($CreateWSSUsageApp -eq "1") {CreateWSSUsageApp}
+
 #EndRegion
 
 #Region Create Secure Store Service Application
