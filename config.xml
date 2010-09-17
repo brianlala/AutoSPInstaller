@@ -11,9 +11,7 @@
   <ARP ARPCOMMENTS="" ARPCONTACT="" />
   <Logging Type="verbose" Path="%temp%" Template="SharePoint Server Setup(*).log"/>
   <Display Level="basic" CompletionNotice="No" AcceptEula="Yes"/>
-  <PIDKEY Value="6VCWT-QBQVD-HG7KD-8BW8C-PBX7T"/>
-  <!--Enterprise SKU<PIDKEY Value="6VCWT-QBQVD-HG7KD-8BW8C-PBX7T"/>-->
-  <!--Standard SKU <PIDKEY Value="HQ937-PP69X-8K3KR-VYY2F-RPHB3"/>-->
+  <PIDKEY Value=""/>
   <Setting Id="SERVERROLE" Value="APPLICATION"/>
   <Setting Id="USINGUIINSTALLMODE" Value="1"/>
   <Setting Id="SETUPTYPE" Value="CLEAN_INSTALL"/>
