@@ -1072,7 +1072,7 @@ Function CreateUserProfileServiceApplication
 			
 			## Get ID of $UserProfileServiceName
 			Write-Host -ForegroundColor White " - Get ID of $UserProfileServiceName..."
-			$ProfileServiceAppToSecure = Get-SPServiceApplication |?{$_.TypeName -eq $UserProfileServiceName}
+			$ProfileServiceAppToSecure = Get-SPServiceApplication |?{$_.DisplayName -eq $UserProfileServiceName}
 			$ProfileServiceAppIDToSecure = $ProfileServiceAppToSecure.Id
 
 			Write-Host -ForegroundColor White " - Granting rights to $UserProfileServiceName..."
@@ -1103,13 +1103,13 @@ Function CreateUserProfileServiceApplication
 		## Fix up the schema for $FarmAccount in case we are using a dedicated install account
 		If (!($RunningAsFarmAcct)) 
 		{
-			$ProfileServiceApp = Get-SPServiceApplication |?{$_.TypeName -eq $UserProfileServiceName}
+			$ProfileServiceApp = Get-SPServiceApplication |?{$_.DisplayName -eq $UserProfileServiceName}
 			If ($ProfileServiceApp) {Fix-DBSchema $ProfileDB}
 		}
 
 		## Start User Profile Synchronization Service
 		## Get User Profile Service
-		$ProfileServiceApp = Get-SPServiceApplication |?{$_.TypeName -eq $UserProfileServiceName}
+		$ProfileServiceApp = Get-SPServiceApplication |?{$_.DisplayName -eq $UserProfileServiceName}
 		If ($ProfileServiceApp)
 		{
 			## Get User Profile Synchronization Service
