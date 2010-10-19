@@ -655,8 +655,11 @@ If ($SPFarm -eq $null)
 			Else {$FarmMessage = "- Done creating configuration database for farm."}
 		}
 		Else {$FarmMessage = "- Done joining farm."}
-	#Write-Host -ForegroundColor White " - Creating Version registry value (workaround for apparent bug in PS-based install)"
-	#New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Shared Tools\Web Server Extensions\14.0\' -Name Version -Value '14.0.0.5114' -ErrorAction SilentlyContinue | Out-Null
+	Write-Host -ForegroundColor White " - Creating Version registry value (workaround for bug in PS-based install)"
+	Write-Host -ForegroundColor White -NoNewline " - Getting version number... "
+	$SPBuild = "$($(Get-SPFarm).BuildVersion.Major).0.0.$($(Get-SPFarm).BuildVersion.Build)"
+	Write-Host -ForegroundColor White "$SPBuild"
+	New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Shared Tools\Web Server Extensions\14.0\' -Name Version -Value $SPBuild -ErrorAction SilentlyContinue | Out-Null
 	}
 	catch 
 	{
