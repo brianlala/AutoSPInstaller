@@ -1,9 +1,5 @@
 ############################################################################ 
-## AutoSPInstaller 1.7.4
-## 1.7.1  AMW - added permission to metadata service for mysites app pool
-## 1.7.2 15/10/10 AMW - Added SuperUser and SuperReader
-## 1.7.3 18/10/10 AMW - Fixed setting domain accounts for SPSearch4 abd SPTraceV4 services
-## 1.7.4 19/10/10 AMW - Merged changes from codeplex to revision 62169
+## AutoSPInstaller 1.7
 ## http://autospinstaller.codeplex.com
 ## Partially based on Create-SPFarm by Jos.Verlinde from http://poshcode.org/1485
 ## And on http://sharepoint.microsoft.com/blogs/zach/Lists/Posts/Post.aspx?ID=50
@@ -142,20 +138,9 @@ Function Pause
 }
 ## Detect installer/product version
 $SPVersion = (Get-Command "$bits\setup.exe" -ErrorAction SilentlyContinue).FileVersionInfo.ProductVersion
-If ($SPVersion -like "14.0.4514*") 
-{
-	Write-Host -ForegroundColor White "- SharePoint 2010 Beta 2 `($SPVersion`) installer detected."
-	$SPBeta = $true
-}
-ElseIf ($SPVersion -like "14.0.4730*") 
-{
-	Write-Host -ForegroundColor White "- SharePoint 2010 Release Candidate `($SPVersion`) installer detected."
-	$SPBeta = $false
-}
-ElseIf ($SPVersion -like "14.0.4755*")
+If ($SPVersion -like "14.0.4755*")
 {
 	Write-Host -ForegroundColor White "- SharePoint 2010 RTM `($SPVersion`) installer detected."
-	$SPBeta = $false
 }
 ElseIf ($SPVersion -eq $null)
 {
@@ -167,18 +152,9 @@ ElseIf ($SPVersion -eq $null)
 Else
 {
 	Write-Host -ForegroundColor White "- SharePoint 2010 installer build $SPVersion detected."
-	$SPBeta = $false
 }
 ## Check if we are running under Farm Account credentials
 If ($env:USERDOMAIN+"\"+$env:USERNAME -eq $FarmAcct) {$RunningAsFarmAcct = $true}
-
-## Set aliases for cmdlets which were renamed from Beta2 to RC
-If ($SPBeta)
-{
-	Write-Host -ForegroundColor White " - Setting cmdlet Alias(es) for SharePoint 2010 Beta..."
-	New-Alias -Name New-SPServiceApplicationPool -Value New-SPIisWebServiceApplicationPool -Scope Script
-	New-Alias -Name Get-SPServiceApplicationPool -Value Get-SPIisWebServiceApplicationPool -Scope Script
-}
 
 Function CheckSQLAccess
 {
@@ -207,39 +183,6 @@ Function CheckSQLAccess
 	$SqlCmd.Connection.Close()
 }
 CheckSQLAccess
-
-Function Fix-DBSchema
-{
-	Param
-  	(
-    	[parameter(Position=0)]
-    	[String[]]
-    	$DBToFix
-  	)
-	## Thanks to Spencer Harbar, Gary Lapointe & Andrew Woodward for the approach and SQL script below to update $FarmAcct default schema to dbo
-	## Needed if we are using an account other than $FarmAcct to install SharePoint
-	## AMW 09/09/2010 - fix up the database for the profile database ownership
-	Write-Host -ForegroundColor White "- Fixing SQL ownership for database: $DBServer\$DBToFix..."
-	$sqlCmd = New-Object System.Data.SqlClient.SqlCommand
-    $sqlCmd.CommandType = "Text"
-    $sqlCmd.CommandText = "ALTER USER [$FarmAcct]  WITH DEFAULT_SCHEMA=dbo;"
-    $connString = "Integrated Security=SSPI;Persist Security Info=False;Data Source=$DBServer;Initial Catalog=$DBToFix;"
-    $connection = New-Object System.Data.SqlClient.SqlConnection($connString)
-    try 
-	{
-       	$connection.Open()
-       	$sqlCmd.Connection = $connection
-       	$sqlCmd.ExecuteNonQuery()
-    }                         
-    catch 
-	{
-      	Write-Output $_
-    }
-    finally 
-	{
-        $connection.Dispose()
-    }
-}
 
 #EndRegion
 
@@ -324,11 +267,11 @@ Else
 If ($FarmAcct -eq $null -or $FarmAcctPWD -eq $null) 
 {
     Write-Host -BackgroundColor Gray -ForegroundColor DarkBlue "- Prompting for Farm Account:"
-	$cred_farm = $host.ui.PromptForCredential("Farm Setup", "Enter Farm Account Credentials:", "$FarmAcct", "NetBiosUserName" )
+	$Cred_Farm = $host.ui.PromptForCredential("Farm Setup", "Enter Farm Account Credentials:", "$FarmAcct", "NetBiosUserName" )
 } 
 else
 {
-    $cred_farm = New-Object System.Management.Automation.PsCredential $FarmAcct,$FarmAcctPWD
+    $Cred_Farm = New-Object System.Management.Automation.PsCredential $FarmAcct,$FarmAcctPWD
 }
 
 ## Add Farm Account to local Administrators group (unless we're running as $FarmAcct)
@@ -347,31 +290,31 @@ If (!($RunningAsFarmAcct))
 If ($AppPoolAcct -eq $null -or $AppPoolAcctPWD -eq $null) 
 {
     Write-Host -BackgroundColor Gray -ForegroundColor DarkBlue "- Prompting for App Pool Account:"
-	$cred_AppPoolAcct = $host.ui.PromptForCredential("Farm Setup", "Enter App Pool Account Credentials:", "$AppPoolAcct", "NetBiosUserName" )
+	$Cred_AppPoolAcct = $host.ui.PromptForCredential("Farm Setup", "Enter App Pool Account Credentials:", "$AppPoolAcct", "NetBiosUserName" )
 } 
 else
 {
-    $cred_AppPoolAcct = New-Object System.Management.Automation.PsCredential $AppPoolAcct,$AppPoolAcctPWD
+    $Cred_AppPoolAcct = New-Object System.Management.Automation.PsCredential $AppPoolAcct,$AppPoolAcctPWD
 }
 ## get Portal App Pool Account
 If ($PortalAppPoolAcct -eq $null -or $PortalAppPoolAcctPWD -eq $null) 
 {
     Write-Host -BackgroundColor Gray -ForegroundColor DarkBlue "- Prompting for Portal App Pool Account:"
-	$cred_PortalAppPoolAcct = $host.ui.PromptForCredential("Farm Setup", "Enter Portal App Pool Account Credentials:", "$PortalAppPoolAcct", "NetBiosUserName" )
+	$Cred_PortalAppPoolAcct = $host.ui.PromptForCredential("Farm Setup", "Enter Portal App Pool Account Credentials:", "$PortalAppPoolAcct", "NetBiosUserName" )
 } 
 else
 {
-    $cred_PortalAppPoolAcct = New-Object System.Management.Automation.PsCredential $PortalAppPoolAcct,$PortalAppPoolAcctPWD
+    $Cred_PortalAppPoolAcct = New-Object System.Management.Automation.PsCredential $PortalAppPoolAcct,$PortalAppPoolAcctPWD
 }
 ## get My Sites App Pool Account
 If ($MySiteAppPoolAcct -eq $null -or $MySiteAppPoolAcctPWD -eq $null) 
 {
     Write-Host -BackgroundColor Gray -ForegroundColor DarkBlue "- Prompting for My Sites App Pool Account:"
-	$cred_MySiteAppPoolAcct = $host.ui.PromptForCredential("Farm Setup", "Enter My Sites App Pool Account Credentials:", "$MySiteAppPoolAcct", "NetBiosUserName" )
+	$Cred_MySiteAppPoolAcct = $host.ui.PromptForCredential("Farm Setup", "Enter My Sites App Pool Account Credentials:", "$MySiteAppPoolAcct", "NetBiosUserName" )
 } 
 else
 {
-    $cred_MySiteAppPoolAcct = New-Object System.Management.Automation.PsCredential $MySiteAppPoolAcct,$MySiteAppPoolAcctPWD
+    $Cred_MySiteAppPoolAcct = New-Object System.Management.Automation.PsCredential $MySiteAppPoolAcct,$MySiteAppPoolAcctPWD
 }
 #Endregion
 
@@ -454,38 +397,6 @@ Else
 		}
 	}
 
-	Function Install-WCFHotfix
-	{
-		If ($OS -eq "Win2008") {$WCFHotfix = "Windows6.0-KB971831-x64.msu"}
-		ElseIf ($OS -eq "Win2008R2") {$WCFHotfix = "Windows6.1-KB976462-v2-x64.msu"}
-		Write-Progress -Activity "Installing Prerequisite Software" -Status "Please Wait..." -CurrentOperation "$WCFHotfix for $OS"
-		Write-Host -ForegroundColor White " - WCF hotfix for $OS..."
-		try 
-		{
-			Start-Process "$bits\PrerequisiteInstallerFiles\$WCFHotfix" -ArgumentList "/quiet /promptrestart" -Wait
-			If (-not $?) {throw}
-		}
-		catch 
-		{
-			If ($LastExitCode -eq "87") {Write-Host -ForegroundColor White " - $WCFHotfix already installed"}
-			ElseIf (($LastExitCode -eq "1641") -or ($LastExitCode -eq "1001") -or ($LastExitCode -eq "3010"))
-			{
-				Write-Host -ForegroundColor Yellow " - You should restart your server NOW for the hotfix to take effect."
-				Write-Host -ForegroundColor Yellow " - You can re-run the script again once you've rebooted."
-				Pause
-				break
-			}
-			ElseIf ($LastExitCode -eq "5") {throw " - Local Administrator permissions are required to proceed!"}
-			ElseIf ($LastExitCode -eq "-2145124329") {throw " - $WCFHotfix not applicable to your system (is .NET framework installed?)"}
-			ElseIf (($LastExitCode -ne "2359302") -and ($LastExitCode -ne "87"))
-			{
-				Write-Host -ForegroundColor Red "- Error: $LastExitCode"
-				throw "- An unknown error ($LastExitCode) occurred installing the $OS hotfix"
-			}
-		}
-	}
-	If ($SPBeta) {Install-WCFHotfix}
-	
 	Write-Progress -Activity "Installing Prerequisite Software" -Status "Done." -Completed
 	Write-Host -ForegroundColor White "- All Prerequisite Software installed successfully."
 }
@@ -735,7 +646,7 @@ $ManagedAccountGen = Get-SPManagedAccount | Where-Object {$_.UserName -eq $AppPo
 If ($ManagedAccountGen -eq $NULL) 
 { 
 	Write-Host -ForegroundColor White "- Registering managed account" $AppPoolAcct
-	New-SPManagedAccount -Credential $cred_AppPoolAcct | Out-Null 
+	New-SPManagedAccount -Credential $Cred_AppPoolAcct | Out-Null 
 }
 Else {Write-Host -ForegroundColor White "- Managed account $AppPoolAcct already exists, continuing."}
 
@@ -744,7 +655,7 @@ $ManagedAccountPortal = Get-SPManagedAccount | Where-Object {$_.UserName -eq $Po
 If ($ManagedAccountPortal -eq $NULL) 
 { 
 	Write-Host -ForegroundColor White "- Registering managed account" $PortalAppPoolAcct
-	New-SPManagedAccount -Credential $cred_PortalAppPoolAcct | Out-Null 
+	New-SPManagedAccount -Credential $Cred_PortalAppPoolAcct | Out-Null 
 }
 Else {Write-Host -ForegroundColor White "- Managed account $PortalAppPoolAcct already exists, continuing."}
 ## Add Managed Account for My Sites App Pool Account
@@ -752,7 +663,7 @@ $ManagedAccountMySite = Get-SPManagedAccount | Where-Object {$_.UserName -eq $My
 If ($ManagedAccountMySite -eq $NULL) 
 { 
 	Write-Host -ForegroundColor White "- Registering managed account" $MySiteAppPoolAcct
-	New-SPManagedAccount -Credential $cred_MySiteAppPoolAcct | Out-Null 
+	New-SPManagedAccount -Credential $Cred_MySiteAppPoolAcct | Out-Null 
 }
 Else {Write-Host -ForegroundColor White "- Managed account $MySiteAppPoolAcct already exists, continuing."}
 #EndRegion
@@ -768,7 +679,7 @@ If ($SandboxedCodeService.Status -eq "Disabled")
 		If (-not $?) {throw "- Failed to start Sandboxed Code Service"}
 	}
 	catch {"- An error occurred starting the Microsoft SharePoint Foundation Sandboxed Code Service"}
-	#Wait
+	## Wait
 			Write-Host -ForegroundColor Blue " - Waiting for Sandboxed Code service to start" -NoNewline
 			While ($SandboxedCodeService.Status -ne "Online") 
 			{
@@ -842,14 +753,6 @@ Function CreateMetadataServiceApp
 			$PortalAppPoolAcctPrincipal = New-SPClaimsPrincipal -Identity $PortalAppPoolAcct -IdentityType WindowsSamAccountName
 			## Give permissions to the claims principal you just created
 			Grant-SPObjectSecurity $MetadataServiceAppSecurity -Principal $PortalAppPoolAcctPrincipal -Rights "Full Access to Term Store"
-			## AMW 08/10/2010 - add mysite app pool account if different to the portal account
-			If ($PortalAppPoolAcct -ne $MySiteAppPoolAcct)
-			{
-				$MySiteAppPoolAcctPrincipal = New-SPClaimsPrincipal -Identity $MySiteAppPoolAcct -IdentityType WindowsSamAccountName
-				## Give permissions to the claims principal you just created
-				Grant-SPObjectSecurity $MetadataServiceAppSecurity -Principal $MySiteAppPoolAcctPrincipal -Rights "Full Access to Term Store"
-			}
-			# 
 			## Apply the changes to the Metadata Service application
 			Set-SPServiceApplicationSecurity $MetadataServiceAppIDToSecure -objectSecurity $MetadataServiceAppSecurity
             
@@ -1080,23 +983,31 @@ Function CreateUserProfileServiceApplication
 			}
 			## Create Service App
 			Write-Host -ForegroundColor White " - Creating $UserProfileServiceName..."
-#           $ProfileServiceApp  = New-SPProfileServiceApplication -Name "$UserProfileServiceName" -ApplicationPool $ApplicationPool -ProfileDBName $ProfileDB -ProfileSyncDBName $SyncDB -SocialDBName $SocialDB -SyncInstanceMachine $env:COMPUTERNAME -MySiteHostLocation "$MySiteURL`:$MySitePort"
-           	$ProfileServiceApp  = New-SPProfileServiceApplication -Name "$UserProfileServiceName" -ApplicationPool $ApplicationPool -ProfileDBName $ProfileDB -ProfileSyncDBName $SyncDB -SocialDBName $SocialDB -MySiteHostLocation "$MySiteURL`:$MySitePort"
-           	If (-not $?) { throw " - Failed to create $UserProfileServiceName" }
-
+			## This is essentially the workaround by @harbars & @glapointe http://www.harbar.net/archive/2010/10/30/avoiding-the-default-schema-issue-when-creating-the-user-profile.aspx
+			## Modified to work within AutoSPInstaller (to pass our script variables to the Farm Account credential's Powershell session)
+			$ScriptFile = "$env:TEMP\AutoSPInstaller-ScriptBlock.ps1"
+			## Write the script block, with expanded variables to a temporary script file that the Farm Account can get at
+			Write-Output "`$ProfileServiceApp = New-SPProfileServiceApplication -Name `"$UserProfileServiceName`" -ApplicationPool `"$($ApplicationPool.DisplayName)`" -ProfileDBName $ProfileDB -ProfileSyncDBName $SyncDB -SocialDBName $SocialDB -MySiteHostLocation `"$MySiteURL`:$MySitePort`"; If (-not `$?) {throw `" - Failed to create $UserProfileServiceName`"}" | Out-File $ScriptFile -Width 300
+			## Start a job under the Farm Account's credentials and execute the script file to create the UPS
+			$CreateProfileServiceAppJob = Start-Job -Name CreateProfileServiceAppJob -Credential $Cred_Farm -FilePath $ScriptFile -Verbose -InitializationScript {Add-PsSnapin Microsoft.SharePoint.PowerShell} | Wait-Job
+			Receive-Job -Name CreateProfileServiceAppJob -Verbose
+			## Delete the temporary script file
+			Remove-Item -Path "$env:TEMP\AutoSPInstaller-ScriptBlock.ps1"
+			
             ## Create Proxy
 			Write-Host -ForegroundColor White " - Creating $UserProfileServiceName Proxy..."
+			$ProfileServiceApp = Get-SPServiceApplication |?{$_.DisplayName -eq $UserProfileServiceName}
             $ProfileServiceAppProxy  = New-SPProfileServiceApplicationProxy -Name "$UserProfileServiceName Proxy" -ServiceApplication $ProfileServiceApp -DefaultProxyGroup
             If (-not $?) { throw " - Failed to create $UserProfileServiceName Proxy" }
 			
 			## Get ID of $UserProfileServiceName
 			Write-Host -ForegroundColor White " - Get ID of $UserProfileServiceName..."
-			$ProfileServiceAppToSecure = Get-SPServiceApplication |?{$_.DisplayName -eq $UserProfileServiceName}
+			$ProfileServiceAppToSecure = Get-SPServiceApplication |?{$_.TypeName -eq $UserProfileServiceName}
 			$ProfileServiceAppIDToSecure = $ProfileServiceAppToSecure.Id
 
 			Write-Host -ForegroundColor White " - Granting rights to $UserProfileServiceName..."
 			## Create a variable that contains the guid for the User Profile service for which you want to delegate Full Control
-			$serviceapp = Get-SPServiceApplication $ProfileServiceAppIDToSecure
+			$serviceapp = Get-SPServiceApplication $ProfileServiceAppID
 
 			## Create a variable that contains the list of administrators for the service application 
 			$ProfileServiceAppSecurity = Get-SPServiceApplicationSecurity $serviceapp -Admin
@@ -1122,7 +1033,7 @@ Function CreateUserProfileServiceApplication
 		## Fix up the schema for $FarmAccount in case we are using a dedicated install account
 		If (!($RunningAsFarmAcct)) 
 		{
-			$ProfileServiceApp = Get-SPServiceApplication |?{$_.DisplayName -eq $UserProfileServiceName}
+			$ProfileServiceApp = Get-SPServiceApplication |?{$_.TypeName -eq $UserProfileServiceName}
 			If ($ProfileServiceApp) {Fix-DBSchema $ProfileDB}
 		}
 
@@ -1143,12 +1054,9 @@ Function CreateUserProfileServiceApplication
 					Write-Host -ForegroundColor White "`n"
 					$FarmAcctPWD = Read-Host -Prompt " - Please (re-)enter the Farm Account Password" -AsSecureString
 				}
-				#$FarmAcctPlainPWD = $item.FarmAcctPWD
 				Write-Host -ForegroundColor White "`n"
 				Write-Host -ForegroundColor White " - Starting User Profile Synchronization Service..." -NoNewline
 				$ProfileServiceApp.SetSynchronizationMachine($env:COMPUTERNAME, $ProfileSyncService.Id, $FarmAcct, (ConvertTo-PlainText $FarmAcctPWD))
-				#If ($ProfileSyncService.Status -eq "Provisioning") {Write-Host -ForegroundColor Blue " - Waiting for User Profile Service Synchronization Service to start provisioning..." -NoNewline}
-				#ElseIf 
 				If (($ProfileSyncService.Status -ne "Provisioning") -and ($ProfileSyncService.Status -ne "Online")) {Write-Host -ForegroundColor Blue " - Waiting for User Profile Synchronization Service to be started..." -NoNewline}
 				Else ## Monitor User Profile Sync service status
 				{
@@ -1302,7 +1210,7 @@ Function CreateSecureStoreServiceApp
 			Update-SPSecureStoreApplicationServerKey -ServiceApplicationProxy $secureStore.Id -Passphrase "$FarmPassPhrase"
 		}
 		Write-Host -ForegroundColor White " - Setting the unattended account for Performance Point Services..."
-		Get-SPPerformancePointServiceApplication | Set-SPPerformancePointSecureDataValues -DataSourceUnattendedServiceAccount $cred_farm
+		Get-SPPerformancePointServiceApplication | Set-SPPerformancePointSecureDataValues -DataSourceUnattendedServiceAccount $Cred_Farm
 	}
 catch
 	{
@@ -1352,20 +1260,20 @@ If ($StartSearchQueryAndSiteSettingsService -eq "1") {StartSearchQueryAndSiteSet
 
 #Region Setup Enterprise Search
 
-# Original script for SharePoint 2010 beta2 by Gary Lapointe ()
-#
-# Modified by Søren Laurits Nielsen (soerennielsen.wordpress.com):
-#
-# Modified to fix some errors since some cmdlets have changed a bit since beta 2 and added support for "ShareName" for 
-# the query component. It is required for non DC computers. 
-# 
-# Modified to support "localhost" moniker in config file. 
-#
-# Note: Accounts, Shares and directories specified in the config file must be setup before hand.
+## Original script for SharePoint 2010 beta2 by Gary Lapointe ()
+##
+## Modified by Søren Laurits Nielsen (soerennielsen.wordpress.com):
+##
+## Modified to fix some errors since some cmdlets have changed a bit since beta 2 and added support for "ShareName" for 
+## the query component. It is required for non DC computers. 
+## 
+## Modified to support "localhost" moniker in config file. 
+##
+## Note: Accounts, Shares and directories specified in the config file must be setup before hand.
 
 function Start-EnterpriseSearch([string]$settingsFile = "$InputFile") {
     Write-Host -ForegroundColor White "- Setting up Enterprise Search..."
-	#SLN: Added support for local host
+	## SLN: Added support for local host
     [xml]$config = (Get-Content $settingsFile) -replace( "localhost", $env:computername )
     $svcConfig = $config.SP2010Config.Services.EnterpriseSearchService
  
@@ -1374,9 +1282,9 @@ function Start-EnterpriseSearch([string]$settingsFile = "$InputFile") {
         throw " - Unable to retrieve search service."
     }
 
-    #SLN: Does NOT set the service account, uses the default as Set-SPEnterpriseSearchService 
-    # have a hard time understanding it without an actual secure password (which you don't have by looking up the 
-    # manager service account).
+    ##SLN: Does NOT set the service account, uses the default as Set-SPEnterpriseSearchService 
+    ## have a hard time understanding it without an actual secure password (which you don't have by looking up the 
+    ## manager service account).
     
     #Write-Host -ForegroundColor White "Getting $($svcConfig.Account) account for search service..."
     #$searchSvcManagedAccount = (Get-SPManagedAccount -Identity $svcConfig.Account -ErrorVariable err -ErrorAction SilentlyContinue)
@@ -1397,7 +1305,7 @@ function Start-EnterpriseSearch([string]$settingsFile = "$InputFile") {
     $svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication | ForEach-Object {
         $appConfig = $_
 
-        #Try and get the application pool if it already exists
+        ## Try and get the application pool if it already exists
         $pool = Get-ApplicationPool $appConfig.ApplicationPool
         $adminPool = Get-ApplicationPool $appConfig.AdminComponent.ApplicationPool
 
@@ -1476,7 +1384,7 @@ function Start-EnterpriseSearch([string]$settingsFile = "$InputFile") {
         }
 
         If ($installSyncSvc) {            
-            #SLN: Updated to new syntax
+            ## SLN: Updated to new syntax
 			$SearchQueryAndSiteSettingsService = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Search.Administration.SearchQueryAndSiteSettingsServiceInstance"}
     		If (-not $?) { throw "- Failed to find Search Query and Site Settings service instance" }
 			## Start Service instance
@@ -1487,7 +1395,7 @@ function Start-EnterpriseSearch([string]$settingsFile = "$InputFile") {
 			}
         }
 
-        #Don't activate until we've added all components
+        ## Don't activate until we've added all components
         $allCrawlServersDone = $true
         $appConfig.CrawlServers.Server | ForEach-Object {
             $server = $_.Name
@@ -1512,7 +1420,7 @@ function Start-EnterpriseSearch([string]$settingsFile = "$InputFile") {
 			}
             Write-Host -BackgroundColor Blue -ForegroundColor Black "Done!"
 
-			# Need to delete the original crawl topology that was created by default
+			## Need to delete the original crawl topology that was created by default
             $searchApp | Get-SPEnterpriseSearchCrawlTopology | where {$_.State -eq "Inactive"} | Remove-SPEnterpriseSearchCrawlTopology -Confirm:$false
         }
 
@@ -1523,7 +1431,7 @@ function Start-EnterpriseSearch([string]$settingsFile = "$InputFile") {
             If ($top -eq $null) { $allQueryServersDone = $false }
         }
 
-        #Make sure we have a crawl component added and started before trying to enable the query component
+        ## Make sure we have a crawl component added and started before trying to enable the query component
         If ($allCrawlServersDone -and $allQueryServersDone -and $queryTopology.State -ne "Active") {
             Write-Host -ForegroundColor White " - Setting query topology as active..."
             $queryTopology | Set-SPEnterpriseSearchQueryTopology -Active -Confirm:$false -ErrorAction SilentlyContinue -ErrorVariable err
@@ -1541,7 +1449,7 @@ function Start-EnterpriseSearch([string]$settingsFile = "$InputFile") {
 			}
             Write-Host -BackgroundColor Blue -ForegroundColor Black "Done!"
 			
-            # Need to delete the original query topology that was created by default
+            ## Need to delete the original query topology that was created by default
             $searchApp | Get-SPEnterpriseSearchQueryTopology | where {$_.State -eq "Inactive"} | Remove-SPEnterpriseSearchQueryTopology -Confirm:$false
         }
 
@@ -1561,8 +1469,8 @@ function Start-EnterpriseSearch([string]$settingsFile = "$InputFile") {
         $proxy | Set-ProxyGroupsMembership $appConfig.Proxy.ProxyGroup
     }
 
-    #SLN: Create the network share (will report an error if exist)
-    #default to primitives 
+    ## SLN: Create the network share (will report an error if exist)
+    ## default to primitives 
     $PathToShare = """" + $svcConfig.ShareName + "=" + $svcConfig.IndexLocation + """"
 	## The path to be shared should exist if the Enterprise Search App creation succeeded earlier
     Write-Host -ForegroundColor White " - Creating network share $PathToShare"
@@ -1579,7 +1487,7 @@ function Set-ProxyGroupsMembership([System.Xml.XmlElement[]]$groups, [Microsoft.
     process {
         $proxy = $_
         
-        #Clear any existing proxy group assignments
+        ## Clear any existing proxy group assignments
         Get-SPServiceApplicationProxyGroup | where {$_.Proxies -contains $proxy} | ForEach-Object {
             $proxyGroupName = $_.Name
             If ([string]::IsNullOrEmpty($proxyGroupName)) { $proxyGroupName = "Default" }
@@ -1622,11 +1530,11 @@ function Set-ProxyGroupsMembership([System.Xml.XmlElement[]]$groups, [Microsoft.
 }
 
 function Get-ApplicationPool([System.Xml.XmlElement]$appPoolConfig) {
-    #Try and get the application pool if it already exists
-    #SLN: Updated names
+    ## Try and get the application pool if it already exists
+    ## SLN: Updated names
     $pool = Get-SPServiceApplicationPool -Identity $appPoolConfig.Name -ErrorVariable err -ErrorAction SilentlyContinue
     If ($err) {
-        #The application pool does not exist so create.
+        ## The application pool does not exist so create.
         Write-Host -ForegroundColor White " - Getting $($appPoolConfig.Account) account for application pool..."
         $ManagedAccountSearch = (Get-SPManagedAccount -Identity $appPoolConfig.Account -ErrorVariable err -ErrorAction SilentlyContinue)
         If ($err) {
@@ -1661,10 +1569,8 @@ Function CreatePowerPivotService
 		{
 			New-PowerPivotServiceApplication -ServiceApplicationName "Default PowerPivot Service Application" -DatabaseServerName "$DBServer" -DatabaseName $DBPrefix"DefaultPowerPivotServiceApp_DB" –AddToDefaultProxyGroup
 		}
-		#Start-Process -NoNewWindow -Wait -FilePath $stsadm -ArgumentList "-o deploysolution -name PowerPivotWebApp.wsp -url $PortalURL -local -allowgacdeployment"
 		Write-Host -ForegroundColor White " - Installing powerpivotwebapp solution..."
 		Get-SPSolution | ? {$_.Name -eq "powerpivotwebapp.wsp"} | Install-SPSolution -WebApplication $PortalURL -GACDeployment -Local -Force
-		#Start-Process -NoNewWindow -Wait -FilePath $stsadm -ArgumentList "-o activatefeature -id 1A33A234-B4A4-4fc6-96C2-8BDB56388BD5 -url $PortalURL -force"
 		Write-Host -ForegroundColor White " - Enabling PowerPivotSite feature on `"$PortalURL`"..."
 		Get-SPFeature | ? {$_.DisplayName -eq "PowerPivotSite"} | Enable-SPFeature -Url $PortalURL -Force
 		Write-Host -ForegroundColor White "- Done."
@@ -1678,97 +1584,6 @@ Function CreatePowerPivotService
 If ($CreatePowerPivot -eq "1") {CreatePowerPivotService}
 #EndRegion
 
-#Region Remove LocalSystem account from default services
-# AMW 1.7.3
-function ApplyServiceAccountToTracing
-{
-	Try
-	{
-		Write-Host -ForegroundColor White "- Applying service account $AppPoolAcct to Tracing Service SPTraceV4..."
-        $tracingService = (Get-SPFarm).Services | where {$_.Name -eq "SPTraceV4"}
-        $serviceAccount = Get-SPManagedAccount $AppPoolAcct
-        $tracingService.ProcessIdentity.CurrentIdentityType = "SpecificUser"
-        $tracingService.ProcessIdentity.ManagedAccount = $serviceAccount
-        $tracingService.ProcessIdentity.Update()
-        $tracingService.ProcessIdentity.Deploy()
-        $tracingService.Update()
-		Write-Host -ForegroundColor White "- Done."
-	}
-	Catch
-	{
-		$_
-		Write-Warning "- An error occurred with the service account setting for SPTraceV4."
-	}
-}
-#Not used in farm setup but removes the health warning
-function ApplyServiceAccountToFoundationSearch
-{
-	Try
-	{
-		Write-Host -ForegroundColor White "- Applying service account $AppPoolAcct to Tracing Service SPSearch4..."
-        
-        $tracingService = (Get-SPFarm).Services | where {$_.Name -eq "SPSearch4"}
-        $serviceAccount = Get-SPManagedAccount $AppPoolAcct
-        $tracingService.ProcessIdentity.CurrentIdentityType = "SpecificUser"
-        $tracingService.ProcessIdentity.ManagedAccount = $serviceAccount
-        $tracingService.ProcessIdentity.Update()
-        $tracingService.ProcessIdentity.Deploy()
-        $tracingService.Update()
-        
-		Write-Host -ForegroundColor White "- Done."
-	}
-	Catch
-	{
-		$_
-		Write-Warning "- An error occurred with the service account setting for SPSearch4."
-	}
-}
-
-ApplyServiceAccountToTracing
-ApplyServiceAccountToFoundationSearch
-#EndRegion
-
-#Region Setup Object Cache user for web applications 
-# AMW 1.7.2
-# Refere to http://technet.microsoft.com/en-us/library/ff758656.aspx
-# Updated based on Gary Lapointe example script to include Policy settings 18/10/2010
-function Set-WebAppUserPolicy($webApp, $userName,$displayName, $perm) {
-    [Microsoft.SharePoint.Administration.SPPolicyCollection]$policies = $webApp.Policies
-    [Microsoft.SharePoint.Administration.SPPolicy]$policy = $policies.Add($userName, $displayName)
-    [Microsoft.SharePoint.Administration.SPPolicyRole]$policyRole = $webApp.PolicyRoles | where {$_.Name -eq $perm}
-    if ($policyRole -ne $null) {
-        $policy.PolicyRoleBindings.Add($policyRole)
-    }
-    $webApp.Update()
-}
-
-function ConfigureObjectCache
-{
-	Try
-	{
-   		Write-Host -ForegroundColor White "- Applying object cache..."
-        $webapp = Get-SPWebApplication | Where-Object {$_.DisplayName -eq $PortalName}
-        If ($webapp -ne $Null)
-        {
-   		   Write-Host -ForegroundColor White "- Applying object cache to portal..."
-           $webapp.Properties["portalsuperuseraccount"] = $SuperUserAcc
-	       Set-WebAppUserPolicy $webApp $SuperUserAcc "Super User (Object Cache)"  "Full Control"
-
-           $webapp.Properties["portalsuperreaderaccount"] = $SuperReaderAcc
-	       Set-WebAppUserPolicy $webApp $SuperReaderAcc "Super Reader (Object Cache)" "Full Read"
-           $webapp.Update()        
-    	   write-Host -ForegroundColor White "- Done."
-        }
-	}
-	Catch
-	{
-		$_
-		Write-Warning "- An error occurred applying object cache to portal."
-	}
-}
-
-ConfigureObjectCache
-#EndRegion
 #Region End Banner
 Stop-SPAssignment -Global | Out-Null
 If ($CreateCentralAdmin -eq "1")
