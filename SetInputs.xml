@@ -14,7 +14,7 @@
     <CreatePowerPivot>0</CreatePowerPivot>
     <!--Hint: if you leave <DBServer> blank or specify localhost, script will assume the local server for SQL databases-->
     <DBServer>localhost</DBServer>
-    <!--Hint: if you put localhost for <DBPrefix>, script will prepend each database with the name of the server on which the script is run. Useful for identifying databases on shared SQL instances. Otherwise specify your own value, or just leave blank for NO prefix.-->
+    <!-- Hint: if you put localhost for <DBPrefix>, script will prepend each database with the name of the server on which the script is run. Useful for identifying databases on shared SQL instances. Otherwise specify your own value, or just leave blank for NO prefix.-->
     <DBPrefix>localhost</DBPrefix>
     <ConfigDB>ConfigDB</ConfigDB>
     <!-- General Web Service Application Pool -->
@@ -25,15 +25,16 @@
     <PortalName>Home Portal</PortalName>
     <PortalURL>http://localhost</PortalURL>
     <PortalPort>80</PortalPort>
-    <!--See http://www.toddbaginski.com/blog/archive/2009/11/20/which-sharepoint-2010-site-template-is-right-for-me.aspx for a list of SharePoint site template codes-->
-    <PortalTemplate>SPSPORTAL#0</PortalTemplate>
+    <!-- See http://www.toddbaginski.com/blog/archive/2009/11/20/which-sharepoint-2010-site-template-is-right-for-me.aspx for a list of SharePoint site template codes -->
+	<!-- You can simply leave this blank if you want to be prompted to select a template the first time you browse to the portal -->
+    <PortalTemplate></PortalTemplate>
 	<!--See http://msdn.microsoft.com/en-us/goglobal/bb964664.aspx for a list of Locale ID codes. The code for EN-US is 1033.
-	NOTE: You must include/install the corresponding SharePoint language pack BEFORE creating a site in a language other than the default installation language.-->
+	NOTE: You must include/install the corresponding SharePoint language pack BEFORE creating a site in a language other than the default installation language. -->
 	<PortalLCID>1033</PortalLCID>
     <PortalAppPool>Portal_AppPool</PortalAppPool>
     <PortalAppPoolAcct></PortalAppPoolAcct>
     <PortalAppPoolAcctPWD></PortalAppPoolAcctPWD>
-    <PortalUseClaims>0</PortalUseClaims>
+    <PortalUseClaims>1</PortalUseClaims>
     <!-- User Profile Service & My Sites Web Application-->
     <CreateUserProfileApp>1</CreateUserProfileApp>
     <UserProfileServiceName>User Profile Service Application</UserProfileServiceName>

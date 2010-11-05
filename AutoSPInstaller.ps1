@@ -1,5 +1,9 @@
 ############################################################################ 
-## AutoSPInstaller 1.7
+## AutoSPInstaller 1.8
+## 1.7.1  AMW - added permission to metadata service for mysites app pool
+## 1.7.2 15/10/10 AMW - Added SuperUser and SuperReader
+## 1.7.3 18/10/10 AMW - Fixed setting domain accounts for SPSearch4 abd SPTraceV4 services
+## 1.7.4 19/10/10 AMW - Merged changes from codeplex to revision 62169
 ## http://autospinstaller.codeplex.com
 ## Partially based on Create-SPFarm by Jos.Verlinde from http://poshcode.org/1485
 ## And on http://sharepoint.microsoft.com/blogs/zach/Lists/Posts/Post.aspx?ID=50
@@ -753,6 +757,13 @@ Function CreateMetadataServiceApp
 			$PortalAppPoolAcctPrincipal = New-SPClaimsPrincipal -Identity $PortalAppPoolAcct -IdentityType WindowsSamAccountName
 			## Give permissions to the claims principal you just created
 			Grant-SPObjectSecurity $MetadataServiceAppSecurity -Principal $PortalAppPoolAcctPrincipal -Rights "Full Access to Term Store"
+			## AMW 08/10/2010 - add mysite app pool account if different to the portal account
+			If ($PortalAppPoolAcct -ne $MySiteAppPoolAcct)
+			{
+				$MySiteAppPoolAcctPrincipal = New-SPClaimsPrincipal -Identity $MySiteAppPoolAcct -IdentityType WindowsSamAccountName
+				## Give permissions to the claims principal you just created
+				Grant-SPObjectSecurity $MetadataServiceAppSecurity -Principal $MySiteAppPoolAcctPrincipal -Rights "Full Access to Term Store"
+			}
 			## Apply the changes to the Metadata Service application
 			Set-SPServiceApplicationSecurity $MetadataServiceAppIDToSecure -objectSecurity $MetadataServiceAppSecurity
             
@@ -876,7 +887,9 @@ If ($GetSPWebApplication -eq $Null)
 	}
 	Else
 	{
-		New-SPSite -Url $PortalURL -OwnerAlias $FarmAcct -SecondaryOwnerAlias $env:USERDOMAIN\$env:USERNAME -ContentDatabase $PortalDB -Description $PortalName -Name $PortalName -Template $PortalTemplate -Language $PortalLCID | Out-Null
+		## If a template has been pre-specified, use it when creating the Portal site collection; otherwise, leave it blank so we can select one when the portal first loads
+		If (($PortalTemplate -ne $null) -and ($PortalTemplate -ne "")) {New-SPSite -Url $PortalURL -OwnerAlias $FarmAcct -SecondaryOwnerAlias $env:USERDOMAIN\$env:USERNAME -ContentDatabase $PortalDB -Description $PortalName -Name $PortalName -Language $PortalLCID -Template $PortalTemplate | Out-Null}
+		Else {New-SPSite -Url $PortalURL -OwnerAlias $FarmAcct -SecondaryOwnerAlias $env:USERDOMAIN\$env:USERNAME -ContentDatabase $PortalDB -Description $PortalName -Name $PortalName -Language $PortalLCID | Out-Null}
 		If ($PortalUseSSL)
 	    {
 		    $SSLHostHeader = $PortalHostHeader
@@ -993,24 +1006,26 @@ Function CreateUserProfileServiceApplication
 			Receive-Job -Name CreateProfileServiceAppJob -Verbose
 			## Delete the temporary script file
 			Remove-Item -Path "$env:TEMP\AutoSPInstaller-ScriptBlock.ps1"
-			
+
+			## Get our new Profile Service App
+			$ProfileServiceApp = Get-SPServiceApplication |?{$_.DisplayName -eq $UserProfileServiceName}
+
             ## Create Proxy
 			Write-Host -ForegroundColor White " - Creating $UserProfileServiceName Proxy..."
-			$ProfileServiceApp = Get-SPServiceApplication |?{$_.DisplayName -eq $UserProfileServiceName}
             $ProfileServiceAppProxy  = New-SPProfileServiceApplicationProxy -Name "$UserProfileServiceName Proxy" -ServiceApplication $ProfileServiceApp -DefaultProxyGroup
             If (-not $?) { throw " - Failed to create $UserProfileServiceName Proxy" }
 			
 			## Get ID of $UserProfileServiceName
-			Write-Host -ForegroundColor White " - Get ID of $UserProfileServiceName..."
-			$ProfileServiceAppToSecure = Get-SPServiceApplication |?{$_.TypeName -eq $UserProfileServiceName}
-			$ProfileServiceAppIDToSecure = $ProfileServiceAppToSecure.Id
+			# Write-Host -ForegroundColor White " - Get ID of $UserProfileServiceName..."
+			# $ProfileServiceApp = Get-SPServiceApplication |?{$_.TypeName -eq $UserProfileServiceName}
+			# $ProfileServiceAppID = $ProfileServiceApp.Id
 
 			Write-Host -ForegroundColor White " - Granting rights to $UserProfileServiceName..."
 			## Create a variable that contains the guid for the User Profile service for which you want to delegate Full Control
-			$serviceapp = Get-SPServiceApplication $ProfileServiceAppID
+			$ServiceAppIDToSecure = Get-SPServiceApplication $($ProfileServiceApp.Id)
 
 			## Create a variable that contains the list of administrators for the service application 
-			$ProfileServiceAppSecurity = Get-SPServiceApplicationSecurity $serviceapp -Admin
+			$ProfileServiceAppSecurity = Get-SPServiceApplicationSecurity $ServiceAppIDToSecure -Admin
 
 			## Create a variable that contains the claims principal for app pool and farm user accounts
 			$MySiteAppPoolAcctPrincipal = New-SPClaimsPrincipal -Identity $MySiteAppPoolAcct -IdentityType WindowsSamAccountName
@@ -1021,7 +1036,7 @@ Function CreateUserProfileServiceApplication
 			Grant-SPObjectSecurity $ProfileServiceAppSecurity -Principal $FarmAcctPrincipal -Rights "Full Control"
 
 			## Apply the changes to the User Profile service application
-			Set-SPServiceApplicationSecurity $serviceapp -objectSecurity $ProfileServiceAppSecurity -Admin
+			Set-SPServiceApplicationSecurity $ServiceAppIDToSecure -objectSecurity $ProfileServiceAppSecurity -Admin
 			
 			## Launch My Site host
 			Write-Host -ForegroundColor White " - Launching $MySiteURL`:$MySitePort..."
@@ -1030,13 +1045,6 @@ Function CreateUserProfileServiceApplication
 			Write-Host -ForegroundColor White "- Done creating $UserProfileServiceName."
       	}
         
-		## Fix up the schema for $FarmAccount in case we are using a dedicated install account
-		If (!($RunningAsFarmAcct)) 
-		{
-			$ProfileServiceApp = Get-SPServiceApplication |?{$_.TypeName -eq $UserProfileServiceName}
-			If ($ProfileServiceApp) {Fix-DBSchema $ProfileDB}
-		}
-
 		## Start User Profile Synchronization Service
 		## Get User Profile Service
 		$ProfileServiceApp = Get-SPServiceApplication |?{$_.DisplayName -eq $UserProfileServiceName}
@@ -1582,6 +1590,98 @@ Function CreatePowerPivotService
 	}
 }
 If ($CreatePowerPivot -eq "1") {CreatePowerPivotService}
+#EndRegion
+
+#Region Remove LocalSystem account from default services
+## AMW 1.7.3
+function ApplyServiceAccountToTracing
+{
+	Try
+	{
+		Write-Host -ForegroundColor White "- Applying service account $AppPoolAcct to Tracing Service SPTraceV4..."
+        $tracingService = (Get-SPFarm).Services | where {$_.Name -eq "SPTraceV4"}
+        $serviceAccount = Get-SPManagedAccount $AppPoolAcct
+        $tracingService.ProcessIdentity.CurrentIdentityType = "SpecificUser"
+        $tracingService.ProcessIdentity.ManagedAccount = $serviceAccount
+        $tracingService.ProcessIdentity.Update()
+        $tracingService.ProcessIdentity.Deploy()
+        $tracingService.Update()
+		Write-Host -ForegroundColor White "- Done."
+	}
+	Catch
+	{
+		$_
+		Write-Warning "- An error occurred with the service account setting for SPTraceV4."
+	}
+}
+## Not used in farm setup but removes the health warning
+function ApplyServiceAccountToFoundationSearch
+{
+	Try
+	{
+		Write-Host -ForegroundColor White "- Applying service account $AppPoolAcct to Service SPSearch4..."
+        
+        $SPSearch4Service = (Get-SPFarm).Services | where {$_.Name -eq "SPSearch4"}
+        $serviceAccount = Get-SPManagedAccount $AppPoolAcct
+        $SPSearch4Service.ProcessIdentity.CurrentIdentityType = "SpecificUser"
+        $SPSearch4Service.ProcessIdentity.ManagedAccount = $serviceAccount
+        $SPSearch4Service.ProcessIdentity.Update()
+        $SPSearch4Service.ProcessIdentity.Deploy()
+        $SPSearch4Service.Update()
+        
+		Write-Host -ForegroundColor White "- Done."
+	}
+	Catch
+	{
+		$_
+		Write-Warning "- An error occurred with the service account setting for SPSearch4."
+	}
+}
+
+ApplyServiceAccountToTracing
+ApplyServiceAccountToFoundationSearch
+#EndRegion
+
+#Region Setup Object Cache user for web applications 
+## AMW 1.7.2
+## Refere to http://technet.microsoft.com/en-us/library/ff758656.aspx
+## Updated based on Gary Lapointe example script to include Policy settings 18/10/2010
+function Set-WebAppUserPolicy($webApp, $userName,$displayName, $perm) {
+    [Microsoft.SharePoint.Administration.SPPolicyCollection]$policies = $webApp.Policies
+    [Microsoft.SharePoint.Administration.SPPolicy]$policy = $policies.Add($userName, $displayName)
+    [Microsoft.SharePoint.Administration.SPPolicyRole]$policyRole = $webApp.PolicyRoles | where {$_.Name -eq $perm}
+    if ($policyRole -ne $null) {
+        $policy.PolicyRoleBindings.Add($policyRole)
+    }
+    $webApp.Update()
+}
+
+function ConfigureObjectCache
+{
+	Try
+	{
+   		Write-Host -ForegroundColor White "- Applying object cache..."
+        $webapp = Get-SPWebApplication | Where-Object {$_.DisplayName -eq $PortalName}
+        If ($webapp -ne $Null)
+        {
+   		   Write-Host -ForegroundColor White "- Applying object cache to portal..."
+           $webapp.Properties["portalsuperuseraccount"] = $SuperUserAcc
+	       Set-WebAppUserPolicy $webApp $SuperUserAcc "Super User (Object Cache)"  "Full Control"
+
+           $webapp.Properties["portalsuperreaderaccount"] = $SuperReaderAcc
+	       Set-WebAppUserPolicy $webApp $SuperReaderAcc "Super Reader (Object Cache)" "Full Read"
+           $webapp.Update()        
+    	   write-Host -ForegroundColor White "- Done."
+        }
+	}
+	Catch
+	{
+		$_
+		Write-Warning "- An error occurred applying object cache to portal."
+	}
+}
+
+ConfigureObjectCache
 #EndRegion
 
 #Region End Banner
