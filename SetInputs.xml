@@ -7,6 +7,9 @@
     <FarmAcctEmail></FarmAcctEmail>
     <ConfigFile>config.xml</ConfigFile>
     <OfflineInstall>0</OfflineInstall>
+	<!-- You will almost always want to leave ConfigureFarm to 1, since the script will detect whether this is the first server in a farm, or if there is an existing farm.-->
+	<ConfigureFarm>1</ConfigureFarm>
+	<!-- If this machine is to host the Central Admin web app (even if not the primary entry point) you should leave CreateCentralAdmin set to 1 -->
     <CreateCentralAdmin>1</CreateCentralAdmin>
     <CentralAdminContentDB>AdminContentDB</CentralAdminContentDB>
     <CentralAdminPort>2010</CentralAdminPort>

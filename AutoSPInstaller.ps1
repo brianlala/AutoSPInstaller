@@ -1,5 +1,5 @@
 ############################################################################ 
-## AutoSPInstaller 1.8
+## AutoSPInstaller 1.9
 ## 1.7.1  AMW - added permission to metadata service for mysites app pool
 ## 1.7.2 15/10/10 AMW - Added SuperUser and SuperReader
 ## 1.7.3 18/10/10 AMW - Fixed setting domain accounts for SPSearch4 abd SPTraceV4 services
@@ -27,8 +27,8 @@ Write-Host -ForegroundColor White "- Reading Input File $InputFile..."
 $xmlinput = [xml] (get-content $InputFile)
 $item = $xmlinput.SP2010Config.Farm
 ## Read the Farm parameters
-$id                       					= $item.getAttribute("id")
-$FarmName                 					= $item.FarmName
+# $id                       					= $item.getAttribute("id")
+# $FarmName                 					= $item.FarmName
 $DBServer                 					= $item.DBServer
 ## Fix up localhost with proper computer name
 If ($DBServer -like "*localhost*") {$DBServer = $DBServer -replace "localhost","$env:COMPUTERNAME"}
@@ -40,6 +40,7 @@ $ConfigFile                                 = $item.ConfigFile
 If (($ConfigFile -eq "") -or ($ConfigFile -eq $null)) {$ConfigFile = "config.xml"} ## Set the default name of the config file for SP2010 binary installation, in case we haven't specified one
 $DisableUnneededServices  					= $item.DisableUnneededServices
 $OfflineInstall								= $item.OfflineInstall
+$ConfigureFarm							= $item.ConfigureFarm
 $CreateCentralAdmin							= $item.CreateCentralAdmin
 $CreateMetadataServiceApp 					= $item.CreateMetadataServiceApp
 $CreateUserProfileApp     					= $item.CreateUserProfileApp     
@@ -109,7 +110,7 @@ $SuperUserAcc                               = $item.SuperUserAcc
 $SuperReaderAcc                             = $item.SuperReaderAcc
 #End
 
-$stsadm = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\14\BIN\stsadm.exe"
+$PSConfig = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\14\BIN\psconfig.exe"
 
 $0 = $myInvocation.MyCommand.Definition
 $dp0 = [System.IO.Path]::GetDirectoryName($0)
@@ -564,6 +565,7 @@ try
 catch {""}
 If ($SPFarm -eq $null)
 {
+	[bool]$FarmExists = $False
 	try
 	{
 		Write-Host -ForegroundColor White " - Attempting to join farm on `"$ConfigDB`"..."
@@ -577,7 +579,11 @@ If ($SPFarm -eq $null)
 			If (-not $?) {throw}
 			Else {$FarmMessage = "- Done creating configuration database for farm."}
 		}
-		Else {$FarmMessage = "- Done joining farm."}
+		Else 
+		{
+			$FarmMessage = "- Done joining farm."
+			[bool]$FarmExists = $True
+		}
 	Write-Host -ForegroundColor White " - Creating Version registry value (workaround for bug in PS-based install)"
 	Write-Host -ForegroundColor White -NoNewline " - Getting version number... "
 	$SPBuild = "$($(Get-SPFarm).BuildVersion.Major).0.0.$($(Get-SPFarm).BuildVersion.Build)"
@@ -591,28 +597,19 @@ If ($SPFarm -eq $null)
 		break
 	}
 }
-Else {$FarmMessage = "- $env:COMPUTERNAME is already joined to farm on `"$ConfigDB`"."}
+Else 
+{
+	[bool]$FarmExists = $True
+	$FarmMessage = "- $env:COMPUTERNAME is already joined to farm on `"$ConfigDB`"."
+}
 Write-Host -ForegroundColor White $FarmMessage
 #EndRegion
 
-#Region Create Central Admin
+#Region Configure Farm
 Function CreateCentralAdmin
 {
-	Write-Host -ForegroundColor White "- Creating and configuring Central Administration..."
 	try
 	{
-		## Install Help Files
-		Write-Host -ForegroundColor White " - Installing Help Collection..."
-		Install-SPHelpCollection -All
-		## Secure resources
-		Write-Host -ForegroundColor White " - Securing Resources..."
-		Initialize-SPResourceSecurity
-		## Install Services
-		Write-Host -ForegroundColor White " - Installing Services..."
-		Install-SPService
-		## Install (all) features
-		Write-Host -ForegroundColor White " - Installing Features..."
-		$Features = Install-SPFeature –AllExistingFeatures -Force
 		## Create Central Admin
 		Write-Host -ForegroundColor White " - Creating Central Admin site..."
 		$NewCentralAdmin = New-SPCentralAdministration -Port $CentralAdminPort -WindowsAuthProvider "NTLM" -ErrorVariable err
@@ -620,8 +617,66 @@ Function CreateCentralAdmin
 		Write-Host -ForegroundColor Blue " - Waiting for Central Admin site to provision..." -NoNewline
 		sleep 5
 		Write-Host -BackgroundColor Blue -ForegroundColor Black "Done!"
-		Write-Host -ForegroundColor White " - Installing Application Content..."
-		Install-SPApplicationContent
+	}
+	catch	
+	{
+   		If ($err -like "*update conflict*")
+		{
+			Write-Warning " - A concurrency error occured, trying again."
+			CreateCentralAdmin
+		}
+		Else 
+		{
+			Write-Output $_
+			Pause
+			break
+		}
+	}
+}
+
+Function ConfigureFarm
+{
+	Write-Host -ForegroundColor White "- Configuring the SharePoint farm/server..."
+	try
+	{
+		If (!($FarmExists))
+		{
+			## Install Help Files
+			Write-Host -ForegroundColor White " - Installing Help Collection..."
+			Install-SPHelpCollection -All
+			$SPHelpTimer = Get-SPTimerJob | ? {$_.TypeName -eq "Microsoft.SharePoint.Help.HelpCollectionInstallerJob"} | Select-Object -Last 1
+			## Wait for the SP Help Collection timer job to complete
+			Write-Host -ForegroundColor Blue " - Waiting for Help Collection Installation timer job to complete..." -NoNewline
+			While ($SPHelpTimer.Status -eq "Online")
+			{
+				Write-Host -ForegroundColor Blue "." -NoNewline
+		  		Start-Sleep 1
+		  		$SPHelpTimer = Get-SPTimerJob | ? {$_.TypeName -eq "Microsoft.SharePoint.Help.HelpCollectionInstallerJob"} | Select-Object -Last 1
+			}
+	    	Write-Host -BackgroundColor Blue -ForegroundColor Black "Done."
+		}
+		## Secure resources
+		Write-Host -ForegroundColor White " - Securing Resources..."
+		Initialize-SPResourceSecurity
+		## Install Services
+		Write-Host -ForegroundColor White " - Installing Services..."
+		Install-SPService
+		If (!($FarmExists))
+		{
+			## Install (all) features
+			Write-Host -ForegroundColor White " - Installing Features..."
+			$Features = Install-SPFeature –AllExistingFeatures -Force
+		}
+		##Detect if Central Admin URL already exists, i.e. if Central Admin web app is already provisioned on the local computer
+		$CentralAdmin = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.Status -eq "Online"} | ? {$_.Url -like "http://$($env:COMPUTERNAME):$CentralAdminPort*"}
+		##Provision CentralAdmin if indicated in SetInputs.xml and the CA web app doesn't already exist
+		If (($CreateCentralAdmin -eq "1") -and (!($CentralAdmin))) {CreateCentralAdmin}
+		##Install application content if this is a new farm
+		If (!($FarmExists))
+		{
+			Write-Host -ForegroundColor White " - Installing Application Content..."
+			Install-SPApplicationContent
+		}
 	}
 	catch	
 	{
@@ -637,9 +692,17 @@ Function CreateCentralAdmin
 			break
 		}
 	}
-	Write-Host -ForegroundColor White "- Done creating Central Administration."
+	Write-Host -ForegroundColor White "- Completed initial farm/server config."
+	
+	## If there were language packs installed we need to run psconfig to configure them
+	If (($InstalledOfficeServerLanguages.Count -gt 1))# -and (!($FarmExists)))
+	{
+		Write-Host -ForegroundColor White "- Configuring language packs..."
+		## Run PSConfig.exe per http://technet.microsoft.com/en-us/library/cc262108.aspx
+		Start-Process -FilePath $PSConfig -ArgumentList "-cmd upgrade -inplace v2v -passphrase $FarmPassPhrase -force -wait" -NoNewWindow -Wait
+	}
 }
-If ($CreateCentralAdmin -eq "1") {CreateCentralAdmin}
+If ($ConfigureFarm -eq "1") {ConfigureFarm}
 Write-Progress -Activity "Installing SharePoint (Unattended)" -Status "Done." -Completed
 
 #EndRegion
@@ -812,16 +875,17 @@ Function AssignCert
 	If (!$Cert)
 	{
 		Write-Host -ForegroundColor White " - None found."
-		If (Test-Path "$dp0\makecert.exe")
+		$MakeCert = "$env:ProgramFiles\Microsoft Office Servers\14.0\Tools\makecert.exe"
+		If (Test-Path "$MakeCert")
 		{
 			Write-Host -ForegroundColor White " - Creating new self-signed certificate..."
-			Start-Process -NoNewWindow -Wait -FilePath "$dp0\makecert.exe" -ArgumentList "-r -pe -n `"CN=$SSLHostHeader`" -eku 1.3.6.1.5.5.7.3.1 -ss My -sr localMachine -sky exchange -sp `"Microsoft RSA SChannel Cryptographic Provider`" -sy 12"
+			Start-Process -NoNewWindow -Wait -FilePath "$MakeCert" -ArgumentList "-r -pe -n `"CN=$SSLHostHeader`" -eku 1.3.6.1.5.5.7.3.1 -ss My -sr localMachine -sky exchange -sp `"Microsoft RSA SChannel Cryptographic Provider`" -sy 12"
 			$Cert = Get-ChildItem cert:\LocalMachine\My | ? {$_.Subject -eq "CN=$SSLHostHeader"}
 			$CertSubject = $Cert.Subject
 		}
 		Else 
 		{
-			Write-Host -ForegroundColor White " - `"$dp0\makecert.exe`" not found."
+			Write-Host -ForegroundColor White " - `"$MakeCert`" not found."
 			Write-Host -ForegroundColor White " - Looking for any machine-named certificates we can use..."
 			## Select the first certificate with the most recent valid date
 			$Cert = Get-ChildItem cert:\LocalMachine\My | ? {$_.Subject -like "*$env:COMPUTERNAME"} | Sort-Object NotBefore -Desc | Select-Object -First 1
@@ -1053,7 +1117,8 @@ Function CreateUserProfileServiceApplication
 			## Get User Profile Synchronization Service
 			Write-Host -ForegroundColor White "- Checking User Profile Synchronization Service..." -NoNewline
 			$ProfileSyncService = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Administration.ProfileSynchronizationServiceInstance"}
-			If ($ProfileSyncService.Status -ne "Online")
+			##Attempt to start if there's only 1 Profile Sync Service instance in the farm as we probably don't want to start multiple Sync instances in the farm (running against the same Profile Service at least)
+			If (!($ProfileSyncService.Count -gt 1) -and ($ProfileSyncService.Status -ne "Online"))
 			{
 				## Inspired by http://technet.microsoft.com/en-us/library/ee721049.aspx
 				If (!($FarmAcct)) {$FarmAcct = (Get-SPFarm).DefaultServiceAccount}
@@ -1638,7 +1703,8 @@ function ApplyServiceAccountToFoundationSearch
 	}
 }
 
-ApplyServiceAccountToTracing
+# Need to remove ApplyServiceAccountToTracing for now as changing the account used for SPTraceV4 seems to mess up logging and more importantly, user profile sync
+# ApplyServiceAccountToTracing
 ApplyServiceAccountToFoundationSearch
 #EndRegion
 
@@ -1664,7 +1730,7 @@ function ConfigureObjectCache
         $webapp = Get-SPWebApplication | Where-Object {$_.DisplayName -eq $PortalName}
         If ($webapp -ne $Null)
         {
-   		   Write-Host -ForegroundColor White "- Applying object cache to portal..."
+   		   Write-Host -ForegroundColor White " - Applying object cache to portal..."
            $webapp.Properties["portalsuperuseraccount"] = $SuperUserAcc
 	       Set-WebAppUserPolicy $webApp $SuperUserAcc "Super User (Object Cache)"  "Full Control"
 
