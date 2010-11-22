@@ -402,7 +402,7 @@ Else
 		}
 	}
 
-	Write-Progress -Activity "Installing Prerequisite Software" -Status "Done." -Completed
+	#Write-Progress -Activity "Installing Prerequisite Software" -Status "Done." -Completed
 	Write-Host -ForegroundColor White "- All Prerequisite Software installed successfully."
 }
 #EndRegion
@@ -419,7 +419,7 @@ Else
 	## Install SharePoint Binaries
 	If (Test-Path "$bits\setup.exe")
 	{
-  		Write-Progress -Activity "Installing SharePoint (Unattended)" -Status "Installing SharePoint binaries..."
+  		#Write-Progress -Activity "Installing SharePoint (Unattended)" -Status "Installing SharePoint binaries..."
 		Write-Host -ForegroundColor White "- Installing SharePoint binaries..."
   		try
 		{
@@ -487,7 +487,7 @@ InstallSharepoint
 
 #Region Install Language Packs
 ## Detects any language packs in $bits\LanguagePacks folder and installs them.
-Write-Progress -Activity "Installing SharePoint (Unattended)" -Status "Installing Language Packs..."
+#Write-Progress -Activity "Installing SharePoint (Unattended)" -Status "Installing Language Packs..."
 ## Look for Server language packs
 $ServerLanguagePacks = (Get-ChildItem "$bits\LanguagePacks" -Name -Include ServerLanguagePack*.exe -ErrorAction SilentlyContinue)
 If ($ServerLanguagePacks)
@@ -546,7 +546,7 @@ ForEach ($Language in $InstalledOfficeServerLanguages)
 #EndRegion
 
 #Region Create/Join Farm
-Write-Progress -Activity "Installing SharePoint (Unattended)" -Status "Creating (or Joining) Farm..."
+#Write-Progress -Activity "Installing SharePoint (Unattended)" -Status "Creating (or Joining) Farm..."
 Write-Host -ForegroundColor White "- Creating & configuring (or joining) farm:"
 Write-Host -ForegroundColor White " - Enabling SP PowerShell cmdlets..."
 If ((Get-PsSnapin |?{$_.Name -eq "Microsoft.SharePoint.PowerShell"})-eq $null)
@@ -565,7 +565,6 @@ try
 catch {""}
 If ($SPFarm -eq $null)
 {
-	[bool]$FarmExists = $False
 	try
 	{
 		Write-Host -ForegroundColor White " - Attempting to join farm on `"$ConfigDB`"..."
@@ -582,7 +581,7 @@ If ($SPFarm -eq $null)
 		Else 
 		{
 			$FarmMessage = "- Done joining farm."
-			[bool]$FarmExists = $True
+			[bool]$FarmExists = $true
 		}
 	Write-Host -ForegroundColor White " - Creating Version registry value (workaround for bug in PS-based install)"
 	Write-Host -ForegroundColor White -NoNewline " - Getting version number... "
@@ -599,7 +598,7 @@ If ($SPFarm -eq $null)
 }
 Else 
 {
-	[bool]$FarmExists = $True
+	[bool]$FarmExists = $true
 	$FarmMessage = "- $env:COMPUTERNAME is already joined to farm on `"$ConfigDB`"."
 }
 Write-Host -ForegroundColor White $FarmMessage
@@ -615,7 +614,13 @@ Function CreateCentralAdmin
 		$NewCentralAdmin = New-SPCentralAdministration -Port $CentralAdminPort -WindowsAuthProvider "NTLM" -ErrorVariable err
 		If (-not $?) {throw}
 		Write-Host -ForegroundColor Blue " - Waiting for Central Admin site to provision..." -NoNewline
-		sleep 5
+		$CentralAdmin = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.Url -like "http://$($env:COMPUTERNAME):$CentralAdminPort*"}
+		While ($CentralAdmin.Status -ne "Online") 
+		{
+			Write-Host -ForegroundColor Blue "." -NoNewline
+			sleep 1
+			$CentralAdmin = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.Url -like "http://$($env:COMPUTERNAME):$CentralAdminPort*"}
+		}
 		Write-Host -BackgroundColor Blue -ForegroundColor Black "Done!"
 	}
 	catch	
@@ -634,19 +639,30 @@ Function CreateCentralAdmin
 	}
 }
 
+## Check if there is already more than one server in the farm (not including the database server)
+$SPFarm = Get-SPFarm | Where-Object {$_.Name -eq $ConfigDB}
+ForEach ($Srv in $SPFarm.Servers) {If (($Srv -like "*$DBServer*") -and ($DBServer -ne $env:COMPUTERNAME)) {[bool]$DBLocal = $false}}
+If (($($SPFarm.Servers.Count) -gt 1) -and ($DBLocal -eq $false)) {[bool]$FirstServer = $false}
+Else {[bool]$FirstServer = $true}
+
 Function ConfigureFarm
 {
 	Write-Host -ForegroundColor White "- Configuring the SharePoint farm/server..."
+	## Force a full configuration if this is the first web/app server in the farm
+	If ((!($FarmExists)) -or ($FirstServer -eq $true)) {[bool]$DoFullConfig = $true}
 	try
 	{
-		If (!($FarmExists))
+		If ($DoFullConfig)
 		{
 			## Install Help Files
-			Write-Host -ForegroundColor White " - Installing Help Collection..."
-			Install-SPHelpCollection -All
 			$SPHelpTimer = Get-SPTimerJob | ? {$_.TypeName -eq "Microsoft.SharePoint.Help.HelpCollectionInstallerJob"} | Select-Object -Last 1
+			#If (!($SPHelpTimer.Status -eq "Online")) ## Install help collection if there isn't already a timer job created & running
+			#{
+				Write-Host -ForegroundColor White " - Installing Help Collection..."
+				Install-SPHelpCollection -All
+			#}
 			## Wait for the SP Help Collection timer job to complete
-			Write-Host -ForegroundColor Blue " - Waiting for Help Collection Installation timer job to complete..." -NoNewline
+			<#Write-Host -ForegroundColor Blue " - Waiting for Help Collection Installation timer job to complete..." -NoNewline
 			While ($SPHelpTimer.Status -eq "Online")
 			{
 				Write-Host -ForegroundColor Blue "." -NoNewline
@@ -654,6 +670,7 @@ Function ConfigureFarm
 		  		$SPHelpTimer = Get-SPTimerJob | ? {$_.TypeName -eq "Microsoft.SharePoint.Help.HelpCollectionInstallerJob"} | Select-Object -Last 1
 			}
 	    	Write-Host -BackgroundColor Blue -ForegroundColor Black "Done."
+			#>
 		}
 		## Secure resources
 		Write-Host -ForegroundColor White " - Securing Resources..."
@@ -661,7 +678,7 @@ Function ConfigureFarm
 		## Install Services
 		Write-Host -ForegroundColor White " - Installing Services..."
 		Install-SPService
-		If (!($FarmExists))
+		If ($DoFullConfig)
 		{
 			## Install (all) features
 			Write-Host -ForegroundColor White " - Installing Features..."
@@ -669,10 +686,11 @@ Function ConfigureFarm
 		}
 		##Detect if Central Admin URL already exists, i.e. if Central Admin web app is already provisioned on the local computer
 		$CentralAdmin = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.Status -eq "Online"} | ? {$_.Url -like "http://$($env:COMPUTERNAME):$CentralAdminPort*"}
+		
 		##Provision CentralAdmin if indicated in SetInputs.xml and the CA web app doesn't already exist
 		If (($CreateCentralAdmin -eq "1") -and (!($CentralAdmin))) {CreateCentralAdmin}
 		##Install application content if this is a new farm
-		If (!($FarmExists))
+		If ($DoFullConfig)
 		{
 			Write-Host -ForegroundColor White " - Installing Application Content..."
 			Install-SPApplicationContent
@@ -695,7 +713,7 @@ Function ConfigureFarm
 	Write-Host -ForegroundColor White "- Completed initial farm/server config."
 	
 	## If there were language packs installed we need to run psconfig to configure them
-	If (($InstalledOfficeServerLanguages.Count -gt 1))# -and (!($FarmExists)))
+	If (($InstalledOfficeServerLanguages.Count -gt 1))
 	{
 		Write-Host -ForegroundColor White "- Configuring language packs..."
 		## Run PSConfig.exe per http://technet.microsoft.com/en-us/library/cc262108.aspx
@@ -703,7 +721,7 @@ Function ConfigureFarm
 	}
 }
 If ($ConfigureFarm -eq "1") {ConfigureFarm}
-Write-Progress -Activity "Installing SharePoint (Unattended)" -Status "Done." -Completed
+#Write-Progress -Activity "Installing SharePoint (Unattended)" -Status "Done." -Completed
 
 #EndRegion
 
@@ -1772,7 +1790,7 @@ If (!($RunningAsFarmAcct))
 	catch {Write-Host -ForegroundColor White " - $FarmAcct already removed from Administrators."}
 }
 
-Write-Progress -Activity "Installing SharePoint (Unattended)" -Status "Done." -Completed
+#Write-Progress -Activity "Installing SharePoint (Unattended)" -Status "Done." -Completed
 Write-Host -ForegroundColor White "- Finished!`a"
 $EndDate = Get-Date
 Write-Host -ForegroundColor White "-----------------------------------"
