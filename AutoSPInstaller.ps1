@@ -1,5 +1,5 @@
 ############################################################################ 
-## AutoSPInstaller 1.9
+## AutoSPInstaller 1.9.2
 ## 1.7.1  AMW - added permission to metadata service for mysites app pool
 ## 1.7.2 15/10/10 AMW - Added SuperUser and SuperReader
 ## 1.7.3 18/10/10 AMW - Fixed setting domain accounts for SPSearch4 abd SPTraceV4 services
@@ -1238,6 +1238,12 @@ Function CreateWSSUsageApp
 		{
 			Write-Host -ForegroundColor White "- Creating WSS Usage Application..."
 			New-SPUsageApplication -Name $WSSUsageApplication -DatabaseServer $DBServer -DatabaseName $WSSUsageDB | Out-Null
+			## Need this to resolve a known issue with the Usage Application Proxy not automatically starting/provisioning
+			## Thanks and credit to Jesper Nygaard Schiøtt (jesper@schioett.dk) per http://autospinstaller.codeplex.com/Thread/View.aspx?ThreadId=237578 ! 
+			Write-Host -ForegroundColor White " - Fixing Usage and Health Data Collection Proxy..."
+			$SPUsageApplicationProxy = Get-SPServiceApplicationProxy | where {$_.DisplayName -eq $WSSUsageApplication}
+			$SPUsageApplicationProxy.Provision()
+			## End Usage Proxy Fix
 			Write-Host -ForegroundColor White "- Done Creating WSS Usage Application."
 		}
 		Else {Write-Host -ForegroundColor White "- WSS Usage Application exists, continuing..."}
@@ -1248,6 +1254,58 @@ Function CreateWSSUsageApp
 	}
 }
 If ($CreateWSSUsageApp -eq "1") {CreateWSSUsageApp}
+
+#EndRegion
+
+#Region Create Web Analytics Service Application
+## Thanks and credit to Jesper Nygaard Schiøtt (jesper@schioett.dk) per http://autospinstaller.codeplex.com/Thread/View.aspx?ThreadId=237578 !
+
+Function CreateWebAnalyticsApp
+{
+	try
+	{
+		$GetWebAnalyticsServiceApplication = Get-SPWebAnalyticsServiceApplication $WebAnalyticsService -ea SilentlyContinue
+		If ($GetWebAnalyticsServiceApplication -eq $null)
+		{
+			$StagerSubscription = "<StagingDatabases><StagingDatabase ServerName='$DBServer' DatabaseName='$WebAnalyticsStagingDB'/></StagingDatabases>"
+			$WarehouseSubscription = "<ReportingDatabases><ReportingDatabase ServerName='$DBServer' DatabaseName='$WebAnalyticsReportingDB'/></ReportingDatabases>" 
+
+		    ## Managed Account
+		    $ManagedAccountGen = Get-SPManagedAccount | Where-Object {$_.UserName -eq $AppPoolAcct}
+		    if ($ManagedAccountGen -eq $NULL) { throw "- Managed Account $AppPoolAcct not found" }      
+			## App Pool
+			Write-Host -ForegroundColor White "- Getting Hosted Services Application Pool, creating if necessary..."
+		    $ApplicationPool = Get-SPServiceApplicationPool "SharePoint Hosted Services" -ea SilentlyContinue
+		    If ($ApplicationPool -eq $null)
+			{ 
+		    	$ApplicationPool = New-SPServiceApplicationPool "SharePoint Hosted Services" -account $ManagedAccountGen
+		        If (-not $?) { throw "Failed to create an application pool" }
+		    }	 
+				
+			Write-Host -ForegroundColor White "- Creating Web Analytics Service Application"
+		    $ServiceApplication = New-SPWebAnalyticsServiceApplication -Name $WebAnalyticsService -ReportingDataRetention 20 -SamplingRate 100 -ListOfReportingDatabases $WarehouseSubscription -ListOfStagingDatabases $StagerSubscription -ApplicationPool $ApplicationPool 
+
+		    ## Create Web Analytics Service Application Proxy
+			Write-Host -ForegroundColor White " - Creating Web Analytics Service Application Proxy"
+			$NewWebAnalyticsServiceApplicationProxy = New-SPWebAnalyticsServiceApplicationProxy  -Name $WebAnalyticsService -ServiceApplication $ServiceApplication.Name
+		     
+		    ## Start Analytics service instances
+			Write-Host -ForegroundColor White " - Starting Analytics Service instances ..."
+			$AnalyticsDataProcessingInstance = Get-SPServiceInstance | where-object {$_.Name -eq "WebAnalyticsServiceInstance"}
+			$AnalyticsWebServiceInstance = Get-SPServiceInstance | where-object {$_.TypeName -eq "Web Analytics Web Service"}
+		     
+		    $AnalyticsDataProcessingInstance | Start-SPServiceInstance | Out-Null
+		    $AnalyticsWebServiceInstance | Start-SPServiceInstance | Out-Null
+		}
+		Else {Write-Host -ForegroundColor White " - Web Analytics Service Application exists, continuing..."}
+	}
+	catch
+	{
+		Write-Output $_
+	}
+	
+}
+if ($CreateWebAnalytics -eq "1") {CreateWebAnalyticsApp}
 
 #EndRegion
 
