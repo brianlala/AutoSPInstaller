@@ -1,8 +1,10 @@
-\SP2010\AutoSPInstaller\AutoSPInstaller.ps1
+\SP2010\AutoSPInstaller\AutoSPInstallerLaunch.bat
+\SP2010\AutoSPInstaller\AutoSPInstallerInput.xml
+\SP2010\AutoSPInstaller\AutoSPInstallerMain.ps1
+\SP2010\AutoSPInstaller\AutoSPInstallerFunctions.ps1
+\SP2010\AutoSPInstaller\AutoSPInstallerFunctionsCustom.ps1
 \SP2010\AutoSPInstaller\config.xml
-\SP2010\AutoSPInstaller\Launch.bat
 \SP2010\AutoSPInstaller\README.rtf
-\SP2010\AutoSPInstaller\SetInputs.xml
 \SP2010\AutoSPInstaller\Hotfixes\
 \SP2010\AutoSPInstaller\Hotfixes\Windows6.0-KB971831-x64.msu
 \SP2010\AutoSPInstaller\Hotfixes\Windows6.1-KB976462-v2-x64.msu
