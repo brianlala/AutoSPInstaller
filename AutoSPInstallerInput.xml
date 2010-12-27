@@ -1,119 +1,117 @@
 <?xml version="1.0" ?>
 <Configuration Environment="Dev" Version="1.7.4">
-  <Install>
-    <ConfigFile>config.xml</ConfigFile>
-    <OfflineInstall>1</OfflineInstall>
-    <Disable>
-      <Loopback>1</Loopback>
-      <UnusedServices>1</UnusedServices>
-    </Disable>
-  </Install>
-  <Farm>
-    <Passphrase></Passphrase>
-    <Account Username="DOMAIN\spfarm" Password="" Email="spfarm@domain.com" AddToLocalAdminsDuringSetup="1" />
-    <!-- common name spfarm -->
-    <CentralAdmin create="1">
-      <CreateCentralAdmin>1</CreateCentralAdmin>
-      <CentralAdminContentDB>AdminContentDB</CentralAdminContentDB>
-      <CentralAdminPort>2010</CentralAdminPort>
-    </CentralAdmin>
-    <Database>
-      <DBServer>localhost</DBServer>
-      <!--Hint: if you leave <DBServer> blank or specify localhost, script will assume the local server for SQL databases-->
-      <DBPrefix>localhost</DBPrefix>
-      <!--Hint: if you put localhost for <DBPrefix>, script will prepend each database with the name of the server on which the script is run. Useful for identifying databases on shared SQL instances. Otherwise specify your own value, or just leave blank for NO prefix.-->
-      <ConfigDB>ConfigDB</ConfigDB>
-    </Database>
-    <Services>
-      <ManagedMetadataService create="1">
-          <Database>MetaDataDB</Database>
-      </ManagedMetadataService>
+    <Install>
+        <ConfigFile>config.xml</ConfigFile>
+        <OfflineInstall>1</OfflineInstall>
+        <Disable>
+            <Loopback>1</Loopback>
+            <UnusedServices>1</UnusedServices>
+        </Disable>
+    </Install>
+    <Farm>
+        <Passphrase></Passphrase>
+        <Account Username="DOMAIN\spfarm" Password="" Email="spfarm@domain.com" AddToLocalAdminsDuringSetup="1" />
+        <!-- common name spfarm -->
+        <CentralAdmin Provision="True">
+            <CentralAdminContentDB>AdminContentDB</CentralAdminContentDB>
+            <CentralAdminPort>2010</CentralAdminPort>
+        </CentralAdmin>
+        <Database>
+            <DBServer>localhost</DBServer>
+            <!--Hint: if you leave <DBServer> blank or specify localhost, script will assume the local server for SQL databases-->
+            <DBPrefix>localhost</DBPrefix>
+            <!--Hint: if you put localhost for <DBPrefix>, script will prepend each database with the name of the server on which the script is run. Useful for identifying databases on shared SQL instances. Otherwise specify your own value, or just leave blank for NO prefix.-->
+            <ConfigDB>ConfigDB</ConfigDB>
+        </Database>
+        <Services>
+            <ManagedMetadataService create="1">
+                <Database>MetaDataDB</Database>
+            </ManagedMetadataService>
             <UserProfileService Provision="True">
-            <Name>User Profile Service Application</Name>
-            <ProfileDB>ProfileDB</ProfileDB>
-            <SyncDB>SyncDB</SyncDB>
-            <SocialDB>SocialDB</SocialDB>
-            <PersonalSiteRelativePath>personal</PersonalSiteRelativePath>        
-      </UserProfileService>
-      <StartSearchQueryAndSiteSettingsService>1</StartSearchQueryAndSiteSettingsService>
-      <StartEnterpriseSearch>1</StartEnterpriseSearch>
-      <CreatePowerPivot>0</CreatePowerPivot>
-    </Services>
-    <ManagedAccounts>
-      <ManagedAccount username="DOMAIN\spservice" Password="" CommonName="spservice"/>
-      <ManagedAccount username="DOMAIN\portalacc" Password="" CommonName="content"/>
-      <ManagedAccount username="DOMAIN\mysitesacc" Password="" CommonName="content"/>
-      <ManagedAccount username="DOMAIN\content03" Password="" CommonName="content"/>
-    </ManagedAccounts>
-  </Farm>
-  <WebApplications>
-    <WebApplication type="Portal" name="Portal Home" applicationPool="PortalHome" applicationPoolAccount="DOMAIN\portalacc" url="http://portal" port="80" databaseName="PortalHome_Content" useSSL="0" useClaims="0">
-      <ManagedPaths>
-        <ManagedPath relativeUrl="search" explicit="true" />
-        <ManagedPath relativeUrl="help" explicit="true" />
-        <ManagedPath relativeUrl="sites" delete="true" />
-      </ManagedPaths>
-      <SiteCollections>
-        <SiteCollection siteUrl="http://localhost" admin="DOMAIN\spinstall" name="Portal Home" description="Portal Home Site" SearchUrl="http://portal/search" CustomTemplate="false" Template="SPSPORTAL#0" LCID="1033">
-          <!--<UserSolutions>
+                <Name>User Profile Service Application</Name>
+                <ProfileDB>ProfileDB</ProfileDB>
+                <SyncDB>SyncDB</SyncDB>
+                <SocialDB>SocialDB</SocialDB>
+            </UserProfileService>
+            <StartSearchQueryAndSiteSettingsService>1</StartSearchQueryAndSiteSettingsService>
+            <StartEnterpriseSearch>1</StartEnterpriseSearch>
+            <CreatePowerPivot>0</CreatePowerPivot>
+        </Services>
+        <ManagedAccounts>
+            <ManagedAccount username="DOMAIN\spservice" Password="" CommonName="spservice"/>
+            <ManagedAccount username="DOMAIN\portalacc" Password="" CommonName="portalapppool"/>
+            <ManagedAccount username="DOMAIN\mysitesacc" Password="" CommonName="mysiteapppool"/>
+            <ManagedAccount username="DOMAIN\content03" Password="" CommonName="searchservice"/>
+        </ManagedAccounts>
+    </Farm>
+    <WebApplications>
+        <WebApplication type="Portal" name="Portal Home" applicationPool="PortalHome" applicationPoolAccount="DOMAIN\portalacc" url="http://localhost" HostHeader="localhost" port="80" databaseName="PortalHome_Content" useClaims="1">
+            <ManagedPaths>
+                <ManagedPath relativeUrl="search" explicit="true" />
+                <ManagedPath relativeUrl="help" explicit="true" />
+                <ManagedPath relativeUrl="sites" delete="true" />
+            </ManagedPaths>
+            <SiteCollections>
+                <SiteCollection siteUrl="http://localhost" admin="DOMAIN\spinstall" name="Portal Home" description="Portal Home Site" SearchUrl="http://localhost/search" CustomTemplate="false" Template="SPSPORTAL#0" LCID="1033">
+                    <!--<UserSolutions>
             <UserSolution path=".\Solutions\PortalHomeSite.wsp" name="PortalHomeSite.wsp" />
           </UserSolutions>-->
-          <!--<Features>
+                    <!--<Features>
             <Feature name="Portal.Branding_PortalHomeBranding" />
           </Features>-->
-        </SiteCollection>
-      </SiteCollections>
-    </WebApplication>
-    <WebApplication type="MySiteHost" name="MySiteHost" applicationPool="MySites" applicationPoolAccount="DOMAIN\mysitesacc" url="http://mysites" port="80" databaseName="MySites_Content_01" useSSL="0" useClaims="1">
-      <SiteCollections>
-        <SiteCollection siteUrl="http://mysites" admin="DOMAIN\portal.owner" name="My Site Host" description="My Site Host" SearchUrl="http://portal/search" CustomTemplate="false" Template="SPSMSITEHOST#0" LCID="1033" />
-      </SiteCollections>
-      <ManagedPaths>
-        <ManagedPath relativeUrl="personal" explicit="false"/>
-        <ManagedPath relativeUrl="sites" delete="true" />
-      </ManagedPaths>
-    </WebApplication>
-  </WebApplications>
-  <Services>
-    <EnterpriseSearchService ContactEmail=""
-								ConnectionTimeout="60"
-								AcknowledgementTimeout="60"
-								ProxyType="Default"
-								IgnoreSSLWarnings="false"
-								InternetIdentity="Mozilla/4.0 (compatible; MSIE 4.01; Windows NT; MS Search 6.0 Robot)"
-								IndexLocation="C:\Program Files\Microsoft Office Servers\14.0\Data\Office Server\Applications"
-								PerformanceLevel="PartlyReduced"
-								Account="DOMAIN\SPSearch"
-                                ShareName="SearchShare">
-      <EnterpriseSearchServiceApplications>
-        <!-- Need to refactor out these settings once install proved-->
-        <EnterpriseSearchServiceApplication Name="Enterprise Search Service Application"
-													DatabaseServer="localhost"
-													DatabaseName="SharePoint_Search"
-													FailoverDatabaseServer=""
-													Partitioned="false"
-													Partitions="1"
-													SearchServiceApplicationType="Regular">
-          <ApplicationPool Name="SharePoint Enterprise Search Application Pool" Account="DOMAIN\acc" Password="" />
-          <CrawlServers>
-            <Server Name="localhost" />
-          </CrawlServers>
-          <QueryServers>
-            <Server Name="localhost" />
-          </QueryServers>
-          <SearchQueryAndSiteSettingsServers>
-            <Server Name="localhost" />
-          </SearchQueryAndSiteSettingsServers>
-          <AdminComponent>
-            <Server Name="localhost" />
-            <ApplicationPool Name="SharePoint Enterprise Search Application Pool" Account="DOMAIN\acc" />
-          </AdminComponent>
-          <Proxy Name="Enterprise Search Service Application Proxy" Partitioned="false">
-            <ProxyGroup Name="Default" />
-          </Proxy>
-        </EnterpriseSearchServiceApplication>
-      </EnterpriseSearchServiceApplications>
-    </EnterpriseSearchService>
+                </SiteCollection>
+            </SiteCollections>
+        </WebApplication>
+        <WebApplication type="MySiteHost" name="MySiteHost" applicationPool="MySites" applicationPoolAccount="DOMAIN\mysitesacc" url="http://localhost" HostHeader="localhost" port="8080" databaseName="MySites_Content" useSSL="0" useClaims="1">
+            <SiteCollections>
+                <SiteCollection siteUrl="http://localhost:8080" admin="DOMAIN\portal.owner" name="My Site Host" description="My Site Host" SearchUrl="http://localhost/search" CustomTemplate="false" Template="SPSMSITEHOST#0" LCID="1033" />
+            </SiteCollections>
+            <ManagedPaths>
+                <ManagedPath relativeUrl="personal" explicit="false"/>
+                <ManagedPath relativeUrl="sites" delete="true" />
+            </ManagedPaths>
+        </WebApplication>
+    </WebApplications>
+    <Services>
+        <EnterpriseSearchService ContactEmail=""
+                                    ConnectionTimeout="60"
+                                    AcknowledgementTimeout="60"
+                                    ProxyType="Default"
+                                    IgnoreSSLWarnings="false"
+                                    InternetIdentity="Mozilla/4.0 (compatible; MSIE 4.01; Windows NT; MS Search 6.0 Robot)"
+                                    IndexLocation="C:\Program Files\Microsoft Office Servers\14.0\Data\Office Server\Applications"
+                                    PerformanceLevel="PartlyReduced"
+                                    Account="DOMAIN\SPSearch"
+                                    ShareName="SearchShare">
+            <EnterpriseSearchServiceApplications>
+                <!-- Need to refactor out these settings once install proved-->
+                <EnterpriseSearchServiceApplication Name="Enterprise Search Service Application"
+                                                            DatabaseServer="localhost"
+                                                            DatabaseName="SharePoint_Search"
+                                                            FailoverDatabaseServer=""
+                                                            Partitioned="false"
+                                                            Partitions="1"
+                                                            SearchServiceApplicationType="Regular">
+                    <ApplicationPool Name="SharePoint Enterprise Search Application Pool" Account="DOMAIN\acc" Password="" />
+                    <CrawlServers>
+                        <Server Name="localhost" />
+                    </CrawlServers>
+                    <QueryServers>
+                        <Server Name="localhost" />
+                    </QueryServers>
+                    <SearchQueryAndSiteSettingsServers>
+                        <Server Name="localhost" />
+                    </SearchQueryAndSiteSettingsServers>
+                    <AdminComponent>
+                        <Server Name="localhost" />
+                        <ApplicationPool Name="SharePoint Enterprise Search Application Pool" Account="DOMAIN\acc" />
+                    </AdminComponent>
+                    <Proxy Name="Enterprise Search Service Application Proxy" Partitioned="false">
+                        <ProxyGroup Name="Default" />
+                    </Proxy>
+                </EnterpriseSearchServiceApplication>
+            </EnterpriseSearchServiceApplications>
+        </EnterpriseSearchService>
         <StateService Provision="True">
             <StateServiceDB>StateServiceDB</StateServiceDB>
         </StateService>
@@ -127,5 +125,5 @@
         <SecureStoreService Provision="True">
             <SecureStoreDB>SecureStoreDB</SecureStoreDB>
         </SecureStoreService>
-  </Services>
+    </Services>
 </Configuration>
