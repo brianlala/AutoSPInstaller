@@ -45,7 +45,7 @@
         </ManagedAccounts>
     </Farm>
     <WebApplications>
-        <WebApplication type="Portal" name="Portal Home" applicationPool="PortalHome" applicationPoolAccount="DOMAIN\portalacc" url="http://localhost" HostHeader="localhost" port="80" databaseName="PortalHome_Content" useClaims="1">
+        <WebApplication type="Portal" name="Portal Home" applicationPool="PortalHome" applicationPoolAccount="DOMAIN\portalacc" url="http://localhost" port="80" databaseName="PortalHome_Content" useClaims="1">
             <ManagedPaths>
                 <ManagedPath relativeUrl="search" explicit="true" />
                 <ManagedPath relativeUrl="help" explicit="true" />
@@ -62,7 +62,7 @@
                 </SiteCollection>
             </SiteCollections>
         </WebApplication>
-        <WebApplication type="MySiteHost" name="MySiteHost" applicationPool="MySites" applicationPoolAccount="DOMAIN\mysitesacc" url="http://localhost" HostHeader="localhost" port="8080" databaseName="MySites_Content" useSSL="0" useClaims="1">
+        <WebApplication type="MySiteHost" name="MySiteHost" applicationPool="MySites" applicationPoolAccount="DOMAIN\mysitesacc" url="http://localhost" port="8080" databaseName="MySites_Content" useClaims="1">
             <SiteCollections>
                 <SiteCollection siteUrl="http://localhost:8080" admin="DOMAIN\portal.owner" name="My Site Host" description="My Site Host" SearchUrl="http://localhost/search" CustomTemplate="false" Template="SPSMSITEHOST#0" LCID="1033" />
             </SiteCollections>
@@ -73,7 +73,8 @@
         </WebApplication>
     </WebApplications>
     <Services>
-        <EnterpriseSearchService ContactEmail=""
+        <EnterpriseSearchService Provision="True"
+									ContactEmail=""
                                     ConnectionTimeout="60"
                                     AcknowledgementTimeout="60"
                                     ProxyType="Default"
@@ -92,7 +93,7 @@
                                                             Partitioned="false"
                                                             Partitions="1"
                                                             SearchServiceApplicationType="Regular">
-                    <ApplicationPool Name="SharePoint Enterprise Search Application Pool" Account="DOMAIN\acc" Password="" />
+                    <ApplicationPool Name="SharePoint Enterprise Search Application Pool" Account="DOMAIN\SPSearch" Password="" />
                     <CrawlServers>
                         <Server Name="localhost" />
                     </CrawlServers>
@@ -104,7 +105,7 @@
                     </SearchQueryAndSiteSettingsServers>
                     <AdminComponent>
                         <Server Name="localhost" />
-                        <ApplicationPool Name="SharePoint Enterprise Search Application Pool" Account="DOMAIN\acc" />
+                        <ApplicationPool Name="SharePoint Enterprise Search Application Pool" Account="DOMAIN\SPSearch" />
                     </AdminComponent>
                     <Proxy Name="Enterprise Search Service Application Proxy" Partitioned="false">
                         <ProxyGroup Name="Default" />
