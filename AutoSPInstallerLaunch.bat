@@ -53,7 +53,7 @@ IF NOT "%ExecutionPolicy%"=="Bypass" IF NOT "%ExecutionPolicy%"=="Unrestricted" 
 	)
 GOTO LAUNCHSCRIPT
 :LAUNCHSCRIPT
-"%SYSTEMROOT%\system32\windowspowershell\v1.0\powershell.exe" -command "& '%~dp0\AutoSPInstallerMain.ps1' '%InputFile%'"
+"%SYSTEMROOT%\system32\windowspowershell\v1.0\powershell.exe" -Command Start-Process "$PSHOME\powershell.exe" -Verb runAs -ArgumentList "'%~dp0\AutoSPInstallerMain.ps1 %InputFile%'"
 GOTO END
 :END
 ENDLOCAL
