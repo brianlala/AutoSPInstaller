@@ -2,15 +2,15 @@
 <Configuration Environment="Dev" Version="1.7.4">
     <Install>
         <ConfigFile>config.xml</ConfigFile>
-        <OfflineInstall>1</OfflineInstall>
+        <OfflineInstall>True</OfflineInstall>
         <Disable>
-            <Loopback>1</Loopback>
-            <UnusedServices>1</UnusedServices>
+            <Loopback>True</Loopback>
+            <UnusedServices>True</UnusedServices>
         </Disable>
     </Install>
     <Farm>
         <Passphrase></Passphrase>
-        <Account Username="DOMAIN\spfarm" Password="" Email="spfarm@domain.com" AddToLocalAdminsDuringSetup="1" />
+        <Account Username="DOMAIN\spfarm" Password="" Email="spfarm@domain.com" AddToLocalAdminsDuringSetup="True" />
         <!-- common name spfarm -->
         <CentralAdmin Provision="True">
             <CentralAdminContentDB>AdminContentDB</CentralAdminContentDB>
@@ -52,7 +52,7 @@
                 <ManagedPath relativeUrl="sites" delete="true" />
             </ManagedPaths>
             <SiteCollections>
-                <SiteCollection siteUrl="http://localhost" admin="DOMAIN\spinstall" name="Portal Home" description="Portal Home Site" SearchUrl="http://localhost/search" CustomTemplate="false" Template="SPSPORTAL#0" LCID="1033">
+                <SiteCollection siteUrl="http://localhost" owner="DOMAIN\spinstall" name="Portal Home" description="Portal Home Site" SearchUrl="http://localhost/search" CustomTemplate="false" Template="SPSPORTAL#0" LCID="1033">
                     <!--<UserSolutions>
             <UserSolution path=".\Solutions\PortalHomeSite.wsp" name="PortalHomeSite.wsp" />
           </UserSolutions>-->
@@ -64,7 +64,7 @@
         </WebApplication>
         <WebApplication type="MySiteHost" name="MySiteHost" applicationPool="MySites" applicationPoolAccount="DOMAIN\mysitesacc" url="http://localhost" port="8080" databaseName="MySites_Content" useClaims="1">
             <SiteCollections>
-                <SiteCollection siteUrl="http://localhost:8080" admin="DOMAIN\portal.owner" name="My Site Host" description="My Site Host" SearchUrl="http://localhost/search" CustomTemplate="false" Template="SPSMSITEHOST#0" LCID="1033" />
+                <SiteCollection siteUrl="http://localhost:8080" owner="DOMAIN\portal.owner" name="My Site Host" description="My Site Host" SearchUrl="http://localhost/search" CustomTemplate="false" Template="SPSMSITEHOST#0" LCID="1033" />
             </SiteCollections>
             <ManagedPaths>
                 <ManagedPath relativeUrl="personal" explicit="false"/>
