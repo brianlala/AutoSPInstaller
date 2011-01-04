@@ -49,11 +49,11 @@ FOR /F "tokens=*" %%x in ('"%SYSTEMROOT%\system32\windowspowershell\v1.0\powersh
 :: Set Bypass, in case we are running over a net share or UNC
 IF NOT "%ExecutionPolicy%"=="Bypass" IF NOT "%ExecutionPolicy%"=="Unrestricted" (
 	ECHO - PS ExecutionPolicy is %ExecutionPolicy%, setting ExecutionPolicy to Bypass.
-	"%SYSTEMROOT%\system32\windowspowershell\v1.0\powershell.exe" Set-ExecutionPolicy Bypass
+	"%SYSTEMROOT%\system32\windowspowershell\v1.0\powershell.exe" -Command Start-Process "$PSHOME\powershell.exe" -Verb RunAs -ArgumentList "'-Command Set-ExecutionPolicy Bypass'"
 	)
 GOTO LAUNCHSCRIPT
 :LAUNCHSCRIPT
-"%SYSTEMROOT%\system32\windowspowershell\v1.0\powershell.exe" -Command Start-Process "$PSHOME\powershell.exe" -Verb runAs -ArgumentList "'%~dp0\AutoSPInstallerMain.ps1 %InputFile%'"
+"%SYSTEMROOT%\system32\windowspowershell\v1.0\powershell.exe" -Command Start-Process "$PSHOME\powershell.exe" -Verb RunAs -ArgumentList "'%~dp0\AutoSPInstallerMain.ps1 %InputFile%'"
 GOTO END
 :END
 ENDLOCAL

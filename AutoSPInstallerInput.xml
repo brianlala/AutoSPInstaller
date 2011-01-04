@@ -24,7 +24,7 @@
             <ConfigDB>ConfigDB</ConfigDB>
         </Database>
         <Services>
-            <ManagedMetadataService create="1">
+            <ManagedMetadataService create="True">
                 <Database>MetaDataDB</Database>
             </ManagedMetadataService>
             <UserProfileService Provision="True">
@@ -33,8 +33,8 @@
                 <SyncDB>SyncDB</SyncDB>
                 <SocialDB>SocialDB</SocialDB>
             </UserProfileService>
-            <StartSearchQueryAndSiteSettingsService>1</StartSearchQueryAndSiteSettingsService>
-            <StartEnterpriseSearch>1</StartEnterpriseSearch>
+            <StartSearchQueryAndSiteSettingsService>True</StartSearchQueryAndSiteSettingsService>
+            <StartEnterpriseSearch>True</StartEnterpriseSearch>
             <CreatePowerPivot>0</CreatePowerPivot>
         </Services>
         <ManagedAccounts>
@@ -45,7 +45,7 @@
         </ManagedAccounts>
     </Farm>
     <WebApplications>
-        <WebApplication type="Portal" name="Portal Home" applicationPool="PortalHome" applicationPoolAccount="DOMAIN\portalacc" url="http://localhost" port="80" databaseName="PortalHome_Content" useClaims="1">
+        <WebApplication type="Portal" name="Portal Home" applicationPool="PortalHome" applicationPoolAccount="DOMAIN\portalacc" url="http://localhost" port="80" databaseName="PortalHome_Content" useClaims="True">
             <ManagedPaths>
                 <ManagedPath relativeUrl="search" explicit="true" />
                 <ManagedPath relativeUrl="help" explicit="true" />
@@ -62,7 +62,7 @@
                 </SiteCollection>
             </SiteCollections>
         </WebApplication>
-        <WebApplication type="MySiteHost" name="MySiteHost" applicationPool="MySites" applicationPoolAccount="DOMAIN\mysitesacc" url="http://localhost" port="8080" databaseName="MySites_Content" useClaims="1">
+        <WebApplication type="MySiteHost" name="MySiteHost" applicationPool="MySites" applicationPoolAccount="DOMAIN\mysitesacc" url="http://localhost" port="8080" databaseName="MySites_Content" useClaims="True">
             <SiteCollections>
                 <SiteCollection siteUrl="http://localhost:8080" owner="DOMAIN\portal.owner" name="My Site Host" description="My Site Host" SearchUrl="http://localhost/search" CustomTemplate="false" Template="SPSMSITEHOST#0" LCID="1033" />
             </SiteCollections>
