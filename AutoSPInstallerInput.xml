@@ -30,7 +30,8 @@
             <ManagedMetadataServiceApp Provision="True">
                 <Database>MetaDataDB</Database>
             </ManagedMetadataServiceApp>
-            <UserProfileService Provision="True">
+            <UserProfileService Provision="True"
+								EnableNetBIOSDomainNames="False">
                 <Name>User Profile Service Application</Name>
                 <ProfileDB>ProfileDB</ProfileDB>
                 <SyncDB>SyncDB</SyncDB>
@@ -45,6 +46,10 @@
             <ManagedAccount username="DOMAIN\mysitesacc" Password="" CommonName="mysiteapppool"/>
             <ManagedAccount username="DOMAIN\content03" Password="" CommonName="searchservice"/>
         </ManagedAccounts>
+		<ObjectCacheAccounts>
+			<SuperUser>DOMAIN\SP_CacheSuperUser</SuperUser>
+			<SuperReader>DOMAIN\SP_CacheSuperReader</SuperReader>
+		</ObjectCacheAccounts>
     </Farm>
     <WebApplications>
         <WebApplication type="Portal"
