@@ -1,5 +1,5 @@
 <?xml version="1.0" ?>
-<Configuration Environment="Dev" Version="2.0.1">
+<Configuration Environment="Dev" Version="2.0.2">
     <Install>
         <ConfigFile>config.xml</ConfigFile>
         <OfflineInstall>True</OfflineInstall>
@@ -37,7 +37,7 @@
                 <SyncDB>SyncDB</SyncDB>
                 <SocialDB>SocialDB</SocialDB>
             </UserProfileService>
-            <SearchQueryAndSiteSettingsService Provision="True" />
+            <SearchQueryAndSiteSettingsService Start="False" />
             <CreatePowerPivot>0</CreatePowerPivot>
         </Services>
         <ManagedAccounts>
