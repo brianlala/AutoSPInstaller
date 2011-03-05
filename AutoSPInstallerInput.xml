@@ -1,5 +1,5 @@
 <?xml version="1.0" ?>
-<Configuration Environment="Dev" Version="2.0.2">
+<Configuration Environment="Dev" Version="2.0.3">
     <Install>
         <ConfigFile>config.xml</ConfigFile>
         <OfflineInstall>True</OfflineInstall>
@@ -27,18 +27,13 @@
             <ConfigDB>ConfigDB</ConfigDB>
         </Database>
         <Services>
-            <ManagedMetadataServiceApp Provision="True">
-                <Database>MetaDataDB</Database>
-            </ManagedMetadataServiceApp>
-            <UserProfileService Provision="True"
-								EnableNetBIOSDomainNames="False">
-                <Name>User Profile Service Application</Name>
-                <ProfileDB>ProfileDB</ProfileDB>
-                <SyncDB>SyncDB</SyncDB>
-                <SocialDB>SocialDB</SocialDB>
-            </UserProfileService>
+            <SandboxedCodeService Start="True" />
             <SearchQueryAndSiteSettingsService Start="False" />
-            <CreatePowerPivot>0</CreatePowerPivot>
+            <OutgoingEmail Configure="True">
+                <SMTPServer></SMTPServer>
+                <EmailAddress></EmailAddress>
+                <ReplyToEmail></ReplyToEmail>
+            </OutgoingEmail>
         </Services>
         <ManagedAccounts>
             <ManagedAccount username="DOMAIN\spservice" Password="" CommonName="spservice"/>
@@ -46,10 +41,10 @@
             <ManagedAccount username="DOMAIN\mysitesacc" Password="" CommonName="mysiteapppool"/>
             <ManagedAccount username="DOMAIN\content03" Password="" CommonName="searchservice"/>
         </ManagedAccounts>
-		<ObjectCacheAccounts>
-			<SuperUser>DOMAIN\SP_CacheSuperUser</SuperUser>
-			<SuperReader>DOMAIN\SP_CacheSuperReader</SuperReader>
-		</ObjectCacheAccounts>
+        <ObjectCacheAccounts>
+            <SuperUser>DOMAIN\SP_CacheSuperUser</SuperUser>
+            <SuperReader>DOMAIN\SP_CacheSuperReader</SuperReader>
+        </ObjectCacheAccounts>
     </Farm>
     <WebApplications>
         <WebApplication type="Portal"
@@ -61,7 +56,6 @@
                         databaseName="PortalHome_Content"
                         useClaims="True">
             <ManagedPaths>
-                <ManagedPath relativeUrl="search" explicit="true" />
                 <ManagedPath relativeUrl="help" explicit="true" />
                 <ManagedPath relativeUrl="sites" delete="true" />
             </ManagedPaths>
@@ -74,12 +68,6 @@
                                 CustomTemplate="false"
                                 Template="SPSPORTAL#0"
                                 LCID="1033">
-                    <!--<UserSolutions>
-            <UserSolution path=".\Solutions\PortalHomeSite.wsp" name="PortalHomeSite.wsp" />
-          </UserSolutions>-->
-                    <!--<Features>
-            <Feature name="Portal.Branding_PortalHomeBranding" />
-          </Features>-->
                 </SiteCollection>
             </SiteCollections>
         </WebApplication>
@@ -107,7 +95,17 @@
             </ManagedPaths>
         </WebApplication>
     </WebApplications>
-    <Services>
+    <ServiceApps>
+        <ManagedMetadataServiceApp Provision="True">
+            <Database>MetaDataDB</Database>
+        </ManagedMetadataServiceApp>
+        <UserProfileServiceApp Provision="True"
+		    				   EnableNetBIOSDomainNames="False">
+            <Name>User Profile Service Application</Name>
+            <ProfileDB>ProfileDB</ProfileDB>
+            <SyncDB>SyncDB</SyncDB>
+            <SocialDB>SocialDB</SocialDB>
+        </UserProfileServiceApp>
         <EnterpriseSearchService Provision="True"
 							     ContactEmail=""
                                  ConnectionTimeout="60"
@@ -163,5 +161,8 @@
         <SecureStoreService Provision="True" Name="Secure Store Service Application">
             <SecureStoreDB>SecureStoreDB</SecureStoreDB>
         </SecureStoreService>
-    </Services>
+        <BusinessDataConnectivity Provision="True">
+            <Database>BusinessDataCatalogDB</Database>
+        </BusinessDataConnectivity>
+    </ServiceApps>
 </Configuration>
