@@ -20,7 +20,12 @@
             <CentralAdminPort>2010</CentralAdminPort>
         </CentralAdmin>
         <Database>
+            <!--Hint: if you are creating an alias, <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance-->
             <DBServer>localhost</DBServer>
+            <!--Hint: the script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433-->
+            <DBAlias Create="False"
+                     DBInstance="SERVER\INSTANCE"
+                     DBPort="" />
             <!--Hint: if you leave <DBServer> blank or specify localhost, script will assume the local server for SQL databases-->
             <DBPrefix>localhost</DBPrefix>
             <!--Hint: if you put localhost for <DBPrefix>, script will prepend each database with the name of the server on which the script is run. Useful for identifying databases on shared SQL instances. Otherwise specify your own value, or just leave blank for NO prefix.-->
@@ -36,6 +41,7 @@
             </OutgoingEmail>
         </Services>
         <ManagedAccounts>
+            <!--Hint: the CommonName values should remain unchanged; you can add additional managed accounts, but script expects certain static values for these 4 managed accounts-->
             <ManagedAccount username="DOMAIN\spservice" Password="" CommonName="spservice"/>
             <ManagedAccount username="DOMAIN\portalacc" Password="" CommonName="portalapppool"/>
             <ManagedAccount username="DOMAIN\mysitesacc" Password="" CommonName="mysiteapppool"/>
