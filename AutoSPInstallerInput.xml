@@ -1,5 +1,5 @@
 <?xml version="1.0" ?>
-<Configuration Environment="Dev" Version="2.0.3">
+<Configuration Environment="Dev" Version="2.0.4">
     <Install>
         <ConfigFile>config.xml</ConfigFile>
         <OfflineInstall>True</OfflineInstall>
@@ -67,7 +67,7 @@
             </ManagedPaths>
             <SiteCollections>
                 <SiteCollection siteUrl="http://localhost"
-                                owner="DOMAIN\spinstall"
+                                owner="DOMAIN\portalacc"
                                 name="Portal Home"
                                 description="Portal Home Site"
                                 SearchUrl="http://localhost/search"
@@ -87,7 +87,7 @@
                         useClaims="True">
             <SiteCollections>
                 <SiteCollection siteUrl="http://localhost:8080"
-                                owner="DOMAIN\portal.owner"
+                                owner="DOMAIN\mysitesacc"
                                 name="My Site Host"
                                 description="My Site Host"
                                 SearchUrl="http://localhost/search"
@@ -126,7 +126,7 @@
                                  ShareName="SearchShare">
             <EnterpriseSearchServiceApplications>
                 <EnterpriseSearchServiceApplication Name="Enterprise Search Service Application"
-                                                    DatabaseServer="localhost"
+                                                    DatabaseServer=""
                                                     DatabaseName="EnterpriseSearch"
                                                     FailoverDatabaseServer=""
                                                     Partitioned="false"
@@ -167,8 +167,14 @@
         <SecureStoreService Provision="True" Name="Secure Store Service Application">
             <SecureStoreDB>SecureStoreDB</SecureStoreDB>
         </SecureStoreService>
-        <BusinessDataConnectivity Provision="True">
+        <BusinessDataConnectivity Provision="True"
+                                  Name="Business Data Connectivity Service Application">
             <Database>BusinessDataCatalogDB</Database>
         </BusinessDataConnectivity>
     </ServiceApps>
+    <EnterpriseServiceApps>
+        <ExcelServices Provision="True"
+                       Name="Excel Service Application">
+        </ExcelServices>
+    </EnterpriseServiceApps>
 </Configuration>
