@@ -1,5 +1,7 @@
 <?xml version="1.0" ?>
-<Configuration Environment="Dev" Version="2.0.4">
+<!--If any of your parameters (Passphrase, passwords etc.) contain special characters like & " $ etc. you must enclose them in a <![CDATA[ ]]> section-->
+<!--See http://www.w3schools.com/xml/xml_cdata.asp for more info-->
+<Configuration Environment="Dev" Version="2.1.0">
     <Install>
         <ConfigFile>config.xml</ConfigFile>
         <OfflineInstall>True</OfflineInstall>
@@ -45,7 +47,7 @@
             <ManagedAccount username="DOMAIN\spservice" Password="" CommonName="spservice"/>
             <ManagedAccount username="DOMAIN\portalacc" Password="" CommonName="portalapppool"/>
             <ManagedAccount username="DOMAIN\mysitesacc" Password="" CommonName="mysiteapppool"/>
-            <ManagedAccount username="DOMAIN\content03" Password="" CommonName="searchservice"/>
+            <ManagedAccount username="DOMAIN\SPsearch" Password="" CommonName="searchservice"/>
         </ManagedAccounts>
         <ObjectCacheAccounts>
             <SuperUser>DOMAIN\SP_CacheSuperUser</SuperUser>
@@ -63,7 +65,6 @@
                         useClaims="True">
             <ManagedPaths>
                 <ManagedPath relativeUrl="help" explicit="true" />
-                <ManagedPath relativeUrl="sites" delete="true" />
             </ManagedPaths>
             <SiteCollections>
                 <SiteCollection siteUrl="http://localhost"
@@ -78,7 +79,7 @@
             </SiteCollections>
         </WebApplication>
         <WebApplication type="MySiteHost"
-                        name="MySiteHost"
+                        name="MySite Host"
                         applicationPool="MySites"
                         applicationPoolAccount="DOMAIN\mysitesacc"
                         url="http://localhost"
@@ -102,12 +103,16 @@
         </WebApplication>
     </WebApplications>
     <ServiceApps>
-        <ManagedMetadataServiceApp Provision="True">
+        <ManagedMetadataServiceApp Provision="True"
+                                   Name="Managed Metadata Service"
+                                   ProxyName="Managed Metadata Service">
             <Database>MetaDataDB</Database>
         </ManagedMetadataServiceApp>
         <UserProfileServiceApp Provision="True"
-		    				   EnableNetBIOSDomainNames="False">
-            <Name>User Profile Service Application</Name>
+                               Name="User Profile Service Application"
+                               ProxyName="User Profile Service Application"
+		    				   EnableNetBIOSDomainNames="False"
+                               StartProfileSync="True">
             <ProfileDB>ProfileDB</ProfileDB>
             <SyncDB>SyncDB</SyncDB>
             <SocialDB>SocialDB</SocialDB>
@@ -125,7 +130,7 @@
                                  Password=""
                                  ShareName="SearchShare">
             <EnterpriseSearchServiceApplications>
-                <EnterpriseSearchServiceApplication Name="Enterprise Search Service Application"
+                <EnterpriseSearchServiceApplication Name="Search Service Application"
                                                     DatabaseServer=""
                                                     DatabaseName="EnterpriseSearch"
                                                     FailoverDatabaseServer=""
@@ -148,33 +153,61 @@
                         <Server Name="localhost" />
                         <ApplicationPool Name="SharePoint Enterprise Search Application Pool" Account="DOMAIN\SPSearch" />
                     </AdminComponent>
-                    <Proxy Name="Enterprise Search Service Application Proxy" Partitioned="false">
+                    <Proxy Name="Search Service Application" Partitioned="false">
                         <ProxyGroup Name="Default" />
                     </Proxy>
                 </EnterpriseSearchServiceApplication>
             </EnterpriseSearchServiceApplications>
         </EnterpriseSearchService>
-        <StateService Provision="True">
+        <StateService Provision="True"
+                      Name="State Service"
+                      ProxyName="State Service">
             <StateServiceDB>StateServiceDB</StateServiceDB>
         </StateService>
-        <WebAnalyticsService Provision="True" Name="Web Analytics Service Application">
+        <WebAnalyticsService Provision="True"
+                             Name="Web Analytics Service Application">
             <ReportingDB>WebAnalyticsReportingDB</ReportingDB>
             <StagingDB>WebAnalyticsStagingDB</StagingDB>
         </WebAnalyticsService>
-        <WSSUsageService Provision="True" Name="WSS Usage Application">
-            <WSSUsageDB>WSSUsageApplicationDB</WSSUsageDB>
-        </WSSUsageService>
-        <SecureStoreService Provision="True" Name="Secure Store Service Application">
+        <SPUsageService Provision="True"
+                         Name="Usage and Health Data Collection">
+            <SPUsageDB>UsageAndHealthDB</SPUsageDB>
+        </SPUsageService>
+        <SecureStoreService Provision="True"
+                            Name="Secure Store Service"
+                            ProxyName="Secure Store Service">
             <SecureStoreDB>SecureStoreDB</SecureStoreDB>
         </SecureStoreService>
         <BusinessDataConnectivity Provision="True"
-                                  Name="Business Data Connectivity Service Application">
+                                  Name="Business Data Connectivity Service"
+                                  ProxyName="Business Data Connectivity Service">
             <Database>BusinessDataCatalogDB</Database>
         </BusinessDataConnectivity>
     </ServiceApps>
     <EnterpriseServiceApps>
         <ExcelServices Provision="True"
-                       Name="Excel Service Application">
+                       Name="Excel Services Application">
         </ExcelServices>
+        <VisioService Provision="True"
+                      Name="Visio Graphics Service">
+        </VisioService>
+        <AccessService Provision="True"
+                       Name="Access Services">
+        </AccessService>
     </EnterpriseServiceApps>
+    <OfficeWebApps Install="False"
+                   ConfigFile="config-OWA.xml">
+        <ExcelService Provision="False"
+                      Name="Excel Calculation Services"
+                      ProxyName="Excel Calculation Services">
+        </ExcelService>
+        <WordViewingService Provision="False"
+                            Name="Word Viewing Service"
+                            ProxyName="Word Viewing Service">
+        </WordViewingService>
+        <PowerPointService Provision="False"
+                           Name="PowerPoint Service Application"
+                           ProxyName="PowerPoint Service Application">
+        </PowerPointService>
+    </OfficeWebApps>
 </Configuration>
