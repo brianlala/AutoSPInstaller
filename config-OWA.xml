@@ -1,0 +1,13 @@
+<Configuration>
+	<Package Id="sts">
+		<Setting Id="LAUNCHEDFROMSETUPSTS" Value="Yes"/>
+	</Package>
+
+	<Logging Type="verbose" Path="%temp%" Template="Wac Server Setup(*).log"/>
+	<Display Level="basic" CompletionNotice="no" />
+	<Setting Id="SERVERROLE" Value="APPLICATION"/>
+	<PIDKEY Value=""/>
+	<Setting Id="USINGUIINSTALLMODE" Value="1"/>
+	<Setting Id="SETUPTYPE" Value="CLEAN_INSTALL"/>
+	<Setting Id="SETUP_REBOOT" Value="Never"/>
+</Configuration>
