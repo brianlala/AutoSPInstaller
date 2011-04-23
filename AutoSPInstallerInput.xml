@@ -1,7 +1,7 @@
 <?xml version="1.0" ?>
 <!--If any of your parameters (Passphrase, passwords etc.) contain special characters like & " $ etc. you must enclose them in a <![CDATA[ ]]> section-->
 <!--See http://www.w3schools.com/xml/xml_cdata.asp for more info-->
-<Configuration Environment="Dev" Version="2.1.0">
+<Configuration Environment="Dev" Version="2.1.1">
     <Install>
         <ConfigFile>config.xml</ConfigFile>
         <OfflineInstall>True</OfflineInstall>
@@ -11,6 +11,7 @@
         </Disable>
     </Install>
     <Farm>
+        <!--Hint: this farm passphrase will also be used for the Secure Store service app-->
         <Passphrase></Passphrase>
         <Account Username="DOMAIN\spfarm"
                  Password=""
@@ -189,10 +190,12 @@
                        Name="Excel Services Application">
         </ExcelServices>
         <VisioService Provision="True"
-                      Name="Visio Graphics Service">
+                      Name="Visio Graphics Service"
+                      ProxyName="Visio Graphics Service">
         </VisioService>
         <AccessService Provision="True"
-                       Name="Access Services">
+                       Name="Access Services"
+                       ProxyName="Access Services">
         </AccessService>
     </EnterpriseServiceApps>
     <OfficeWebApps Install="False"
