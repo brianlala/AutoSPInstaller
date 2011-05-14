@@ -1,6 +1,6 @@
 <?xml version="1.0" ?>
-<!--If any of your parameters (Passphrase, passwords etc.) contain special characters like & " $ etc. you must enclose them in a <![CDATA[ ]]> section-->
-<!--See http://www.w3schools.com/xml/xml_cdata.asp for more info-->
+<!--For script compatibility you should completely avoid using the following characters (' " $ > < ) within parameters (passphrase, passwords etc.)-->
+<!--You should also check your XML prior to running the script, using a validator like http://www.w3schools.com/xml/xml_validator.asp -->
 <Configuration Environment="Dev" Version="2.1.1">
     <Install>
         <ConfigFile>config.xml</ConfigFile>
@@ -13,14 +13,14 @@
     <Farm>
         <!--Hint: this farm passphrase will also be used for the Secure Store service app-->
         <Passphrase></Passphrase>
-        <Account Username="DOMAIN\spfarm"
-                 Password=""
-                 Email="spfarm@domain.com"
-                 AddToLocalAdminsDuringSetup="True" />
-        <!-- common name spfarm -->
+        <Account AddToLocalAdminsDuringSetup="True">
+            <Username>DOMAIN\spfarm</Username>
+            <Password></Password>
+            <Email>spfarm@domain.com</Email>
+        </Account>
         <CentralAdmin Provision="True">
-            <CentralAdminContentDB>AdminContentDB</CentralAdminContentDB>
-            <CentralAdminPort>2010</CentralAdminPort>
+            <Database>AdminContentDB</Database>
+            <Port>2010</Port>
         </CentralAdmin>
         <Database>
             <!--Hint: if you are creating an alias, <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance-->
@@ -45,10 +45,22 @@
         </Services>
         <ManagedAccounts>
             <!--Hint: the CommonName values should remain unchanged; you can add additional managed accounts, but script expects certain static values for these 4 managed accounts-->
-            <ManagedAccount username="DOMAIN\spservice" Password="" CommonName="spservice"/>
-            <ManagedAccount username="DOMAIN\portalacc" Password="" CommonName="portalapppool"/>
-            <ManagedAccount username="DOMAIN\mysitesacc" Password="" CommonName="mysiteapppool"/>
-            <ManagedAccount username="DOMAIN\SPsearch" Password="" CommonName="searchservice"/>
+            <ManagedAccount CommonName="spservice">
+                <username>DOMAIN\spservice</username>
+                <Password></Password>
+            </ManagedAccount>
+            <ManagedAccount CommonName="portalapppool">
+                <username>DOMAIN\portalacc</username>
+                <Password></Password>
+            </ManagedAccount>
+            <ManagedAccount CommonName="mysiteapppool">
+                <username>DOMAIN\mysitesacc</username>
+                <Password></Password>
+            </ManagedAccount>
+            <ManagedAccount CommonName="searchservice">
+                <username>DOMAIN\SPsearch</username>
+                <Password></Password>
+            </ManagedAccount>
         </ManagedAccounts>
         <ObjectCacheAccounts>
             <SuperUser>DOMAIN\SP_CacheSuperUser</SuperUser>
@@ -63,7 +75,7 @@
                         url="http://localhost"
                         port="80"
                         databaseName="PortalHome_Content"
-                        useClaims="True">
+                        useClaims="False">
             <ManagedPaths>
                 <ManagedPath relativeUrl="help" explicit="true" />
             </ManagedPaths>
@@ -86,7 +98,7 @@
                         url="http://localhost"
                         port="8080"
                         databaseName="MySites_Content"
-                        useClaims="True">
+                        useClaims="False">
             <SiteCollections>
                 <SiteCollection siteUrl="http://localhost:8080"
                                 owner="DOMAIN\mysitesacc"
@@ -163,7 +175,7 @@
         <StateService Provision="True"
                       Name="State Service"
                       ProxyName="State Service">
-            <StateServiceDB>StateServiceDB</StateServiceDB>
+            <Database>StateServiceDB</Database>
         </StateService>
         <WebAnalyticsService Provision="True"
                              Name="Web Analytics Service Application">
@@ -172,12 +184,12 @@
         </WebAnalyticsService>
         <SPUsageService Provision="True"
                          Name="Usage and Health Data Collection">
-            <SPUsageDB>UsageAndHealthDB</SPUsageDB>
+            <Database>UsageAndHealthDB</Database>
         </SPUsageService>
         <SecureStoreService Provision="True"
                             Name="Secure Store Service"
                             ProxyName="Secure Store Service">
-            <SecureStoreDB>SecureStoreDB</SecureStoreDB>
+            <Database>SecureStoreDB</Database>
         </SecureStoreService>
         <BusinessDataConnectivity Provision="True"
                                   Name="Business Data Connectivity Service"
@@ -191,7 +203,9 @@
         </ExcelServices>
         <VisioService Provision="True"
                       Name="Visio Graphics Service"
-                      ProxyName="Visio Graphics Service">
+                      ProxyName="Visio Graphics Service"
+                      UnattendedIDUser="DOMAIN\VisioUser"
+                      UnattendedIDPassword="">
         </VisioService>
         <AccessService Provision="True"
                        Name="Access Services"
