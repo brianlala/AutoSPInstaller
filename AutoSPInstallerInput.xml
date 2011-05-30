@@ -1,7 +1,7 @@
 <?xml version="1.0" ?>
 <!--For script compatibility you should completely avoid using the following characters (' " $ > < ) within parameters (passphrase, passwords etc.)-->
 <!--You should also check your XML prior to running the script, using a validator like http://www.w3schools.com/xml/xml_validator.asp -->
-<Configuration Environment="Dev" Version="2.1.1">
+<Configuration Environment="Dev" Version="2.1.3">
     <Install>
         <ConfigFile>config.xml</ConfigFile>
         <OfflineInstall>True</OfflineInstall>
@@ -196,6 +196,11 @@
                                   ProxyName="Business Data Connectivity Service">
             <Database>BusinessDataCatalogDB</Database>
         </BusinessDataConnectivity>
+        <WordAutomationService Provision="True"
+                               Name="Word Automation Services"
+                               ProxyName="Word Automation Services">
+            <Database>WordAutomationDB</Database>
+        </WordAutomationService>
     </ServiceApps>
     <EnterpriseServiceApps>
         <ExcelServices Provision="True"
@@ -211,6 +216,13 @@
                        Name="Access Services"
                        ProxyName="Access Services">
         </AccessService>
+        <PerformancePointService Provision="True"
+                      Name="PerformancePoint Service"
+                      ProxyName="PerformancePoint Service"
+                      UnattendedIDUser="DOMAIN\PerfPointUser"
+                      UnattendedIDPassword="">
+			<Database>PerformancePointDB</Database>
+        </PerformancePointService>
     </EnterpriseServiceApps>
     <OfficeWebApps Install="False"
                    ConfigFile="config-OWA.xml">
