@@ -1,24 +1,26 @@
 <?xml version="1.0" ?>
 <!--For script compatibility you should completely avoid using the following characters (' " $ > < ) within parameters (passphrase, passwords etc.)-->
 <!--You should also check your XML prior to running the script, using a validator like http://www.w3schools.com/xml/xml_validator.asp -->
-<Configuration Environment="Dev" Version="2.1.3">
+<Configuration Environment="Dev" Version="2.5">
     <Install>
         <ConfigFile>config.xml</ConfigFile>
-        <OfflineInstall>True</OfflineInstall>
+        <OfflineInstall>true</OfflineInstall>
         <Disable>
-            <Loopback>True</Loopback>
-            <UnusedServices>True</UnusedServices>
+            <LoopbackCheck>true</LoopbackCheck>
+            <UnusedServices>true</UnusedServices>
+            <IEEnhancedSecurity>true</IEEnhancedSecurity>
+            <CertificateRevocationListCheck>false</CertificateRevocationListCheck>
         </Disable>
     </Install>
     <Farm>
         <!--Hint: this farm passphrase will also be used for the Secure Store service app-->
         <Passphrase></Passphrase>
-        <Account AddToLocalAdminsDuringSetup="True">
+        <Account AddToLocalAdminsDuringSetup="true">
             <Username>DOMAIN\spfarm</Username>
             <Password></Password>
             <Email>spfarm@domain.com</Email>
         </Account>
-        <CentralAdmin Provision="True">
+        <CentralAdmin Provision="true">
             <Database>AdminContentDB</Database>
             <Port>2010</Port>
         </CentralAdmin>
@@ -26,7 +28,7 @@
             <!--Hint: if you are creating an alias, <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance-->
             <DBServer>localhost</DBServer>
             <!--Hint: the script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433-->
-            <DBAlias Create="False"
+            <DBAlias Create="false"
                      DBInstance="SERVER\INSTANCE"
                      DBPort="" />
             <!--Hint: if you leave <DBServer> blank or specify localhost, script will assume the local server for SQL databases-->
@@ -35,9 +37,9 @@
             <ConfigDB>ConfigDB</ConfigDB>
         </Database>
         <Services>
-            <SandboxedCodeService Start="True" />
-            <SearchQueryAndSiteSettingsService Start="False" />
-            <OutgoingEmail Configure="True">
+            <SandboxedCodeService Start="true" />
+            <SearchQueryAndSiteSettingsService Start="false" />
+            <OutgoingEmail Configure="true">
                 <SMTPServer></SMTPServer>
                 <EmailAddress></EmailAddress>
                 <ReplyToEmail></ReplyToEmail>
@@ -75,7 +77,9 @@
                         url="http://localhost"
                         port="80"
                         databaseName="PortalHome_Content"
-                        useClaims="False">
+                        useClaims="false"
+                        useBasicAuthentication="false"
+                        useOnlineWebPartCatalog="false">
             <ManagedPaths>
                 <ManagedPath relativeUrl="help" explicit="true" />
             </ManagedPaths>
@@ -87,7 +91,9 @@
                                 SearchUrl="http://localhost/search"
                                 CustomTemplate="false"
                                 Template="SPSPORTAL#0"
-                                LCID="1033">
+                                LCID="1033"
+                                Locale="en-us"
+                                Time24="false">
                 </SiteCollection>
             </SiteCollections>
         </WebApplication>
@@ -98,7 +104,9 @@
                         url="http://localhost"
                         port="8080"
                         databaseName="MySites_Content"
-                        useClaims="False">
+                        useClaims="false"
+                        useBasicAuthentication="false"
+                        useOnlineWebPartCatalog="false">
             <SiteCollections>
                 <SiteCollection siteUrl="http://localhost:8080"
                                 owner="DOMAIN\mysitesacc"
@@ -107,7 +115,10 @@
                                 SearchUrl="http://localhost/search"
                                 CustomTemplate="false"
                                 Template="SPSMSITEHOST#0"
-                                LCID="1033" />
+                                LCID="1033"
+                                Locale="en-us"
+                                Time24="false">
+                </SiteCollection>
             </SiteCollections>
             <ManagedPaths>
                 <ManagedPath relativeUrl="personal" explicit="false"/>
@@ -116,22 +127,22 @@
         </WebApplication>
     </WebApplications>
     <ServiceApps>
-        <ManagedMetadataServiceApp Provision="True"
+        <ManagedMetadataServiceApp Provision="true"
                                    Name="Managed Metadata Service"
                                    ProxyName="Managed Metadata Service">
             <Database>MetaDataDB</Database>
         </ManagedMetadataServiceApp>
-        <UserProfileServiceApp Provision="True"
+        <UserProfileServiceApp Provision="true"
                                Name="User Profile Service Application"
                                ProxyName="User Profile Service Application"
-		    				   EnableNetBIOSDomainNames="False"
-                               StartProfileSync="True">
+                               EnableNetBIOSDomainNames="false"
+                               StartProfileSync="true">
             <ProfileDB>ProfileDB</ProfileDB>
             <SyncDB>SyncDB</SyncDB>
             <SocialDB>SocialDB</SocialDB>
         </UserProfileServiceApp>
-        <EnterpriseSearchService Provision="True"
-							     ContactEmail=""
+        <EnterpriseSearchService Provision="true"
+                                 ContactEmail=""
                                  ConnectionTimeout="60"
                                  AcknowledgementTimeout="60"
                                  ProxyType="Default"
@@ -172,71 +183,76 @@
                 </EnterpriseSearchServiceApplication>
             </EnterpriseSearchServiceApplications>
         </EnterpriseSearchService>
-        <StateService Provision="True"
+        <StateService Provision="true"
                       Name="State Service"
                       ProxyName="State Service">
             <Database>StateServiceDB</Database>
         </StateService>
-        <WebAnalyticsService Provision="True"
+        <WebAnalyticsService Provision="true"
                              Name="Web Analytics Service Application">
             <ReportingDB>WebAnalyticsReportingDB</ReportingDB>
             <StagingDB>WebAnalyticsStagingDB</StagingDB>
         </WebAnalyticsService>
-        <SPUsageService Provision="True"
+        <SPUsageService Provision="true"
                          Name="Usage and Health Data Collection">
             <Database>UsageAndHealthDB</Database>
         </SPUsageService>
-        <SecureStoreService Provision="True"
+        <SecureStoreService Provision="true"
                             Name="Secure Store Service"
                             ProxyName="Secure Store Service">
             <Database>SecureStoreDB</Database>
         </SecureStoreService>
-        <BusinessDataConnectivity Provision="True"
+        <BusinessDataConnectivity Provision="true"
                                   Name="Business Data Connectivity Service"
                                   ProxyName="Business Data Connectivity Service">
             <Database>BusinessDataCatalogDB</Database>
         </BusinessDataConnectivity>
-        <WordAutomationService Provision="True"
+        <WordAutomationService Provision="true"
                                Name="Word Automation Services"
                                ProxyName="Word Automation Services">
             <Database>WordAutomationDB</Database>
         </WordAutomationService>
     </ServiceApps>
     <EnterpriseServiceApps>
-        <ExcelServices Provision="True"
-                       Name="Excel Services Application">
+        <ExcelServices Provision="false"
+                       Name="Excel Services Application"
+                       UnattendedIDUser="DOMAIN\ExcelUser"
+                       UnattendedIDPassword="">
         </ExcelServices>
-        <VisioService Provision="True"
+        <VisioService Provision="false"
                       Name="Visio Graphics Service"
                       ProxyName="Visio Graphics Service"
                       UnattendedIDUser="DOMAIN\VisioUser"
                       UnattendedIDPassword="">
         </VisioService>
-        <AccessService Provision="True"
+        <AccessService Provision="false"
                        Name="Access Services"
                        ProxyName="Access Services">
         </AccessService>
-        <PerformancePointService Provision="True"
+        <PerformancePointService Provision="false"
                       Name="PerformancePoint Service"
                       ProxyName="PerformancePoint Service"
                       UnattendedIDUser="DOMAIN\PerfPointUser"
                       UnattendedIDPassword="">
-			<Database>PerformancePointDB</Database>
+            <Database>PerformancePointDB</Database>
         </PerformancePointService>
     </EnterpriseServiceApps>
-    <OfficeWebApps Install="False"
+    <OfficeWebApps Install="false"
                    ConfigFile="config-OWA.xml">
-        <ExcelService Provision="False"
+        <ExcelService Provision="false"
                       Name="Excel Calculation Services"
                       ProxyName="Excel Calculation Services">
         </ExcelService>
-        <WordViewingService Provision="False"
+        <WordViewingService Provision="false"
                             Name="Word Viewing Service"
                             ProxyName="Word Viewing Service">
         </WordViewingService>
-        <PowerPointService Provision="False"
+        <PowerPointService Provision="false"
                            Name="PowerPoint Service Application"
                            ProxyName="PowerPoint Service Application">
         </PowerPointService>
     </OfficeWebApps>
+    <AdobePDFIndexingAndIcon Configure="true"/>
+    <ForeFront Install="false"
+               ConfigFile="config-ForeFront.xml" />
 </Configuration>
