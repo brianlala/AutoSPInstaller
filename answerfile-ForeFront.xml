@@ -1,0 +1,25 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<FSSAnswerFile>
+  <AcceptLicense>true</AcceptLicense>
+  <AcceptRestart>true</AcceptRestart>
+  <AcceptReplacePreviousVS>true</AcceptReplacePreviousVS>
+  <InstallType>Full</InstallType>
+  <Folders>
+    <!--Leave these empty to use the default values-->
+    <ProgramFolder></ProgramFolder>
+    <DataFolder></DataFolder>
+  </Folders>
+  <ProxyInformation>
+    <UseProxy>false</UseProxy>
+    <ServerName></ServerName>
+    <Port>80</Port>
+    <UserName></UserName>
+    <Password></Password>
+  </ProxyInformation>
+  <SharePointInformation>
+    <UserName></UserName>
+    <Password></Password>
+  </SharePointInformation>
+  <EnableAntiSpamNow>false</EnableAntiSpamNow>
+  <EnableCustomerExperienceImprovementProgram>false</EnableCustomerExperienceImprovementProgram>
+</FSSAnswerFile>

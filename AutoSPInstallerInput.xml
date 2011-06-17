@@ -254,5 +254,5 @@
     </OfficeWebApps>
     <AdobePDFIndexingAndIcon Configure="true"/>
     <ForeFront Install="false"
-               ConfigFile="config-ForeFront.xml" />
+               ConfigFile="answerfile-ForeFront.xml" />
 </Configuration>
