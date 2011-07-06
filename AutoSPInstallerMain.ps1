@@ -95,6 +95,7 @@ Function Setup-Services
     StartSandboxedCodeService ($xmlinput)
     CreateMetadataServiceApp ($xmlinput)
 	StartSearchQueryAndSiteSettingsService
+	StartClaimsToWindowsTokenService ($xmlinput)
 	CreateUserProfileServiceApplication ($xmlinput)
 	CreateStateServiceApp ($xmlinput)
 	CreateSPUsageApp ($xmlinput)

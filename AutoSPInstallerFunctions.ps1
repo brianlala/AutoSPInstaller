@@ -288,8 +288,11 @@ Function InstallPrerequisites([xml]$xmlinput)
     	{
 			If ($xmlinput.Configuration.Install.OfflineInstall -eq $true) # Install all prerequisites from local folder
     		{
-				#Install SQL native client before running pre-requisite installer as newest versions require an IACCEPTSQLNCLILICENSETERMS=YES argument
+				# Install SQL native client before running pre-requisite installer as newest versions require an IACCEPTSQLNCLILICENSETERMS=YES argument
 				Start-Process "$SPbits\PrerequisiteInstallerFiles\sqlncli.msi" -Wait -ArgumentList "/passive /norestart IACCEPTSQLNCLILICENSETERMS=YES"
+				
+				# Install KB976462 separately so it doesn't error out the PrerequisiteInstaller when running on Win2008 R2 SP1
+				Start-Process "$SPbits\PrerequisiteInstallerFiles\Windows6.1-KB976462-v2-x64.msu" -Wait -ArgumentList "/quiet /norestart" -ErrorAction SilentlyContinue | Out-Null
 			
 			
     			Start-Process "$SPbits\PrerequisiteInstaller.exe" -Wait -ArgumentList "/unattended `
@@ -340,7 +343,7 @@ Function InstallPrerequisites([xml]$xmlinput)
     			Write-Warning $PreReqLastError.Line
     			$PreReqLastReturncode = $PreReqLog | select-string -SimpleMatch -Pattern "Last return code" -Encoding Unicode | Select-Object -Last 1
     			If ($PreReqLastReturnCode) {Write-Warning $PreReqLastReturncode.Line}
-				If ($PreReqLastReturncode -like "*-2145124329*")
+				If (($PreReqLastReturncode -like "*-2145124329*") -or ($PreReqLastReturncode -like "*2359302*"))
 				{
 					Write-Host -ForegroundColor White " - A known issue occurred installing one of the prerequisites - retrying..."
 					InstallPreRequisites ([xml]$xmlinput)
@@ -1502,6 +1505,8 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
 		$template = $SiteCollection.template
 		$OwnerAlias = $SiteCollection.Owner
 		$LCID = $SiteCollection.LCID
+		$SiteCollectionLocale = $SiteCollection.Locale
+		$SiteCollectionTime24 = $SiteCollection.Time24
 		$GetSPSiteCollection = Get-SPSite | Where-Object {$_.Url -eq $SiteURL}
 		If ($GetSPSiteCollection -eq $null)
 		{
@@ -1517,32 +1522,34 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
 			{
 				# If a template has been pre-specified, use it when creating the Portal site collection; otherwise, leave it blank so we can select one when the portal first loads
 				If (($Template -ne $null) -and ($Template -ne "")) {
-					$Site = New-SPSite -Url $SiteURL -OwnerAlias $OwnerAlias -SecondaryOwnerAlias $env:USERDOMAIN\$env:USERNAME -ContentDatabase $database -Description $SiteCollName -Name $SiteCollName -Language $LCID -Template $Template -ErrorAction Stop | Out-Null
+					$Site = New-SPSite -Url $SiteURL -OwnerAlias $OwnerAlias -SecondaryOwnerAlias $env:USERDOMAIN\$env:USERNAME -ContentDatabase $database -Description $SiteCollectionName -Name $SiteCollectionName -Language $LCID -Template $Template -ErrorAction Stop
 				}
 				Else 
 				{
-					$Site = New-SPSite -Url $SiteURL -OwnerAlias $OwnerAlias -SecondaryOwnerAlias $env:USERDOMAIN\$env:USERNAME -ContentDatabase $database -Description $SiteCollName -Name $SiteCollName -Language $LCID  -ErrorAction Stop | Out-Null
+					$Site = New-SPSite -Url $SiteURL -OwnerAlias $OwnerAlias -SecondaryOwnerAlias $env:USERDOMAIN\$env:USERNAME -ContentDatabase $database -Description $SiteCollectionName -Name $SiteCollectionName -Language $LCID  -ErrorAction Stop
 				}
 
 				# Add the Portal Site Connection to the web app, unless of course the current web app *is* the portal
 				# Inspired by http://www.toddklindt.com/blog/Lists/Posts/Post.aspx?ID=264
 				$PortalWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "Portal"}
 				$PortalSiteColl = $PortalWebApp.SiteCollections.SiteCollection | Select-Object -First 1
-				$SPSite = Get-SPSite $SiteURL
-				If ($SiteColl.Locale) {
-					$Site.RootWeb.Locale = [System.Globalization.CultureInfo]::CreateSpecificCulture($SiteColl.Locale) 
-					$Site.RootWeb.Update() 
-				}
-				If ($SiteColl.Time24) {
-					$Site.RootWeb.RegionalSettings.Time24 = $([System.Convert]::ToBoolean($SiteColl.Time24))
-					$Site.Update() 
-				}
-				If ($SPSite.URL -ne $PortalSiteColl.siteURL)
+				If ($Site.URL -ne $PortalSiteColl.siteURL)
 				{
 					Write-Host -ForegroundColor White " - Setting the Portal Site Connection for `"$SiteCollectionName`"..."
-					$SPSite.PortalName = $PortalSiteColl.Name
-					$SPSite.PortalUrl = $PortalSiteColl.siteUrl
+					$Site.PortalName = $PortalSiteColl.Name
+					$Site.PortalUrl = $PortalSiteColl.siteUrl
 				}
+				If ($SiteCollectionLocale) 
+				{
+					Write-Host -ForegroundColor White " - Updating the locale for `"$SiteCollectionName`" to `"$SiteCollectionLocale`"..."
+					$Site.RootWeb.Locale = [System.Globalization.CultureInfo]::CreateSpecificCulture($SiteCollectionLocale) 
+				}
+				If ($SiteCollectionTime24) 
+				{
+					Write-Host -ForegroundColor White " - Updating 24 hour time format for `"$SiteCollectionName`" to `"$SiteCollectionTime24`"..."
+					$Site.RootWeb.RegionalSettings.Time24 = $([System.Convert]::ToBoolean($SiteCollectionTime24))
+				}
+				$Site.RootWeb.Update()
 			}
 		}
 		Else {Write-Host -ForegroundColor White " - Site `"$SiteCollectionName`" already provisioned."}
@@ -1854,9 +1861,10 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
 				
 				# Get User Profile Synchronization Service
     			Write-Host -ForegroundColor White " - Checking User Profile Synchronization Service..." -NoNewline
-    			$ProfileSyncService = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Administration.ProfileSynchronizationServiceInstance"}
-				# Attempt to start if there's only 1 Profile Sync Service instance in the farm as we probably don't want to start multiple Sync instances in the farm (running against the same Profile Service at least)
-				If (!($ProfileSyncService.Count -gt 1) -and ($ProfileSyncService.Status -ne "Online"))
+    			$ProfileSyncServices = @(Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Administration.ProfileSynchronizationServiceInstance"})
+				$ProfileSyncService = $ProfileSyncServices | ? {$_.Parent.Address -eq $env:COMPUTERNAME}
+				# Attempt to start only if there are no online Profile Sync Service instances in the farm as we don't want to start multiple Sync instances (running against the same Profile Service at least)
+				If (!($ProfileSyncServices | ? {$_.Status -eq "Online"}))
     			{
 					# Inspired by http://technet.microsoft.com/en-us/library/ee721049.aspx
     				If (!($FarmAcct)) {$FarmAcct = (Get-SPFarm).DefaultServiceAccount}
@@ -1870,7 +1878,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
     				$UPSCredentialsJob = Get-SPTimerJob | ? {$_.Name -eq "windows-service-credentials-FIMSynchronizationService"}
 					If ($UPSCredentialsJob.Status -eq "Online")
 					{
-						Write-Host -ForegroundColor White " - Deleting exiting sync credentials timer job..."
+						Write-Host -ForegroundColor White " - Deleting existing sync credentials timer job..."
 						$UPSCredentialsJob.Delete()
 					}
     				UpdateProcessIdentity ($ProfileSyncService)
@@ -1887,7 +1895,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
     					{
     						Write-Host -ForegroundColor Blue "." -NoNewline
     						Start-Sleep 1
-    						$ProfileSyncService = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Administration.ProfileSynchronizationServiceInstance"}
+    						$ProfileSyncService = @(Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Administration.ProfileSynchronizationServiceInstance"}) | ? {$_.Parent.Address -eq $env:COMPUTERNAME}
     					}
     					If ($ProfileSyncService.Status -eq "Provisioning")
     					{
@@ -1898,7 +1906,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
     					{
     						Write-Host -ForegroundColor Blue "." -NoNewline
     						Start-Sleep 1
-    						$ProfileSyncService = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Administration.ProfileSynchronizationServiceInstance"}
+    						$ProfileSyncService = @(Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Administration.ProfileSynchronizationServiceInstance"}) | ? {$_.Parent.Address -eq $env:COMPUTERNAME}
     					}
     					If ($ProfileSyncService.Status -ne "Online")
     					{
@@ -2156,11 +2164,14 @@ Function CreateSecureStoreServiceApp
 			}
 			Else {Write-Host -ForegroundColor White " - Secure Store Service Application already provisioned."}
 			
-			$secureStore = Get-SPServiceApplicationProxy | Where {$_.GetType().Equals([Microsoft.Office.SecureStoreService.Server.SecureStoreServiceApplicationProxy])} 
+			$secureStore = Get-SPServiceApplicationProxy | Where {$_.GetType().Equals([Microsoft.Office.SecureStoreService.Server.SecureStoreServiceApplicationProxy])}
+			Start-Sleep 5
 			Write-Host -ForegroundColor White " - Creating the Master Key..."
  			Update-SPSecureStoreMasterKey -ServiceApplicationProxy $secureStore.Id -Passphrase "$FarmPassPhrase"
+			Start-Sleep 5
 			Write-Host -ForegroundColor White " - Creating the Application Key..."
 			Update-SPSecureStoreApplicationServerKey -ServiceApplicationProxy $secureStore.Id -Passphrase "$FarmPassPhrase" -ErrorAction SilentlyContinue
+			Start-Sleep 5
 			If (!$?)
 			{
 				# Try again...
@@ -2212,6 +2223,47 @@ Function StartSearchQueryAndSiteSettingsService
 		Catch
 		{
 			Write-Output $_ 
+		}
+		WriteLine
+	}
+}
+#EndRegion
+
+#Region Start Claims to Windows Token Service
+Function StartClaimsToWindowsTokenService
+{
+	If (ShouldIProvision($xmlinput.Configuration.Farm.Services.ClaimsToWindowsTokenService) -eq $true)
+	{
+		WriteLine
+		# Ensure Claims to Windows Token Service is started
+		$ClaimsServices = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.SharePoint.Administration.Claims.SPWindowsTokenServiceInstance"}
+		$ClaimsService = $ClaimsServices | ? {$_.Server.Address -eq $env:COMPUTERNAME}
+		If ($ClaimsService.Status -ne "Online")
+		{
+			Try
+			{
+				Write-Host -ForegroundColor White " - Starting $($ClaimsService.DisplayName)..."
+				$ClaimsService.Provision()
+    			If (-not $?) {throw " - Failed to start $($ClaimsService.DisplayName)"}
+			}
+			Catch
+			{
+        	    " - An error occurred starting $($ClaimsService.DisplayName)"
+			}
+		    #Wait
+        	Write-Host -ForegroundColor Blue " - Waiting for $($ClaimsService.DisplayName)..." -NoNewline
+        	While ($ClaimsService.Status -ne "Online") 
+        	{
+				Write-Host -ForegroundColor Blue "." -NoNewline
+				sleep 1
+				$ClaimsServices = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.SharePoint.Administration.Claims.SPWindowsTokenServiceInstance"}
+				$ClaimsService = $ClaimsServices | ? {$_.Server.Address -eq $env:COMPUTERNAME}
+			}
+			Write-Host -BackgroundColor Blue -ForegroundColor Black $($ClaimsService.Status)
+		}
+		Else 
+		{
+			Write-Host -ForegroundColor White " - $($ClaimsService.DisplayName) already started."
 		}
 		WriteLine
 	}
@@ -3298,8 +3350,8 @@ Function ShouldIProvision([System.Xml.XmlNode] $node)
 	If ($node.GetAttribute("Provision")) {$v = $node.GetAttribute("Provision").Replace(","," ")}
     ElseIf ($node.GetAttribute("Start")) {$v = $node.GetAttribute("Start").Replace(","," ")}
 	If ($v -eq $true) { Return $true; }
-	$v = " " + $v + " ";
-	If ($v.IndexOf(" " + $env:ComputerName + " ") -ge 0) { Return $true; }
+	$v = " " + $v.ToUpper() + " ";
+	If ($v.IndexOf(" " + $env:COMPUTERNAME.ToUpper() + " ") -ge 0) { Return $true; }
 	Return $false;
 }
 
