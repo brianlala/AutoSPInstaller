@@ -124,10 +124,11 @@ Function Setup-Services
 Function Finalize-Install 
 {
 	# Remove Farm Account from local Administrators group to avoid big scary warnings in Central Admin
-	# But only if the script actually put it there - don't want it doing things you didn't expect
-	If (!($RunningAsFarmAcct) -and ($xmlinput.Configuration.Farm.Account.getAttribute("AddToLocalAdminsDuringSetup") -eq $true))
+	# But only if the script actually put it there, and we want to leave it there 
+	# (e.g. to work around the issue with native SharePoint backups deprovisioning UPS per http://www.toddklindt.com/blog/Lists/Posts/Post.aspx?ID=275)
+	$FarmAcct = $xmlinput.Configuration.Farm.Account.Username
+	If (!($RunningAsFarmAcct) -and ($xmlinput.Configuration.Farm.Account.getAttribute("AddToLocalAdminsDuringSetup") -eq $true) -and ($xmlinput.Configuration.Farm.Account.LeaveInLocalAdmins -eq $false))
 	{
-		$FarmAcct = $xmlinput.Configuration.Farm.Account.Username
 		Write-Host -ForegroundColor White " - Removing $FarmAcct from local Administrators..."
 		$FarmAcctDomain,$FarmAcctUser = $FarmAcct -Split "\\"
 		try
@@ -139,6 +140,10 @@ Function Finalize-Install
 		# Restart SPTimerV4 so it can now run under non-local Admin privileges and avoid Health Analyzer warning
 		Write-Host -ForegroundColor White " - Restarting SharePoint Timer Service..."
 		Restart-Service SPTimerV4
+	}
+	Else
+	{
+		Write-Host -ForegroundColor White " - Leaving $FarmAcct in the local Administrators group."	
 	}
 
 	Run-HealthAnalyzerJobs

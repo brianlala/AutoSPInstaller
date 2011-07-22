@@ -566,13 +566,35 @@ Function ConfigureOfficeWebApps([xml]$xmlinput)
 Function InstallLanguagePacks([xml]$xmlinput)
 {
 	WriteLine
-    #Look for Server language packs
-    $ServerLanguagePacks = (Get-ChildItem "$bits\LanguagePacks" -Name -Include ServerLanguagePack*.exe -ErrorAction SilentlyContinue)
-    If ($ServerLanguagePacks)
+   	#Get installed languages from registry (HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Office Server\14.0\InstalledLanguages)
+    $InstalledOfficeServerLanguages = (Get-Item "HKLM:\Software\Microsoft\Office Server\14.0\InstalledLanguages").GetValueNames() | ? {$_ -ne ""}
+	# Look for extracted language packs
+	$ExtractedLanguagePacks = (Get-ChildItem "$bits\LanguagePacks" -Name -Include "??-??" -ErrorAction SilentlyContinue)
+    $ServerLanguagePacks = (Get-ChildItem "$bits\LanguagePacks" -Name -Include ServerLanguagePack_*.exe -ErrorAction SilentlyContinue)
+	If ($ExtractedLanguagePacks)
+	{
+    	Write-Host -ForegroundColor White " - Installing SharePoint Language Packs:"
+    	ForEach ($LanguagePackFolder in $ExtractedLanguagePacks)
+		{
+			$Language = $InstalledOfficeServerLanguages | ? {$_ -eq $LanguagePackFolder}
+            If (!$Language)
+			{
+    	        Write-Host -ForegroundColor Blue " - Installing extracted language pack $LanguagePackFolder..." -NoNewline
+    	        Start-Process -FilePath "$bits\LanguagePacks\$LanguagePackFolder\setup.exe" -ArgumentList "/config $bits\LanguagePacks\$LanguagePackFolder\Files\SetupSilent\config.xml"
+    	        While (Get-Process -Name "setup" -ErrorAction SilentlyContinue)
+    	        {
+    	        	Write-Host -ForegroundColor Blue "." -NoNewline
+    	        	Start-Sleep 5
+    	        }
+       		    Write-Host -BackgroundColor Blue -ForegroundColor Black "Done."
+			}
+		}
+    	Write-Host -ForegroundColor White " - Language Pack installation complete."
+	}
+    # Look for Server language pack installers
+    ElseIf ($ServerLanguagePacks)
     {
-    	Write-Host -ForegroundColor White " - Installing SharePoint (Server) Language Packs:"
-    	#Get installed languages from registry (HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Office Server\14.0\InstalledLanguages)
-        $InstalledOfficeServerLanguages = (Get-Item "HKLM:\Software\Microsoft\Office Server\14.0\InstalledLanguages").GetValueNames() | ? {$_ -ne ""}
+    	Write-Host -ForegroundColor White " - Installing SharePoint Language Packs:"
     <#
     	#Another way to get installed languages, thanks to Anders Rask (@AndersRask)!
     	##$InstalledOfficeServerLanguages = [Microsoft.SharePoint.SPRegionalSettings]::GlobalInstalledLanguages
@@ -592,6 +614,37 @@ Function InstallLanguagePacks([xml]$xmlinput)
     	        	Start-Sleep 5
     	        }
        		    Write-Host -BackgroundColor Blue -ForegroundColor Black "Done."
+				$Language = (($LanguagePack -replace "ServerLanguagePack_","") -replace ".exe","")
+				# Install Foundation Language Pack SP1, then Server Language Pack SP1, if found
+				If (Get-ChildItem "$bits\LanguagePacks" -Name -Include spflanguagepack2010sp1-kb2460059-x64-fullfile-$Language.exe -ErrorAction SilentlyContinue)
+				{
+					Write-Host -ForegroundColor Blue " - Installing Foundation language pack SP1 for $Language..." -NoNewline
+					Start-Process -FilePath "$bits\LanguagePacks\spflanguagepack2010sp1-kb2460059-x64-fullfile-$Language.exe" -ArgumentList "/quiet /norestart"
+	    	        While (Get-Process -Name spflanguagepack2010sp1-kb2460059-x64-fullfile-$Language -ErrorAction SilentlyContinue)
+	    	        {
+	    	        	Write-Host -ForegroundColor Blue "." -NoNewline
+	    	        	Start-Sleep 5
+	    	        }
+	       		    Write-Host -BackgroundColor Blue -ForegroundColor Black "Done."
+					# Install Server Language Pack SP1, if found
+					If (Get-ChildItem "$bits\LanguagePacks" -Name -Include serverlanguagepack2010sp1-kb2460056-x64-fullfile-$Language.exe -ErrorAction SilentlyContinue)
+					{
+						Write-Host -ForegroundColor Blue " - Installing Server language pack SP1 for $Language..." -NoNewline
+						Start-Process -FilePath "$bits\LanguagePacks\serverlanguagepack2010sp1-kb2460056-x64-fullfile-$Language.exe" -ArgumentList "/quiet /norestart"
+		    	        While (Get-Process -Name serverlanguagepack2010sp1-kb2460056-x64-fullfile-$Language -ErrorAction SilentlyContinue)
+		    	        {
+		    	        	Write-Host -ForegroundColor Blue "." -NoNewline
+		    	        	Start-Sleep 5
+		    	        }
+		       		    Write-Host -BackgroundColor Blue -ForegroundColor Black "Done."
+					}
+					Else
+					{
+						Write-Warning " - Server Language Pack SP1 not found for $Language!" 
+						Write-Warning " - You must install it for the language service pack patching process to be complete."
+					}
+				}
+				Else {Write-Host -ForegroundColor White " - No Language Pack service packs found."}
             }
             Else
             {
@@ -628,7 +681,9 @@ Function ConfigureFarmAdmin([xml]$xmlinput)
         WriteLine
 		#Add to Admins Group
         $FarmAcct = $xmlinput.Configuration.Farm.Account.Username
-        Write-Host -ForegroundColor White " - Adding $FarmAcct to local Administrators (only for install)..."
+        Write-Host -ForegroundColor White " - Adding $FarmAcct to local Administrators" -NoNewline
+		If ($xmlinput.Configuration.Farm.Account.LeaveInLocalAdmins -ne $true) {Write-Host -ForegroundColor White " (only for install)..."}
+		Else {Write-Host -ForegroundColor White " ..."}
         $FarmAcctDomain,$FarmAcctUser = $FarmAcct -Split "\\"
         Try
     	{
@@ -641,7 +696,7 @@ Function ConfigureFarmAdmin([xml]$xmlinput)
 				Restart-Service SPTimerV4
 			}
     	}
-        Catch {Write-host -ForegroundColor White " - $FarmAcct is already an Administrator." }
+        Catch {Write-host -ForegroundColor White " - $FarmAcct is already an Administrator."}
 		WriteLine
     }
 }
@@ -744,7 +799,7 @@ Function CreateOrJoinFarm([xml]$xmlinput, $SecPhrase, $farmCredential)
     Catch {""}
     If ($SPFarm -eq $null)
     {
-		$DBServer =  $xmlinput.Configuration.Farm.Database.DBServer
+		$DBServer = $xmlinput.Configuration.Farm.Database.DBServer
 		$CentralAdminContentDB = $DBPrefix+$xmlinput.Configuration.Farm.CentralAdmin.Database
 		
 		Write-Host -ForegroundColor White " - Attempting to join farm on `"$ConfigDB`"..."
@@ -787,7 +842,7 @@ Function CreateCentralAdmin([xml]$xmlinput)
 	{
 		Try
 		{
-			$CentralAdminPort =  $xmlinput.Configuration.Farm.CentralAdmin.Port
+			$CentralAdminPort = $xmlinput.Configuration.Farm.CentralAdmin.Port
 			# Check if there is already a Central Admin provisioned in the farm (by querying web apps by port); if not, create one
 			If (!(Get-SPWebApplication -IncludeCentralAdministration | ? {$_.Url -like "*:$CentralAdminPort*"}))
 			{
@@ -832,9 +887,9 @@ Function CreateCentralAdmin([xml]$xmlinput)
 # ===================================================================================
 Function CheckFarmTopology([xml]$xmlinput)
 {
-	$DBServer =  $xmlinput.Configuration.Farm.Database.DBServer
+	$DBServer = $xmlinput.Configuration.Farm.Database.DBServer
 	$SPFarm = Get-SPFarm | Where-Object {$_.Name -eq $ConfigDB}
-	ForEach ($Srv in $SPFarm.Servers) {If (($Srv -like "*$DBServer*") -and ($DBServer -ne $env:COMPUTERNAME)) {[bool]$script:DBLocal = $false}}
+	ForEach ($Srv in $SPFarm.Servers) {If (($Srv -like "*$DBServer*") -and ($DBServer -ne $env:COMPUTERNAME)) {[bool]$DBLocal = $false}}
 	If (($($SPFarm.Servers.Count) -gt 1) -and ($DBLocal -eq $false)) {[bool]$script:FirstServer = $false}
 	Else {[bool]$script:FirstServer = $true}
 }
@@ -848,28 +903,14 @@ Function ConfigureFarm([xml]$xmlinput)
 	WriteLine
 	Write-Host -ForegroundColor White " - Configuring the SharePoint farm/server..."
 	# Force a full configuration if this is the first web/app server in the farm
-	If ((!($FarmExists)) -or ($FirstServer -eq $true)) {[bool]$DoFullConfig = $true}
+	If ((!($FarmExists)) -or ($FirstServer -eq $true) -or (CheckIfUpgradeNeeded -eq $true)) {[bool]$DoFullConfig = $true}
 	Try
 	{
 		If ($DoFullConfig)
 		{
 			# Install Help Files
-			##$SPHelpTimer = Get-SPTimerJob | ? {$_.TypeName -eq "Microsoft.SharePoint.Help.HelpCollectionInstallerJob"} | Select-Object -Last 1
-			##If (!($SPHelpTimer.Status -eq "Online")) # Install help collection if there isn't already a timer job created & running
-			##{
 				Write-Host -ForegroundColor White " - Installing Help Collection..."
 				Install-SPHelpCollection -All
-			##}
-			### Wait for the SP Help Collection timer job to complete
-			<#Write-Host -ForegroundColor Blue " - Waiting for Help Collection Installation timer job to complete..." -NoNewline
-			While ($SPHelpTimer.Status -eq "Online")
-			{
-				Write-Host -ForegroundColor Blue "." -NoNewline
-		  		Start-Sleep 1
-		  		$SPHelpTimer = Get-SPTimerJob | ? {$_.TypeName -eq "Microsoft.SharePoint.Help.HelpCollectionInstallerJob"} | Select-Object -Last 1
-			}
-	    	Write-Host -BackgroundColor Blue -ForegroundColor Black "Done."
-			#>
 		}
 		# Secure resources
 		Write-Host -ForegroundColor White " - Securing Resources..."
@@ -884,7 +925,7 @@ Function ConfigureFarm([xml]$xmlinput)
 			$Features = Install-SPFeature -AllExistingFeatures -Force
 		}
 		# Detect if Central Admin URL already exists, i.e. if Central Admin web app is already provisioned on the local computer
-		$CentralAdminPort =  $xmlinput.Configuration.Farm.CentralAdmin.Port
+		$CentralAdminPort = $xmlinput.Configuration.Farm.CentralAdmin.Port
 		$CentralAdmin = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.Status -eq "Online"} | ? {$_.Url -like "http://$($env:COMPUTERNAME):$CentralAdminPort*"}
 		
 		# Provision CentralAdmin if indicated in AutoSPInstallerInput.xml and the CA web app doesn't already exist
@@ -934,7 +975,6 @@ Function ConfigureFarm([xml]$xmlinput)
 #Region Configure Language Packs
 Function ConfigureLanguagePacks([xml]$xmlinput)
 {	
-	# If there were language packs installed we need to run psconfig to configure them
     If (!($FarmPassphrase) -or ($FarmPassphrase -eq ""))
     {
     	$FarmPassphrase = GetFarmPassPhrase ($xmlinput)
@@ -942,7 +982,9 @@ Function ConfigureLanguagePacks([xml]$xmlinput)
 	# If the farm passphrase is a secure string (it would be if we prompted for input earlier), we need to convert it back to plain text for PSConfig.exe to understand it
 	If ($FarmPassphrase.GetType().Name -eq "SecureString") {$FarmPassphrase = ConvertTo-PlainText $FarmPassphrase}
 	$InstalledOfficeServerLanguages = (Get-Item "HKLM:\Software\Microsoft\Office Server\14.0\InstalledLanguages").GetValueNames() | ? {$_ -ne ""}
-	If ($InstalledOfficeServerLanguages.Count -gt 1)
+	$LanguagePackInstalled = (Get-Item -Path 'HKLM:\SOFTWARE\Microsoft\Shared Tools\Web Server Extensions\14.0\WSS\').GetValue("LanguagePackInstalled")
+	# If there were language packs installed we need to run psconfig to configure them
+	If (($LanguagePackInstalled -eq "1") -and ($InstalledOfficeServerLanguages.Count -gt 1))
 	{
 		WriteLine
 		Write-Host -ForegroundColor White " - Configuring language packs..."
@@ -993,7 +1035,7 @@ Function AddManagedAccounts([xml]$xmlinput)
 		{
             $username = $account.username
             $password = $account.Password
-            $password =  ConvertTo-SecureString "$password" -AsPlaintext -Force 
+            $password = ConvertTo-SecureString "$password" -AsPlaintext -Force 
 			# The following was suggested by Matthias Einig (http://www.codeplex.com/site/users/view/matein78)
 			# And inspired by http://todd-carter.com/post/2010/05/03/Give-your-Application-Pool-Accounts-A-Profile.aspx & http://blog.brainlitter.com/archive/2010/06/08/how-to-revolve-event-id-1511-windows-cannot-find-the-local-profile-on-windows-server-2008.aspx
 	        Try
@@ -1115,6 +1157,7 @@ Function CreateBasicServiceApplication()
 	Try
 	{
 		$ApplicationPool = Get-HostedServicesAppPool ($xmlinput)
+		$DBServer = $xmlinput.Configuration.Farm.Database.DBServer
 		Write-Host -ForegroundColor White " - Provisioning $($ServiceName)..."
 	    # get the service instance
 	    $ServiceInstances = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq $ServiceInstanceType}
@@ -1153,7 +1196,15 @@ Function CreateBasicServiceApplication()
 		If ($GetServiceApplication -eq $null)
 		{
 			Write-Host -ForegroundColor White " - Provisioning $ServiceName..."
-			$NewServiceApplication = Invoke-Expression "$ServiceNewCmdlet -Name `"$ServiceName`" -ApplicationPool `$ApplicationPool"
+			# A bit kludgey to accomodate the new PerformancePoint cmdlet in Service Pack 1 (and still be able to use the CreateBasicServiceApplication function)
+			If ((CheckForSP1) -and ($ServiceInstanceType -eq "Microsoft.PerformancePoint.Scorecards.BIMonitoringServiceInstance"))
+			{
+				$NewServiceApplication = Invoke-Expression "$ServiceNewCmdlet -Name `"$ServiceName`" -ApplicationPool `$ApplicationPool -DatabaseServer `$DBServer -DatabaseName `$PerformancePointDB"
+			}
+			Else # Just do the regular non-database-bound service app creation
+			{
+				$NewServiceApplication = Invoke-Expression "$ServiceNewCmdlet -Name `"$ServiceName`" -ApplicationPool `$ApplicationPool"
+			}
 			Write-Host -ForegroundColor White " - Provisioning $ServiceName Proxy..."
 			# Because apparently the teams developing the cmdlets for the various service apps didn't communicate with each other, we have to account for the different ways each proxy is provisioned!
 			Switch ($ServiceInstanceType)
@@ -1822,13 +1873,18 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
 
     			# Create a variable that contains the list of administrators for the service application 
 				$ProfileServiceAppSecurity = Get-SPServiceApplicationSecurity $ServiceAppIDToSecure -Admin
+				# Create a variable that contains the permissions for the service application
+				$ProfileServiceAppPermissions = Get-SPServiceApplicationSecurity $ServiceAppIDToSecure
 
-    			# Create variables that contains the claims principals for MySite App Pool, Portal App Pool and Content Access accounts
+    			# Create variables that contains the claims principals for current (Setup) user, MySite App Pool, Portal App Pool and Content Access accounts
+				$CurrentUserAcctPrincipal = New-SPClaimsPrincipal -Identity $env:USERDOMAIN\$env:USERNAME -IdentityType WindowsSamAccountName
     			$MySiteAppPoolAcctPrincipal = New-SPClaimsPrincipal -Identity $MySiteAppPoolAcct -IdentityType WindowsSamAccountName
 				$PortalAppPoolAcctPrincipal = New-SPClaimsPrincipal -Identity $PortalAppPoolAcct -IdentityType WindowsSamAccountName
     			$ContentAccessAcctPrincipal = New-SPClaimsPrincipal -Identity $ContentAccessAcct -IdentityType WindowsSamAccountName
 
-    			# Give 'Full Control' permissions to the MySite App Pool and Portal App Pool account claims principals
+    			# Give 'Full Control' permissions to the current (Setup) user, MySite App Pool and Portal App Pool account claims principals
+				Grant-SPObjectSecurity $ProfileServiceAppSecurity -Principal $CurrentUserAcctPrincipal -Rights "Full Control"
+				Grant-SPObjectSecurity $ProfileServiceAppPermissions -Principal $CurrentUserAcctPrincipal -Rights "Full Control"
     			Grant-SPObjectSecurity $ProfileServiceAppSecurity -Principal $MySiteAppPoolAcctPrincipal -Rights "Full Control"
 				Grant-SPObjectSecurity $ProfileServiceAppSecurity -Principal $PortalAppPoolAcctPrincipal -Rights "Full Control"
 				# Give 'Retrieve People Data for Search Crawlers' permissions to the Content Access claims principal
@@ -1836,6 +1892,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
 
     			# Apply the changes to the User Profile service application
 				Set-SPServiceApplicationSecurity $ServiceAppIDToSecure -objectSecurity $ProfileServiceAppSecurity -Admin
+				Set-SPServiceApplicationSecurity $ServiceAppIDToSecure -objectSecurity $ProfileServiceAppPermissions
 				
 				# Grant the Portal App Pool account rights to the Profile DB
 				$ProfileDB = $DBPrefix+$UserProfile.ProfileDB
@@ -1886,8 +1943,6 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
 					# Provision the User Profile Sync Service
 					$ProfileServiceApp.SetSynchronizationMachine($env:COMPUTERNAME, $ProfileSyncService.Id, $FarmAcct, (ConvertTo-PlainText $FarmAcctPWD))
     				If (($ProfileSyncService.Status -ne "Provisioning") -and ($ProfileSyncService.Status -ne "Online")) {Write-Host -ForegroundColor Blue "`n - Waiting for User Profile Synchronization Service to start..." -NoNewline}
-    				##Else 
-    				##{
 					# Monitor User Profile Sync service status
     				While ($ProfileSyncService.Status -ne "Online")
     				{
@@ -1922,7 +1977,35 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
     						Start-Process -FilePath iisreset.exe -ArgumentList "-noforce" -Wait -NoNewWindow
     					}
     				}
-    				##}
+					# Attempt to create a sync connection; only SharePoint 2010 Service Pack 1 and above supports the Add-SPProfileSyncConnection cmdlet
+					If (CheckForSP1)
+					{
+						Write-Host -ForegroundColor White " - Creating a default Profile Sync connection..."
+						##$ProfileServiceApp = Get-SPServiceApplication | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Administration.UserProfileApplication"}
+						$ProfileServiceApp = Get-SPServiceApplication |?{$_.DisplayName -eq $UserProfileServiceName}
+						$Domain,$TLD = $env:USERDNSDOMAIN -split "\."
+						$ConnectionSyncOU = "DC=$Domain,DC=$TLD"
+						$SyncConnectionDomain,$SyncConnectionAcct = ($UserProfile.SyncConnectionAccount) -split "\\"
+						$AddProfileSyncCmd = @"
+Add-PsSnapin Microsoft.SharePoint.PowerShell
+Write-Host -ForegroundColor White " - Creating default Sync connection..."
+`$SyncConnectionAcctPWD = (ConvertTo-SecureString -String "$($UserProfile.SyncConnectionAccountPassword)" -AsPlainText -Force)
+Add-SPProfileSyncConnection -ProfileServiceApplication $($ProfileServiceApp.Id) -ConnectionForestName $env:USERDNSDOMAIN -ConnectionDomain $SyncConnectionDomain -ConnectionUserName "$SyncConnectionAcct" -ConnectionSynchronizationOU "$ConnectionSyncOU" -ConnectionPassword `$SyncConnectionAcctPWD
+If (!`$?) 
+{
+Write-Host "Press any key to exit..."
+`$null = `$host.UI.RawUI.ReadKey(`"NoEcho,IncludeKeyDown`")
+}
+Else {Write-Host -ForegroundColor White " - Done.";Start-Sleep 15}
+"@
+						$AddProfileScriptFile = "$env:TEMP\AutoSPInstaller-AddProfileSyncCmd.ps1"
+						$AddProfileSyncCmd | Out-File $AddProfileScriptFile
+						# Run our Add-SPProfileSyncConnection script as the Farm Account - doesn't seem to work otherwise
+						Start-Process $PSHOME\powershell.exe -Credential $FarmCredential -ArgumentList "-Command Start-Process $PSHOME\powershell.exe -ArgumentList `"'$AddProfileScriptFile'`" -Verb Runas" -Wait
+						# Give Add-SPProfileSyncConnection time to complete before continuing
+						Start-Sleep 120
+						Remove-Item -LiteralPath $AddProfileScriptFile -Force -ErrorAction SilentlyContinue
+					}
     			}
     			Else {Write-Host -ForegroundColor White "Already started."}
     		}
@@ -1960,7 +2043,7 @@ Function CreateUPSAsAdmin([xml]$xmlinput)
 		$SocialDB = $DBPrefix+$UserProfile.SocialDB
        	$ApplicationPool = Get-HostedServicesAppPool ($xmlinput)
 		[System.Management.Automation.PsCredential]$farmCredential  = GetFarmCredentials ($xmlinput)
-		$ScriptFile = "$env:SystemDrive\AutoSPInstaller-ScriptBlock.ps1"
+		$ScriptFile = "$env:TEMP\AutoSPInstaller-ScriptBlock.ps1"
 		# Write the script block, with expanded variables to a temporary script file that the Farm Account can get at
 		Write-Output "Write-Host -ForegroundColor White `"Creating $UserProfileServiceName as $FarmAcct...`"" | Out-File $ScriptFile -Width 400
 		Write-Output "Add-PsSnapin Microsoft.SharePoint.PowerShell" | Out-File $ScriptFile -Width 400 -Append
@@ -1981,7 +2064,7 @@ Function CreateUPSAsAdmin([xml]$xmlinput)
 	{
 		# Delete the temporary script file if we were successful in creating the UPA
 		$ProfileServiceApp = Get-SPServiceApplication | ? {$_.DisplayName -eq $UserProfileServiceName}
-		If ($ProfileServiceApp) {Remove-Item -Path $ScriptFile -ErrorAction SilentlyContinue}
+		If ($ProfileServiceApp) {Remove-Item -LiteralPath $ScriptFile -Force}
 	}
 }
 #EndRegion
@@ -2034,7 +2117,7 @@ Function CreateSPUsageApp([xml]$xmlinput)
 		WriteLine
 		Try
 		{
-			$DBServer =  $xmlinput.Configuration.Farm.Database.DBServer
+			$DBServer = $xmlinput.Configuration.Farm.Database.DBServer
 			$SPUsageApplicationName = $xmlinput.Configuration.ServiceApps.SPUsageService.Name
 			$SPUsageDB = $DBPrefix+$xmlinput.Configuration.ServiceApps.SPUsageService.Database
 			$GetSPUsageApplication = Get-SPUsageApplication
@@ -2071,7 +2154,7 @@ Function CreateWebAnalyticsApp([xml]$xmlinput)
 		WriteLine
 		Try
 		{
-			$DBServer =  $xmlinput.Configuration.Farm.Database.DBServer
+			$DBServer = $xmlinput.Configuration.Farm.Database.DBServer
 			$ApplicationPool = Get-HostedServicesAppPool ($xmlinput)
 			$WebAnalyticsReportingDB = $DBPrefix+$xmlinput.Configuration.ServiceApps.WebAnalyticsService.ReportingDB
 			$WebAnalyticsStagingDB = $DBPrefix+$xmlinput.Configuration.ServiceApps.WebAnalyticsService.StagingDB
@@ -2463,7 +2546,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
 		}
 		Else
 		{
-			$DBServer =  $xmlinput.Configuration.Farm.Database.DBServer
+			$DBServer = $xmlinput.Configuration.Farm.Database.DBServer
 		}
 
         # Try and get the application pool if it already exists
@@ -2694,7 +2777,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
 		{
 			$spservice = $xmlinput.Configuration.Farm.ManagedAccounts.ManagedAccount | Where-Object { $_.CommonName -match "spservice" }
 			$username = $spservice.username
-			$password =  ConvertTo-SecureString "$($spservice.password)" -AsPlaintext -Force
+			$password = ConvertTo-SecureString "$($spservice.password)" -AsPlaintext -Force
 		}
 		Write-Host -ForegroundColor White " - Applying service account $username to Search Service..."
 		Get-SPEnterpriseSearchService | Set-SPEnterpriseSearchService -ServiceAccount $username -ServicePassword $password
@@ -2792,7 +2875,7 @@ Function CreateBusinessDataConnectivityServiceApp([xml]$xmlinput)
 		WriteLine
 	 	Try
      	{
-   			$DBServer =  $xmlinput.Configuration.Farm.Database.DBServer
+   			$DBServer = $xmlinput.Configuration.Farm.Database.DBServer
 			$BdcAppName = $xmlinput.Configuration.ServiceApps.BusinessDataConnectivity.Name
    			$BdcDataDB = $DBPrefix+$($xmlinput.Configuration.ServiceApps.BusinessDataConnectivity.Database)
 			$BdcAppProxyName = $xmlinput.Configuration.ServiceApps.BusinessDataConnectivity.ProxyName
@@ -3102,6 +3185,7 @@ Function CreateVisioServiceApp ([xml]$xmlinput)
 Function CreatePerformancePointServiceApp ([xml]$xmlinput)
 {
 	$ServiceConfig = $xmlinput.Configuration.EnterpriseServiceApps.PerformancePointService
+	$PerformancePointDB = $DBPrefix+$ServiceConfig.Database
 	If (ShouldIProvision($ServiceConfig) -eq $true)
 	{
 		WriteLine
@@ -3133,21 +3217,24 @@ Function CreatePerformancePointServiceApp ([xml]$xmlinput)
 		    }
 			$Application | Set-SPPerformancePointSecureDataValues -DataSourceUnattendedServiceAccount $PerformancePointCredential
 			
-			# Rename the performance point service application database
-			Write-Host -ForegroundColor White " - Renaming Performance Point Service Application Database"
-			$settingsDB = $Application.SettingsDatabase		
-			$newDB = $DBPrefix+$ServiceConfig.Database
-			$sqlServer = ($settingsDB -split "\\\\")[0]
-			$oldDB = ($settingsDB -split "\\\\")[1]
-			If (!($newDB -eq $oldDB)) # Check if it's already been renamed, in case we're running the script again
+			If (!(CheckForSP1)) # Only need this if our environment isn't up to Service Pack 1 for SharePoint 2010
 			{
+				# Rename the performance point service application database
 				Write-Host -ForegroundColor White " - Renaming Performance Point Service Application Database"
-				RenameDatabase -sqlServer $sqlServer -oldName $oldDB -newName $newDB
-				Set-SPPerformancePointServiceApplication  -Identity $ServiceConfig.Name -SettingsDatabase $newDB | Out-Null
-			}
-			Else
-			{
-			Write-Host -ForegroundColor White " - Database already named: $newDB"
+				$settingsDB = $Application.SettingsDatabase		
+				$newDB = $PerformancePointDB
+				$sqlServer = ($settingsDB -split "\\\\")[0]
+				$oldDB = ($settingsDB -split "\\\\")[1]
+				If (!($newDB -eq $oldDB)) # Check if it's already been renamed, in case we're running the script again
+				{
+					Write-Host -ForegroundColor White " - Renaming Performance Point Service Application Database"
+					RenameDatabase -sqlServer $sqlServer -oldName $oldDB -newName $newDB
+					Set-SPPerformancePointServiceApplication  -Identity $ServiceConfig.Name -SettingsDatabase $newDB | Out-Null
+				}
+				Else
+				{
+				Write-Host -ForegroundColor White " - Database already named: $newDB"
+				}
 			}
 		}
 		WriteLine
@@ -3288,7 +3375,7 @@ Function ConfigureOutgoingEmail
 			$ReplyToEmail = $xmlinput.Configuration.Farm.Services.OutgoingEmail.ReplyToEmail
 			Write-Host -ForegroundColor White " - Configuring Outgoing Email..."
 			$loadasm = [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.SharePoint")
-			$SPGlobalAdmin =  New-Object Microsoft.SharePoint.Administration.SPGlobalAdmin
+			$SPGlobalAdmin = New-Object Microsoft.SharePoint.Administration.SPGlobalAdmin
 			$SPGlobalAdmin.UpdateMailSettings($SMTPServer, $EmailAddress, $ReplyToEmail, 65001)
 		}
 		Catch
@@ -3439,7 +3526,8 @@ Function CheckSQLAccess
 	}
 	$currentUser = "$env:USERDOMAIN\$env:USERNAME"
 	$serverRolesToCheck = "dbcreator","securityadmin"
-	If (($xmlinput.Configuration.EnterpriseServiceApps.PerformancePointService) -and (ShouldIProvision ($xmlinput.Configuration.EnterpriseServiceApps.PerformancePointService) -eq $true))  
+	# If we are provisioning PerformancePoint but aren't running SharePoint 2010 Service Pack 1 yet, we need sysadmin in order to run the RenameDatabase function
+	If (($xmlinput.Configuration.EnterpriseServiceApps.PerformancePointService) -and (ShouldIProvision ($xmlinput.Configuration.EnterpriseServiceApps.PerformancePointService) -eq $true) -and (!(CheckForSP1)))  
 	{
 		$serverRolesToCheck = "dbcreator","securityadmin","sysadmin"	
 	}
@@ -3501,7 +3589,7 @@ Function CheckSQLAccess
 			Catch 
 			{
 				Write-Host -ForegroundColor Red "Fail"
-				$errText =  $Error[0].ToString()
+				$errText = $Error[0].ToString()
 				If ($errText.Contains("network-related"))
 				{
 					Throw " - Connection Error. Check server name, port, firewall."
@@ -3633,6 +3721,59 @@ Function FixTaxonomyPickerBug
 		Move-Item -Path $TaxonomyPicker -Destination $TaxonomyPicker".buggy"
 		Write-Host -ForegroundColor White " - Done."
 		WriteLine
+	}
+}
+
+# ====================================================================================
+# Func: CheckForSP1
+# Desc: Returns $true if the farm build number or SharePoint DLL is at Service Pack 1 (6029) or greater (or if slipstreamed SP1 is detected); otherwise returns $false
+# Desc: Helps to determine whether certain new/updated cmdlets are available
+# ====================================================================================
+Function CheckForSP1
+{
+	If (Get-Command Get-SPFarm -ErrorAction SilentlyContinue)
+	{
+		# Try to get the version of the farm first
+		$Build = (Get-SPFarm).BuildVersion.Build
+		If (!($Build)) # Get the ProductVersion of a SharePoint DLL instead, since the farm doesn't seem to exist yet
+		{
+			$SP2010ProdVer = (Get-Command $env:CommonProgramFiles'\Microsoft Shared\Web Server Extensions\14\isapi\microsoft.sharepoint.portal.dll').FileVersionInfo.ProductVersion
+			$null,$null,[int]$Build,$null = $SP2010ProdVer -split "\."
+		}
+		If ($Build -ge 6029)
+		{
+			Return $true
+		}
+	}
+	#SharePoint probably isn't installed yet, so try to see if we have slipstreamed SP1 in the \Updates folder at least...
+	ElseIf (Get-Item "$bits\SharePoint\Updates\oserversp1-x-none.msp" -ErrorAction SilentlyContinue)
+	{
+		Return $true
+	}
+	Else
+	{
+		Return $false
+	}
+}
+
+# ====================================================================================
+# Func: CheckIfUpgradeNeeded
+# Desc: Returns $true if the server or farm requires an upgrade (i.e. requires PSConfig or the corresponding Powershell commands to be run)
+# ====================================================================================
+Function CheckIfUpgradeNeeded
+{
+	$SetupType = (Get-Item -Path 'HKLM:\SOFTWARE\Microsoft\Shared Tools\Web Server Extensions\14.0\WSS\').GetValue("SetupType")
+	<#If (((Get-SPServer $env:COMPUTERNAME).NeedsUpgrade -eq $True) -or `
+		((Get-SPServer $env:COMPUTERNAME).NeedsUpgradeIncludeChildren -eq $True) -or `
+		((Get-SPFarm).NeedsUpgrade -eq $True) -or `
+		((Get-SPFarm).NeedsUpgradeIncludeChildren -eq $True))#>
+	If ($SetupType -ne "CLEAN_INSTALL") # For example, if the value is "B2B_UPGRADE"
+	{
+		Return $true
+	}
+	Else
+	{
+		Return $false
 	}
 }
 #EndRegion

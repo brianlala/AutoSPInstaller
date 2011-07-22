@@ -9,7 +9,12 @@
 \SP2010\AutoSPInstaller\Hotfixes\Windows6.0-KB971831-x64.msu
 \SP2010\AutoSPInstaller\Hotfixes\Windows6.1-KB976462-v2-x64.msu
 \SP2010\AutoSPInstaller\Hotfixes\Windows6.1-KB976462-x64.msu
+
+\SP2010\LanguagePacks\xx-xx\ (optional)
+\SP2010\LanguagePacks\xx-xx\Updates\ (extract Language Pack Service Pack / Cumulative Updates here) (optional)
+OR
 \SP2010\LanguagePacks\<ServerLanguagePack_XX-XX.exe>
+
 \SP2010\SharePoint\
 \SP2010\SharePoint\PrerequisiteInstallerFiles\
 \SP2010\OfficeWebApps\ (optional)
