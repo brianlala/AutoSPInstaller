@@ -82,6 +82,7 @@
             <SandboxedCodeService Start="false" />
             <ClaimsToWindowsTokenService Start="false" />
             <SearchQueryAndSiteSettingsService Start="false" />
+            <SMTP Install="false" />
             <OutgoingEmail Configure="true">
                 <SMTPServer></SMTPServer>
                 <EmailAddress></EmailAddress>
@@ -117,8 +118,10 @@
             <SuperReader>DOMAIN\SP_CacheSuperReader</SuperReader>
         </ObjectCacheAccounts>
     </Farm>
-    <!-- The WebApplications section configures the applications and sites that will be created. You can add additional <WebApplication> child tags to create extra web applications. -->
-    <WebApplications>
+    <!-- The WebApplications section configures the applications and sites that will be created. You can add additional <WebApplication> child tags to create extra web applications.
+         The AddURLsToHOSTS flag will add all Alternate Access Mappings to the local server's HOSTS file and is useful if you are (for example):
+         creating web apps whose URLs are not defined in DNS yet, a test farm, or if you are creating a DR farm, etc. -->
+    <WebApplications AddURLsToHOSTS="false">
         <!-- Web application attributes are as follows:
 		type:
 			"Portal" is the primary site. Exactly one WebApplication should have this type. It is setup as a trusted file location 

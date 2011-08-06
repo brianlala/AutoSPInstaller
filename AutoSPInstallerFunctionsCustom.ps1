@@ -188,7 +188,7 @@ Function Configure-PDFSearchAndIcon
 # ====================================================================================
 Function InstallForeFront
 {
-	If ($xmlinput.Configuration.ForeFront.Install -eq $true)
+	If (ShouldIProvision($xmlinput.Configuration.ForeFront) -eq $true)
 	{
 		WriteLine
 		If (Test-Path "$env:PROGRAMFILES\Microsoft ForeFront Protection for SharePoint\Launcher.exe")

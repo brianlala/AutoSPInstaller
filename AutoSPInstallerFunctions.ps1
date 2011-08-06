@@ -696,7 +696,7 @@ Function ConfigureFarmAdmin([xml]$xmlinput)
 				Restart-Service SPTimerV4
 			}
     	}
-        Catch {Write-host -ForegroundColor White " - $FarmAcct is already an Administrator."}
+        Catch {Write-Host -ForegroundColor White " - $FarmAcct is already an Administrator."}
 		WriteLine
     }
 }
@@ -1490,6 +1490,8 @@ Function CreateWebApplications([xml]$xmlinput)
 			ConfigureOnlineWebPartCatalog $webApp
 			WriteLine
 		}
+		If (($xmlinput.Configuration.WebApplications.AddURLsToHOSTS) -eq $true)
+		{AddToHOSTS}
 	}
 	WriteLine
 }
@@ -1857,6 +1859,8 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
 					Else {break}
     			}
     			Write-Host -BackgroundColor Blue -ForegroundColor Black $($ProfileServiceApp.Status)
+				# Wait a few seconds for the CreateUPSAsAdmin function to complete
+				Start-Sleep 10
 
 				# Get our new Profile Service App
 				$ProfileServiceApp = Get-SPServiceApplication |?{$_.DisplayName -eq $UserProfileServiceName}
@@ -1878,27 +1882,29 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
 
     			# Create variables that contains the claims principals for current (Setup) user, MySite App Pool, Portal App Pool and Content Access accounts
 				$CurrentUserAcctPrincipal = New-SPClaimsPrincipal -Identity $env:USERDOMAIN\$env:USERNAME -IdentityType WindowsSamAccountName
-    			$MySiteAppPoolAcctPrincipal = New-SPClaimsPrincipal -Identity $MySiteAppPoolAcct -IdentityType WindowsSamAccountName
-				$PortalAppPoolAcctPrincipal = New-SPClaimsPrincipal -Identity $PortalAppPoolAcct -IdentityType WindowsSamAccountName
-    			$ContentAccessAcctPrincipal = New-SPClaimsPrincipal -Identity $ContentAccessAcct -IdentityType WindowsSamAccountName
+    			If ($MySiteAppPoolAcct) {$MySiteAppPoolAcctPrincipal = New-SPClaimsPrincipal -Identity $MySiteAppPoolAcct -IdentityType WindowsSamAccountName}
+				If ($PortalAppPoolAcct) {$PortalAppPoolAcctPrincipal = New-SPClaimsPrincipal -Identity $PortalAppPoolAcct -IdentityType WindowsSamAccountName}
+    			If ($ContentAccessAcct) {$ContentAccessAcctPrincipal = New-SPClaimsPrincipal -Identity $ContentAccessAcct -IdentityType WindowsSamAccountName}
 
     			# Give 'Full Control' permissions to the current (Setup) user, MySite App Pool and Portal App Pool account claims principals
 				Grant-SPObjectSecurity $ProfileServiceAppSecurity -Principal $CurrentUserAcctPrincipal -Rights "Full Control"
 				Grant-SPObjectSecurity $ProfileServiceAppPermissions -Principal $CurrentUserAcctPrincipal -Rights "Full Control"
-    			Grant-SPObjectSecurity $ProfileServiceAppSecurity -Principal $MySiteAppPoolAcctPrincipal -Rights "Full Control"
-				Grant-SPObjectSecurity $ProfileServiceAppSecurity -Principal $PortalAppPoolAcctPrincipal -Rights "Full Control"
+    			If ($MySiteAppPoolAcct) {Grant-SPObjectSecurity $ProfileServiceAppSecurity -Principal $MySiteAppPoolAcctPrincipal -Rights "Full Control"}
+				If ($PortalAppPoolAcct) {Grant-SPObjectSecurity $ProfileServiceAppSecurity -Principal $PortalAppPoolAcctPrincipal -Rights "Full Control"}
 				# Give 'Retrieve People Data for Search Crawlers' permissions to the Content Access claims principal
-    			Grant-SPObjectSecurity $ProfileServiceAppSecurity -Principal $ContentAccessAcctPrincipal -Rights "Retrieve People Data for Search Crawlers"
+    			If ($ContentAccessAcct) {Grant-SPObjectSecurity $ProfileServiceAppSecurity -Principal $ContentAccessAcctPrincipal -Rights "Retrieve People Data for Search Crawlers"}
 
     			# Apply the changes to the User Profile service application
 				Set-SPServiceApplicationSecurity $ServiceAppIDToSecure -objectSecurity $ProfileServiceAppSecurity -Admin
 				Set-SPServiceApplicationSecurity $ServiceAppIDToSecure -objectSecurity $ProfileServiceAppPermissions
 				
-				# Grant the Portal App Pool account rights to the Profile DB
-				$ProfileDB = $DBPrefix+$UserProfile.ProfileDB
-				Write-Host -ForegroundColor White " - Granting $PortalAppPoolAcct rights to $ProfileDB..."
-				Get-SPDatabase | ? {$_.Name -eq $ProfileDB} | Add-SPShellAdmin -UserName $PortalAppPoolAcct
-				
+				If ($PortalAppPoolAcct)
+				{
+					# Grant the Portal App Pool account rights to the Profile DB
+					$ProfileDB = $DBPrefix+$UserProfile.ProfileDB
+					Write-Host -ForegroundColor White " - Granting $PortalAppPoolAcct rights to $ProfileDB..."
+					Get-SPDatabase | ? {$_.Name -eq $ProfileDB} | Add-SPShellAdmin -UserName $PortalAppPoolAcct
+				}
 				Write-Host -ForegroundColor White " - Enabling the Activity Feed Timer Job.."
 				If ($ProfileServiceApp) {Get-SPTimerJob | ? {$_.TypeName -eq "Microsoft.Office.Server.ActivityFeed.ActivityFeedUPAJob"} | Enable-SPTimerJob}
 				
@@ -1981,10 +1987,9 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
 					If (CheckForSP1)
 					{
 						Write-Host -ForegroundColor White " - Creating a default Profile Sync connection..."
-						##$ProfileServiceApp = Get-SPServiceApplication | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Administration.UserProfileApplication"}
 						$ProfileServiceApp = Get-SPServiceApplication |?{$_.DisplayName -eq $UserProfileServiceName}
-						$Domain,$TLD = $env:USERDNSDOMAIN -split "\."
-						$ConnectionSyncOU = "DC=$Domain,DC=$TLD"
+						# Thanks to Codeplex user Reshetkov for this ingenious one-liner to build the default domain OU
+						$ConnectionSyncOU = "DC="+$env:USERDNSDOMAIN -replace "\.",",DC="
 						$SyncConnectionDomain,$SyncConnectionAcct = ($UserProfile.SyncConnectionAccount) -split "\\"
 						$AddProfileSyncCmd = @"
 Add-PsSnapin Microsoft.SharePoint.PowerShell
@@ -2126,7 +2131,7 @@ Function CreateSPUsageApp([xml]$xmlinput)
 				Write-Host -ForegroundColor White " - Provisioning SP Usage Application..."
 				New-SPUsageApplication -Name $SPUsageApplicationName -DatabaseServer $DBServer -DatabaseName $SPUsageDB | Out-Null
 				# Need this to resolve a known issue with the Usage Application Proxy not automatically starting/provisioning
-				# Thanks and credit to Jesper Nygaard Schiøtt (jesper@schioett.dk) per http://autospinstaller.codeplex.com/Thread/View.aspx?ThreadId=237578 ! 
+				# Thanks and credit to Jesper Nygaard Schi?tt (jesper@schioett.dk) per http://autospinstaller.codeplex.com/Thread/View.aspx?ThreadId=237578 ! 
 				Write-Host -ForegroundColor White " - Fixing Usage and Health Data Collection Proxy..."
 				$SPUsageApplicationProxy = Get-SPServiceApplicationProxy | where {$_.DisplayName -eq $SPUsageApplicationName}
 				$SPUsageApplicationProxy.Provision()
@@ -2145,7 +2150,7 @@ Function CreateSPUsageApp([xml]$xmlinput)
 #EndRegion
 
 #Region Create Web Analytics Service Application
-# Thanks and credit to Jesper Nygaard Schiøtt (jesper@schioett.dk) per http://autospinstaller.codeplex.com/Thread/View.aspx?ThreadId=237578 !
+# Thanks and credit to Jesper Nygaard Schi?tt (jesper@schioett.dk) per http://autospinstaller.codeplex.com/Thread/View.aspx?ThreadId=237578 !
 
 Function CreateWebAnalyticsApp([xml]$xmlinput)
 {
@@ -2496,7 +2501,7 @@ Function ConfigureTracing ([xml]$xmlinput)
 
 # Original script for SharePoint 2010 beta2 by Gary Lapointe ()
 # 
-# Modified by Søren Laurits Nielsen (soerennielsen.wordpress.com):
+# Modified by S?ren Laurits Nielsen (soerennielsen.wordpress.com):
 # 
 # Modified to fix some errors since some cmdlets have changed a bit since beta 2 and added support for "ShareName" for 
 # the query component. It is required for non DC computers. 
@@ -3398,7 +3403,14 @@ Function Load-SharePoint-Powershell
 	{
     	WriteLine
 		Write-Host -ForegroundColor White " - Loading SharePoint Powershell Snapin"
-   		$PSSnapin = Add-PsSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null
+		Try 
+		{
+			Add-PsSnapin Microsoft.SharePoint.PowerShell
+			# Lately, loading the snapin throws an error: "System.TypeInitializationException: The type initializer for 'Microsoft.SharePoint.Utilities.SPUtility' threw an exception. ---> System.IO.FileNotFoundException:"...
+			If (!$?) {Throw}
+		}
+		# ...so we'll try a second time to add the snapin
+		Catch {Add-PsSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null}
 		WriteLine
 	}
 }
@@ -3433,9 +3445,11 @@ Function Pause
 # ===================================================================================
 Function ShouldIProvision([System.Xml.XmlNode] $node)
 {
+	If (!$node) {Return $false} # In case the node doesn't exist in the XML file
 	# Allow for comma- or space-delimited list of server names in Provision or Start attribute
 	If ($node.GetAttribute("Provision")) {$v = $node.GetAttribute("Provision").Replace(","," ")}
     ElseIf ($node.GetAttribute("Start")) {$v = $node.GetAttribute("Start").Replace(","," ")}
+	ElseIf ($node.GetAttribute("Install")) {$v = $node.GetAttribute("Install").Replace(","," ")}
 	If ($v -eq $true) { Return $true; }
 	$v = " " + $v.ToUpper() + " ";
 	If ($v.IndexOf(" " + $env:COMPUTERNAME.ToUpper() + " ") -ge 0) { Return $true; }
@@ -3690,20 +3704,21 @@ Function Run-HealthAnalyzerJobs
 }
 
 # ====================================================================================
-# Func: Add-SMTP
-# Desc: Adds the SMTP Server Windows feature
+# Func: InstallSMTP
+# Desc: Installs the SMTP Server Windows feature
 # ====================================================================================
-Function Add-SMTP
+Function InstallSMTP
 {
-	WriteLine
-	Write-Host -ForegroundColor White " - Installing SMTP Server feature..."
-
-	Import-Module ServerManager
-	Add-WindowsFeature -Name SMTP-Server | Out-Null
-	If (!($?)) {Throw " - Failed to install SMTP Server!"}
-
-	Write-Host -ForegroundColor White " - Done."
-	WriteLine
+	If (ShouldIProvision($xmlinput.Configuration.Farm.Services.SMTP) -eq $true)
+	{
+		WriteLine
+		Write-Host -ForegroundColor White " - Installing SMTP Server feature..."
+		Import-Module ServerManager
+		Add-WindowsFeature -Name SMTP-Server | Out-Null
+		If (!($?)) {Throw " - Failed to install SMTP Server!"}
+		Write-Host -ForegroundColor White " - Done."
+		WriteLine
+	}
 }
 
 # ====================================================================================
@@ -3774,6 +3789,50 @@ Function CheckIfUpgradeNeeded
 	Else
 	{
 		Return $false
+	}
+}
+
+# ====================================================================================
+# Func: AddToHOSTS
+# Desc: This writes URLs to the server's local hosts file and points them to the server itself
+# From: Check http://toddklindt.com/loopback for more information
+# Copyright Todd Klindt 2011
+# Originally published to http://www.toddklindt.com/blog
+# ====================================================================================
+Function AddToHOSTS
+{
+	Write-Host -ForegroundColor White " - Adding HOSTS file entries for local resolution..."
+	# Make backup copy of the Hosts file with today's date
+	$hostsfile = "$env:windir\System32\drivers\etc\HOSTS"
+	$date = Get-Date -UFormat "%y%m%d%H%M%S"
+	$filecopy = $hostsfile + '.' + $date + '.copy'
+	Write-Host -ForegroundColor White " - Backing up HOSTS file to:"
+	Write-Host -ForegroundColor White " - $filecopy"
+	Copy-Item $hostsfile -Destination $filecopy
+
+	# Get a list of the AAMs and weed out the duplicates
+	$hosts = Get-SPAlternateURL | ForEach-Object {$_.incomingurl.replace("https://","").replace("http://","")} | where-Object { $_.tostring() -notlike "*:*" } | Select-Object -Unique
+	 
+	# Get the contents of the Hosts file
+	$file = Get-Content $hostsfile
+	$file = $file | Out-String
+
+	# Write the AAMs to the hosts file, unless they already exist.
+	ForEach ($hostname in $hosts)
+	{
+		If ($file.contains($hostname))
+		{Write-Host -ForegroundColor White " - HOSTS file entry for `"$hostname`" already exists - skipping."} 
+		Else
+		{
+			Write-Host -ForegroundColor White " - Adding HOSTS file entry for `"$hostname`"..."
+			Add-Content -path $hostsfile -value "127.0.0.1 `t $hostname "
+			$KeepHOSTSCopy = $true
+		}
+	}
+	If (!$KeepHOSTSCopy)
+	{
+		Write-Host -ForegroundColor White " - Deleting HOSTS backup file since no changes were made..."
+		Remove-Item $filecopy
 	}
 }
 #EndRegion

@@ -113,6 +113,7 @@ Function Setup-Services
 	CreateExcelOWAServiceApp ($xmlinput)
 	CreatePowerPointServiceApp ($xmlinput)
 	CreateWordViewingServiceApp ($xmlinput)
+	InstallSMTP ($xmlinput)
 	ConfigureOutgoingEmail ($xmlinput)
 	Configure-PDFSearchAndIcon ($xmlinput)
 	InstallForeFront ($xmlinput)
@@ -145,6 +146,14 @@ Function Finalize-Install
 	{
 		Write-Host -ForegroundColor White " - Leaving $FarmAcct in the local Administrators group."	
 	}
+	
+	Write-Host -ForegroundColor White " - Adding Network Service to local WSS_WPG group (fixes event log warnings)..."
+    Try
+	{
+		([ADSI]"WinNT://$env:COMPUTERNAME/WSS_WPG,group").Add("WinNT://NETWORK SERVICE")
+        If (-not $?) {Throw}
+	}
+    Catch {Write-Host -ForegroundColor White " - Network Service is already a member."}
 
 	Run-HealthAnalyzerJobs
 
