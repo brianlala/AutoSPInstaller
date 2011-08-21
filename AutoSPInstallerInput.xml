@@ -18,7 +18,7 @@
        This allows you to configure an entire multi-server farm with different servers fulfilling different roles
        using a single configuration file.
        e.g. <ExcelServices Provision="Server1 Server2"> would provision excel services only on Server1 and Server2. -->
-<Configuration Environment="Dev" Version="2.5.1">
+<Configuration Environment="Dev" Version="2.5.3">
     <!-- The Environment attribute above appears at the top of the installation transcript. It does not affect the installation -->
     <!-- The Install section controls what modifications are made to the Windows OS prior to installation and how the SharePoint installation is run -->
     <Install>
@@ -144,6 +144,7 @@
                         applicationPoolAccount="DOMAIN\portalacc"
                         url="http://localhost"
                         port="80"
+                        AddURLToLocalIntranetZone="true"
                         databaseName="PortalHome_Content"
                         useClaims="false"
                         useBasicAuthentication="false"
@@ -183,6 +184,7 @@
                         applicationPoolAccount="DOMAIN\mysitesacc"
                         url="http://localhost"
                         port="8080"
+                        AddURLToLocalIntranetZone="true"
                         databaseName="MySites_Content"
                         useClaims="false"
                         useBasicAuthentication="false"
@@ -293,12 +295,12 @@
                             ProxyName="Secure Store Service">
             <Database>SecureStoreDB</Database>
         </SecureStoreService>
-        <BusinessDataConnectivity Provision="true"
+        <BusinessDataConnectivity Provision="false"
                                   Name="Business Data Connectivity Service"
                                   ProxyName="Business Data Connectivity Service">
             <Database>BusinessDataCatalogDB</Database>
         </BusinessDataConnectivity>
-        <WordAutomationService Provision="true"
+        <WordAutomationService Provision="false"
                                Name="Word Automation Services"
                                ProxyName="Word Automation Services">
             <Database>WordAutomationDB</Database>

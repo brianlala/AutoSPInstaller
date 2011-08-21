@@ -580,7 +580,7 @@ Function InstallLanguagePacks([xml]$xmlinput)
             If (!$Language)
 			{
     	        Write-Host -ForegroundColor Blue " - Installing extracted language pack $LanguagePackFolder..." -NoNewline
-    	        Start-Process -FilePath "$bits\LanguagePacks\$LanguagePackFolder\setup.exe" -ArgumentList "/config $bits\LanguagePacks\$LanguagePackFolder\Files\SetupSilent\config.xml"
+    	        Start-Process -WorkingDirectory "$bits\LanguagePacks\$LanguagePackFolder\" -FilePath "setup.exe" -ArgumentList "/config $bits\LanguagePacks\$LanguagePackFolder\Files\SetupSilent\config.xml"
     	        While (Get-Process -Name "setup" -ErrorAction SilentlyContinue)
     	        {
     	        	Write-Host -ForegroundColor Blue "." -NoNewline
@@ -619,7 +619,7 @@ Function InstallLanguagePacks([xml]$xmlinput)
 				If (Get-ChildItem "$bits\LanguagePacks" -Name -Include spflanguagepack2010sp1-kb2460059-x64-fullfile-$Language.exe -ErrorAction SilentlyContinue)
 				{
 					Write-Host -ForegroundColor Blue " - Installing Foundation language pack SP1 for $Language..." -NoNewline
-					Start-Process -FilePath "$bits\LanguagePacks\spflanguagepack2010sp1-kb2460059-x64-fullfile-$Language.exe" -ArgumentList "/quiet /norestart"
+					Start-Process -WorkingDirectory "$bits\LanguagePacks\" -FilePath "spflanguagepack2010sp1-kb2460059-x64-fullfile-$Language.exe" -ArgumentList "/quiet /norestart"
 	    	        While (Get-Process -Name spflanguagepack2010sp1-kb2460059-x64-fullfile-$Language -ErrorAction SilentlyContinue)
 	    	        {
 	    	        	Write-Host -ForegroundColor Blue "." -NoNewline
@@ -630,7 +630,7 @@ Function InstallLanguagePacks([xml]$xmlinput)
 					If (Get-ChildItem "$bits\LanguagePacks" -Name -Include serverlanguagepack2010sp1-kb2460056-x64-fullfile-$Language.exe -ErrorAction SilentlyContinue)
 					{
 						Write-Host -ForegroundColor Blue " - Installing Server language pack SP1 for $Language..." -NoNewline
-						Start-Process -FilePath "$bits\LanguagePacks\serverlanguagepack2010sp1-kb2460056-x64-fullfile-$Language.exe" -ArgumentList "/quiet /norestart"
+						Start-Process -WorkingDirectory "$bits\LanguagePacks\" -FilePath "serverlanguagepack2010sp1-kb2460056-x64-fullfile-$Language.exe" -ArgumentList "/quiet /norestart"
 		    	        While (Get-Process -Name serverlanguagepack2010sp1-kb2460056-x64-fullfile-$Language -ErrorAction SilentlyContinue)
 		    	        {
 		    	        	Write-Host -ForegroundColor Blue "." -NoNewline
@@ -1054,7 +1054,7 @@ Function AddManagedAccounts([xml]$xmlinput)
 					$AlreadyAdmin = $true
 				}
 				# Spawn a command window using the managed account's credentials, create the profile, and exit immediately
-				Start-Process -FilePath "$env:SYSTEMROOT\System32\cmd.exe" -ArgumentList "/C" -LoadUserProfile -NoNewWindow -Credential $credAccount
+				Start-Process -WorkingDirectory "$env:SYSTEMROOT\System32\" -FilePath "cmd.exe" -ArgumentList "/C" -LoadUserProfile -NoNewWindow -Credential $credAccount
 				# Remove managed account from local admins unless it was already there
 	    		If (-not $AlreadyAdmin) {([ADSI]"WinNT://$env:COMPUTERNAME/Administrators,group").Remove("WinNT://$ManagedAccountDomain/$ManagedAccountUser")}
 				Write-Host -BackgroundColor Blue -ForegroundColor Black "Done."
@@ -1488,6 +1488,7 @@ Function CreateWebApplications([xml]$xmlinput)
 			CreateWebApp $webApp
 			ConfigureObjectCache $webApp
 			ConfigureOnlineWebPartCatalog $webApp
+			Add-LocalIntranetURL $webapp.URL
 			WriteLine
 		}
 		If (($xmlinput.Configuration.WebApplications.AddURLsToHOSTS) -eq $true)
@@ -1561,7 +1562,7 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
 		$SiteCollectionLocale = $SiteCollection.Locale
 		$SiteCollectionTime24 = $SiteCollection.Time24
 		$GetSPSiteCollection = Get-SPSite | Where-Object {$_.Url -eq $SiteURL}
-		If ($GetSPSiteCollection -eq $null)
+		If (($GetSPSiteCollection -eq $null) -and ($SiteURL -ne $null))
 		{
 			Write-Host -ForegroundColor White " - Creating Site Collection `"$SiteURL`"..."
 			# Verify that the Language we're trying to create the site in is currently installed on the server
@@ -1606,6 +1607,7 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
 			}
 		}
 		Else {Write-Host -ForegroundColor White " - Site `"$SiteCollectionName`" already provisioned."}
+		WriteLine
 	}
 }
 
@@ -2006,7 +2008,7 @@ Else {Write-Host -ForegroundColor White " - Done.";Start-Sleep 15}
 						$AddProfileScriptFile = "$env:TEMP\AutoSPInstaller-AddProfileSyncCmd.ps1"
 						$AddProfileSyncCmd | Out-File $AddProfileScriptFile
 						# Run our Add-SPProfileSyncConnection script as the Farm Account - doesn't seem to work otherwise
-						Start-Process $PSHOME\powershell.exe -Credential $FarmCredential -ArgumentList "-Command Start-Process $PSHOME\powershell.exe -ArgumentList `"'$AddProfileScriptFile'`" -Verb Runas" -Wait
+		                                Start-Process -WorkingDirectory $PSHOME -FilePath "powershell.exe" -Credential $FarmCredential -ArgumentList "-Command Start-Process -WorkingDirectory `"'$PSHOME'`" -FilePath `"'powershell.exe'`" -ArgumentList `"'$AddProfileScriptFile'`" -Verb Runas" -Wait
 						# Give Add-SPProfileSyncConnection time to complete before continuing
 						Start-Sleep 120
 						Remove-Item -LiteralPath $AddProfileScriptFile -Force -ErrorAction SilentlyContinue
@@ -2058,7 +2060,7 @@ Function CreateUPSAsAdmin([xml]$xmlinput)
 		Write-Output "`$ProfileDBId = Get-SPDatabase | ? {`$_.Name -eq `"$ProfileDB`"}" | Out-File $ScriptFile -Width 400 -Append
 		Write-Output "Add-SPShellAdmin -UserName `"$env:USERDOMAIN\$env:USERNAME`" -database `$ProfileDBId" | Out-File $ScriptFile -Width 400 -Append
 		# Start a process under the Farm Account's credentials, then spawn an elevated process within to finally execute the script file that actually creates the UPS
-		Start-Process $PSHOME\powershell.exe -Credential $FarmCredential -ArgumentList "-Command Start-Process $PSHOME\powershell.exe -ArgumentList `"'$ScriptFile'`" -Verb Runas" -Wait
+		Start-Process -WorkingDirectory $PSHOME -FilePath "powershell.exe" -Credential $FarmCredential -ArgumentList "-Command Start-Process -WorkingDirectory `"'$PSHOME'`" -FilePath `"'powershell.exe'`" -ArgumentList `"'$ScriptFile'`" -Verb Runas" -Wait
 	}
 	Catch 
 	{
@@ -3207,6 +3209,9 @@ Function CreatePerformancePointServiceApp ([xml]$xmlinput)
 		$Application = Get-SPPerformancePointServiceApplication | ? {$_.Name -eq $ServiceConfig.Name}
 	    If ($Application)
 		{
+			$FarmAcct = $xmlinput.Configuration.Farm.Account.Username
+			Write-Host -ForegroundColor White " - Granting $FarmAcct rights to database $PerformancePointDB..."
+			Get-SPDatabase | Where {$_.Name -eq $PerformancePointDB} | Add-SPShellAdmin -UserName $FarmAcct
 			Write-Host -ForegroundColor White " - Setting PerformancePoint Data Source Unattended Service Account..."
 			$PerformancePointAcct = $ServiceConfig.UnattendedIDUser
 		    $PerformancePointAcctPWD = $ServiceConfig.UnattendedIDPassword
@@ -3825,7 +3830,8 @@ Function AddToHOSTS
 		Else
 		{
 			Write-Host -ForegroundColor White " - Adding HOSTS file entry for `"$hostname`"..."
-			Add-Content -path $hostsfile -value "127.0.0.1 `t $hostname "
+			Add-Content -Path $hostsfile -Value "`r"
+			Add-Content -Path $hostsfile -value "127.0.0.1 `t $hostname"
 			$KeepHOSTSCopy = $true
 		}
 	}
@@ -3835,4 +3841,23 @@ Function AddToHOSTS
 		Remove-Item $filecopy
 	}
 }
+
+# ====================================================================================
+# Func: Add-LocalIntranetURL
+# Desc: Adds a URL to the local Intranet zone (Internet Control Panel) to allow pass-through authentication in Internet Explorer (avoid prompts)
+# ====================================================================================
+Function Add-LocalIntranetURL ($url)
+{
+	If (($url -like "*.*") -and (($webApp.AddURLToLocalIntranetZone) -eq $true))
+	{
+		$url = $url -replace "https://",""
+		$url = $url -replace "http://",""
+		$SplitURL = $url -split "\."
+		$urlDomain = $SplitURL[-2] + "." + $SplitURL[-1]
+		Write-Host -ForegroundColor White " - Adding *.$urlDomain to local Intranet security zone..."
+		New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ZoneMap\Domains" -Name $urlDomain -ItemType Leaf -Force | Out-Null
+		New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ZoneMap\Domains\$urlDomain" -Name '*' -value "1" -PropertyType dword -Force | Out-Null
+	}
+}
+
 #EndRegion

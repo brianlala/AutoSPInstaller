@@ -144,7 +144,7 @@ Function Finalize-Install
 	}
 	Else
 	{
-		Write-Host -ForegroundColor White " - Leaving $FarmAcct in the local Administrators group."	
+		Write-Host -ForegroundColor White " - Not changing local Admin membership of $FarmAcct."	
 	}
 	
 	Write-Host -ForegroundColor White " - Adding Network Service to local WSS_WPG group (fixes event log warnings)..."
@@ -180,10 +180,13 @@ Function Finalize-Install
 	{
 		ForEach ($SiteCollection in $webApp.SiteCollections.SiteCollection)
 		{
-			Start-Sleep 30 # Wait for the previous site to load before trying to load this site
 			$SiteURL = $SiteCollection.siteURL
-			Write-Host -ForegroundColor White " - Launching $SiteURL..."
-			Start-Process "$SiteURL" -WindowStyle Minimized
+			If ($SiteURL -ne $null)
+			{
+				Start-Sleep 30 # Wait for the previous site to load before trying to load this site
+				Write-Host -ForegroundColor White " - Launching $SiteURL..."
+				Start-Process "$SiteURL" -WindowStyle Minimized
+			}
 		}
 	}
 
