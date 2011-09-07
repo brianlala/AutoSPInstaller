@@ -843,7 +843,7 @@ Function CreateCentralAdmin([xml]$xmlinput)
 		Try
 		{
 			$CentralAdminPort = $xmlinput.Configuration.Farm.CentralAdmin.Port
-			# Check if there is already a Central Admin provisioned in the farm (by querying web apps by port); if not, create one
+			# Check if there is already a Central Admin provisioned in the farm; if not, create one
 			If (!(Get-SPWebApplication -IncludeCentralAdministration | ? {$_.Url -like "*:$CentralAdminPort*"}))
 			{
 				# Create Central Admin for farm
@@ -851,14 +851,23 @@ Function CreateCentralAdmin([xml]$xmlinput)
 				$NewCentralAdmin = New-SPCentralAdministration -Port $CentralAdminPort -WindowsAuthProvider "NTLM" -ErrorVariable err
 				If (-not $?) {Throw " - Error creating central administration application"}
 				Write-Host -ForegroundColor Blue " - Waiting for Central Admin site..." -NoNewline
-				$CentralAdmin = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.Url -like "http://$($env:COMPUTERNAME):$CentralAdminPort*"}
+				$CentralAdmin = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.Url -like "*$($env:COMPUTERNAME):$CentralAdminPort*"}
 				While ($CentralAdmin.Status -ne "Online") 
 				{
 					Write-Host -ForegroundColor Blue "." -NoNewline
 					Start-Sleep 1
-					$CentralAdmin = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.Url -like "http://$($env:COMPUTERNAME):$CentralAdminPort*"}
+					$CentralAdmin = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.Url -like "*$($env:COMPUTERNAME):$CentralAdminPort*"}
 				}
 				Write-Host -BackgroundColor Blue -ForegroundColor Black $($CentralAdmin.Status)
+				If ($xmlinput.Configuration.Farm.CentralAdmin.UseSSL -eq $true)
+				{
+					Write-Host -ForegroundColor White " - Enabling SSL for Central Admin..."
+					$SSLHostHeader = $env:COMPUTERNAME
+					$SSLPort = $CentralAdminPort
+					$SSLSiteName = $CentralAdmin.DisplayName
+					New-SPAlternateURL -Url "https://$($env:COMPUTERNAME):$CentralAdminPort" -Zone Default -WebApplication $CentralAdmin | Out-Null
+					AssignCert
+				}
 			}
 			Else #Create a Central Admin site locally, with an AAM to the existing Central Admin
 			{
@@ -926,7 +935,7 @@ Function ConfigureFarm([xml]$xmlinput)
 		}
 		# Detect if Central Admin URL already exists, i.e. if Central Admin web app is already provisioned on the local computer
 		$CentralAdminPort = $xmlinput.Configuration.Farm.CentralAdmin.Port
-		$CentralAdmin = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.Status -eq "Online"} | ? {$_.Url -like "http://$($env:COMPUTERNAME):$CentralAdminPort*"}
+		$CentralAdmin = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.Status -eq "Online"} | ? {$_.Url -like "*$($env:COMPUTERNAME):$CentralAdminPort*"}
 		
 		# Provision CentralAdmin if indicated in AutoSPInstallerInput.xml and the CA web app doesn't already exist
 		If ((ShouldIProvision($xmlinput.Configuration.Farm.CentralAdmin) -eq $true) -and (!($CentralAdmin))) {CreateCentralAdmin ($xmlinput)}
@@ -992,7 +1001,7 @@ Function ConfigureLanguagePacks([xml]$xmlinput)
 		Start-Sleep 20
 		# Run PSConfig.exe per http://technet.microsoft.com/en-us/library/cc262108.aspx
 		Start-Process -FilePath $PSConfig -ArgumentList "-cmd upgrade -inplace v2v -passphrase `"$FarmPassphrase`" -wait -force" -NoNewWindow -Wait
-   		$PSConfigLog = get-childitem "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\14\LOGS" | ? {$_.Name -like "PSCDiagnostics*"} | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
+   		$PSConfigLog = get-childitem $((Get-SPDiagnosticConfig).LogLocation) | ? {$_.Name -like "PSCDiagnostics*"} | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
     	If ($PSConfigLog -eq $null) 
     	{
     		Throw " - Could not find PSConfig log file!"
@@ -1370,36 +1379,7 @@ Function CreateMetadataServiceApp([xml]$xmlinput)
 # ===================================================================================
 Function AssignCert([xml]$xmlinput)
 {
-	# Load IIS WebAdministration Snapin/Module
-	# Inspired by http://stackoverflow.com/questions/1924217/powershell-load-webadministration-in-ps1-script-on-both-iis-7-and-iis-7-5
-    $QueryOS = Gwmi Win32_OperatingSystem
-    $QueryOS = $QueryOS.Version 
-    $OS = ""
-    If ($QueryOS.contains("6.1")) {$OS = "Win2008R2"}
-    ElseIf ($QueryOS.contains("6.0")) {$OS = "Win2008"}
-    
-	Try
-	{
-		If ($OS -eq "Win2008")
-		{
-			If (!(Get-PSSnapin WebAdministration -ErrorAction SilentlyContinue))
-			{	 
-  				If (!(Test-Path $env:ProgramFiles\IIS\PowerShellSnapin\IIsConsole.psc1)) 
-				{
-					Start-Process -Wait -NoNewWindow -FilePath msiexec.exe -ArgumentList "/i `"$SPbits\PrerequisiteInstallerFiles\iis7psprov_x64.msi`" /passive /promptrestart"
-				}
-				Add-PSSnapin WebAdministration
-			}
-		}
-		Else # Win2008R2
-		{ 
-  			Import-Module WebAdministration
-		}
-	}
-	Catch
-	{
-		Write-Host -ForegroundColor White " - Could not load IIS Administration module."
-	}
+	ImportWebAdministration
 	Write-Host -ForegroundColor White " - Assigning certificate to site `"https://$SSLHostHeader`:$SSLPort`""
 	# If our SSL host header is a FQDN containing the local domain, look for an existing wildcard cert
 	If ($SSLHostHeader -like "*.$env:USERDNSDOMAIN")
@@ -1415,7 +1395,9 @@ Function AssignCert([xml]$xmlinput)
 	If (!$Cert)
 	{
 		Write-Host -ForegroundColor White " - None found."
-		$MakeCert = "$env:ProgramFiles\Microsoft Office Servers\14.0\Tools\makecert.exe"
+		# Get the actual location of makecert.exe in case we installed SharePoint in the non-default location
+		$SPInstallPath = (Get-Item -Path 'HKLM:\SOFTWARE\Microsoft\Office Server\14.0').GetValue("InstallPath")
+		$MakeCert = "$SPInstallPath\Tools\makecert.exe"
 		If (Test-Path "$MakeCert")
 		{
 			Write-Host -ForegroundColor White " - Creating new self-signed certificate..."
@@ -1465,6 +1447,8 @@ Function AssignCert([xml]$xmlinput)
 		Write-Host -ForegroundColor White " - Assigning certificate `"$CertSubject`" to SSL-enabled site..."
 		#Set-Location IIS:\SslBindings -ErrorAction Inquire
 		$Cert | New-Item IIS:\SslBindings\0.0.0.0!$SSLPort -ErrorAction SilentlyContinue | Out-Null
+		Set-ItemProperty IIS:\Sites\$SSLSiteName -Name bindings -Value @{protocol="https";bindingInformation="*:$($SSLPort):$($SSLHostHeader)"}
+		## Set-WebBinding -Name $SSLSiteName -BindingInformation ":$($SSLPort):" -PropertyName Port -Value $SSLPort -PropertyName Protocol -Value https 
 		Write-Host -ForegroundColor White " - Certificate has been assigned to site `"https://$SSLHostHeader`:$SSLPort`""
 	}
 	Else {Write-Host -ForegroundColor White " - No certificates were found, and none could be created."}
@@ -1545,8 +1529,9 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
    		}
 		If ($UseSSL)
 		{
-    		$script:SSLHostHeader = $HostHeader
-			$script:SSLPort = $Port
+    		$SSLHostHeader = $HostHeader
+			$SSLPort = $Port
+			$SSLSiteName = $WebAppName
 			AssignCert
 		}
         SetupManagedPaths $webApp
@@ -1826,6 +1811,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
     			        {
     				    	$SSLHostHeader = $MySiteHostHeader
     				    	$SSLPort = $MySitePort
+							$SSLSiteName = $MySiteName
     				    	AssignCert
     			        }
                     }
@@ -2149,6 +2135,193 @@ Function CreateSPUsageApp([xml]$xmlinput)
 		WriteLine
 	}
 }
+#EndRegion
+
+#Region Configure Logging
+
+# ===================================================================================
+# Func: ConfigureIISLogging
+# Desc: Configures IIS Logging for the local server
+# ===================================================================================
+Function ConfigureIISLogging([xml]$xmlinput)
+{
+    WriteLine
+	$IISLogConfig = $xmlinput.Configuration.Farm.Logging.IISLogs
+	Write-Host -ForegroundColor White " - Configuring IIS logging..."
+	If (!([string]::IsNullOrEmpty($IISLogConfig.Path)))
+	{
+		$IISLogDir = $IISLogConfig.Path
+		EnsureFolder $IISLogDir
+		ImportWebAdministration
+		$OldIISLogDir = Get-WebConfigurationProperty "/system.applicationHost/sites/siteDefaults" -name logfile.directory.Value
+		$OldIISLogDir = $OldIISLogDir -replace ("%SystemDrive%","$Env:SystemDrive")
+		If ($IISLogDir -ne $OldIISLogDir) # Only change the global IIS logging location if the desired location is different than the current
+		{
+			Write-Host -ForegroundColor White " - Setting the global IIS logging location..."
+			# The line below is from http://stackoverflow.com/questions/4626791/powershell-command-to-set-iis-logging-settings
+			Set-WebConfigurationProperty "/system.applicationHost/sites/siteDefaults" -name logfile.directory -value $IISLogDir
+			If (Test-Path -Path $OldIISLogDir)
+			{
+				Write-Host -ForegroundColor White " - Moving any contents in old location $OldIISLogDir to $IISLogDir..."
+				ForEach ($Item in $(Get-ChildItem $OldIISLogDir)) 
+				{
+					Move-Item -Path $OldIISLogDir\$Item -Destination $IISLogDir -Force -ErrorAction SilentlyContinue
+				}
+			}
+		}
+	}
+	Else # Assume default value if none was specified in the XML input file
+	{
+		$IISLogDir = "$Env:SystemDrive\Inetpub\logs" # We omit the trailing \LogFiles so we can compress the entire \logs\ folder including Failed Requests etc.
+	}
+	# Finally, enable NTFS compression on the IIS log location to save disk space
+	If ($IISLogConfig.Compress -eq $true)
+	{
+		CompressFolder $IISLogDir
+	}
+    WriteLine
+}
+
+# ===================================================================================
+# Func: ConfigureDiagnosticLogging
+# Desc: Configures Diagnostic (ULS) Logging for the farm
+# From: Originally suggested by Codeplex user leowu70: http://autospinstaller.codeplex.com/discussions/254499
+# 	    And Codeplex user timiun: http://autospinstaller.codeplex.com/discussions/261598
+# ===================================================================================
+Function ConfigureDiagnosticLogging([xml]$xmlinput)
+{
+    WriteLine
+	$ULSLogConfig = $xmlinput.Configuration.Farm.Logging.ULSLogs
+	$ULSLogDir = $ULSLogConfig.LogLocation
+	$ULSLogDiskSpace = $ULSLogConfig.LogDiskSpaceUsageGB
+	$ULSLogRetention = $ULSLogConfig.DaysToKeepLogs
+	$ULSLogCutInterval = $ULSLogConfig.LogCutInterval
+	Write-Host -ForegroundColor White " - Configuring SharePoint diagnostic (ULS) logging..."	
+	If (!([string]::IsNullOrEmpty($ULSLogDir)))
+	{
+		$DoConfig = $true
+		EnsureFolder $ULSLogDir
+		$OldULSLogDir = $(Get-SPDiagnosticConfig).LogLocation
+		$OldULSLogDir = $OldULSLogDir -replace ("%CommonProgramFiles%","$Env:CommonProgramFiles")
+	}
+	Else # Assume default value if none was specified in the XML input file
+	{
+		$ULSLogDir = "$Env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\14\LOGS"
+	}
+	If (!([string]::IsNullOrEmpty($ULSLogDiskSpace)))
+	{
+		$DoConfig = $true
+		$ULSLogMaxDiskSpaceUsageEnabled = $true
+	}
+	Else # Assume default values if none were specified in the XML input file
+	{
+		$ULSLogDiskSpace = 1000
+		$ULSLogMaxDiskSpaceUsageEnabled = $false
+	}
+	If (!([string]::IsNullOrEmpty($ULSLogRetention)))
+	{$DoConfig = $true}
+	Else # Assume default value if none was specified in the XML input file
+	{
+		$ULSLogRetention = 14
+	}
+	If (!([string]::IsNullOrEmpty($ULSLogCutInterval)))
+	{$DoConfig = $true}
+	Else # Assume default value if none was specified in the XML input file
+	{
+		$ULSLogCutInterval = 30
+	}
+	# Only modify the Diagnostic Config if we have specified at least one value in the XML input file
+	If ($DoConfig)
+	{
+		Write-Host -ForegroundColor White " - Setting SharePoint diagnostic (ULS) logging options:"
+		Write-Host -ForegroundColor White "  - DaysToKeepLogs: $ULSLogRetention" 
+		Write-Host -ForegroundColor White "  - LogMaxDiskSpaceUsageEnabled: $ULSLogMaxDiskSpaceUsageEnabled"
+		Write-Host -ForegroundColor White "  - LogDiskSpaceUsageGB: $ULSLogDiskSpace"
+		Write-Host -ForegroundColor White "  - LogLocation: $ULSLogDir"
+		Write-Host -ForegroundColor White "  - LogCutInterval: $ULSLogCutInterval"
+		Set-SPDiagnosticConfig -DaysToKeepLogs $ULSLogRetention -LogMaxDiskSpaceUsageEnabled:$ULSLogMaxDiskSpaceUsageEnabled -LogDiskSpaceUsageGB $ULSLogDiskSpace -LogLocation $ULSLogDir -LogCutInterval $ULSLogCutInterval
+		If ($ULSLogDir -ne $OldULSLogDir)
+		{
+			Write-Host -ForegroundColor White " - Moving any contents in old location $OldULSLogDir to $ULSLogDir..."
+			ForEach ($Item in $(Get-ChildItem $OldULSLogDir) | Where-Object {$_.Name -like "*.log"}) 
+			{
+				Move-Item -Path $OldULSLogDir\$Item -Destination $ULSLogDir -Force -ErrorAction SilentlyContinue
+			}
+		}
+	}
+	# Finally, enable NTFS compression on the ULS log location to save disk space
+	If ($ULSLogConfig.Compress -eq $true)
+	{
+		CompressFolder $ULSLogDir
+	}
+    WriteLine
+}
+
+# ===================================================================================
+# Func: ConfigureUsageLogging
+# Desc: Configures Usage Logging for the farm
+# From: Submitted by Codeplex user deedubya (http://www.codeplex.com/site/users/view/deedubya); additional tweaks by @brianlala
+# ===================================================================================
+Function ConfigureUsageLogging([xml]$xmlinput)
+{
+    WriteLine
+	If (Get-SPUsageService)
+	{
+		$UsageLogConfig = $xmlinput.Configuration.Farm.Logging.UsageLogs
+		$UsageLogDir = $UsageLogConfig.UsageLogDir
+		$UsageLogMaxSpaceGB = $UsageLogConfig.UsageLogMaxSpaceGB
+		$UsageLogCutTime = $UsageLogConfig.UsageLogCutTime
+		Write-Host -ForegroundColor White " - Configuring Usage Logging..."
+        # Syntax for command: Set-SPUsageService [-LoggingEnabled {1 | 0}] [-UsageLogLocation <Path>] [-UsageLogMaxSpaceGB <1-20>] [-Verbose]
+        # These are a per-farm settings, not per WSS Usage service application, as there can only be one per farm.
+        Try
+        {
+	        If (!([string]::IsNullOrEmpty($UsageLogDir)))
+			{
+				EnsureFolder $UsageLogDir
+				$OldUsageLogDir = $(Get-SPUsageService).UsageLogDir
+				$OldUsageLogDir = $OldUsageLogDir -replace ("%CommonProgramFiles%","$Env:CommonProgramFiles")
+			}
+			Else # Assume default value if none was specified in the XML input file
+			{
+				$UsageLogDir = "$Env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\14\LOGS"
+			}
+			# UsageLogMaxSpaceGB must be between 1 and 20.
+	        If (($UsageLogMaxSpaceGB -lt 1) -or ([string]::IsNullOrEmpty($UsageLogMaxSpaceGB))) {$UsageLogMaxSpaceGB = 5} # Default value
+	        If ($UsageLogMaxSpaceGB -gt 20) {$UsageLogMaxSpaceGB = 20} # Maximum value
+	        # UsageLogCutTime must be between 1 and 1440
+	        If (($UsageLogCutTime -lt 1) -or ([string]::IsNullOrEmpty($UsageLogCutTime))) {$UsageLogCutTime = 30} # Default value
+	        If ($UsageLogCutTime -gt 1440) {$UsageLogCutTime = 1440} # Maximum value
+	        # Set-SPUsageService's LoggingEnabled is 0 for disabled, and 1 for enabled
+	        $LoggingEnabled = 1
+	        Set-SPUsageService -LoggingEnabled $LoggingEnabled -UsageLogLocation "$UsageLogDir" -UsageLogMaxSpaceGB $UsageLogMaxSpaceGB -UsageLogCutTime $UsageLogCutTime | Out-Null
+			If ($UsageLogDir -ne $OldUsageLogDir)
+			{
+				Write-Host -ForegroundColor White " - Moving any contents in old location $OldUsageLogDir to $UsageLogDir..."
+				ForEach ($Item in $(Get-ChildItem $OldUsageLogDir) | Where-Object {$_.Name -like "*.usage"}) 
+				{
+					Move-Item -Path $OldUsageLogDir\$Item -Destination $UsageLogDir -Force -ErrorAction SilentlyContinue
+				}
+			}			
+			# Finally, enable NTFS compression on the usage log location to save disk space
+			If ($UsageLogConfig.Compress -eq $true)
+			{
+				CompressFolder $UsageLogDir
+			}
+        }
+        Catch
+        {
+           	Write-Output $_
+        }
+		Write-Host -ForegroundColor White " - Done configuring usage logging."
+	}
+	Else 
+	{
+		Write-Host -ForegroundColor White " - No usage service; skipping usage logging config."
+	}
+    WriteLine
+}
+
 #EndRegion
 
 #Region Create Web Analytics Service Application
@@ -2752,6 +2925,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
     # default to primitives 
     $PathToShare = """" + $svcConfig.ShareName + "=" + $svcConfig.IndexLocation + """"
 	# The path to be shared should exist if the Enterprise Search App creation succeeded earlier
+	EnsureFolder $svcConfig.IndexLocation
     Write-Host -ForegroundColor White " - Creating network share $PathToShare"
     net share $PathToShare "/GRANT:WSS_WPG,CHANGE"
 
@@ -3860,4 +4034,85 @@ Function Add-LocalIntranetURL ($url)
 	}
 }
 
+# ====================================================================================
+# Func: CompressFolder
+# Desc: Enables NTFS compression for a given folder
+# From: Based on concepts & code found at http://www.humanstuff.com/2010/6/24/how-to-compress-a-file-using-powershell
+# ====================================================================================
+Function CompressFolder ($Folder)
+{
+	# Replace \ with \\ for WMI
+    $WmiPath = $Folder.Replace("\","\\")
+	$WmiDirectory = Get-WmiObject -Class "Win32_Directory" -Namespace "root\cimv2" -ComputerName $env:COMPUTERNAME -Filter "Name='$WmiPath'"
+    # Check if folder is already compressed
+    If (!($WmiDirectory.Compressed))
+    {
+        Write-Host -ForegroundColor White " - Compressing $Folder and subfolders..."
+        $Compress = $WmiDirectory.CompressEx("","True")
+        If ($Compress.ReturnValue -ne 0)
+        {
+            Write-Warning " - Errors encountered compressing $Folder, continuing..."
+        }
+    }
+	Else {Write-Host -ForegroundColor White " - $Folder is already compressed."}
+}
+
+# ====================================================================================
+# Func: EnsureFolder
+# Desc: Checks for the existence and validity of a given path, and attempts to create if it doesn't exist.
+# From: Modified from patch 9833 at http://autospinstaller.codeplex.com/SourceControl/list/patches by user timiun
+# ====================================================================================
+Function EnsureFolder ($Path)
+{
+		If (!(Test-Path -Path $Path -PathType Container))
+		{
+			Write-Host -ForegroundColor White " - $Path doesn't exist; creating..."
+			Try 
+			{
+				New-Item -Path $Path -ItemType Directory | Out-Null
+			}
+			Catch
+			{
+				Write-Warning " - Could not create $Path!"
+				Write-Warning " - $($_.Exception.Message)"
+			}
+		}
+}
+
+# ====================================================================================
+# Func: ImportWebAdministration
+# Desc: Load IIS WebAdministration Snapin/Module
+# From: Inspired by http://stackoverflow.com/questions/1924217/powershell-load-webadministration-in-ps1-script-on-both-iis-7-and-iis-7-5
+# ====================================================================================
+Function ImportWebAdministration
+{
+    $QueryOS = Gwmi Win32_OperatingSystem
+    $QueryOS = $QueryOS.Version 
+    $OS = ""
+    If ($QueryOS.contains("6.1")) {$OS = "Win2008R2"}
+    ElseIf ($QueryOS.contains("6.0")) {$OS = "Win2008"}
+    
+	Try
+	{
+		If ($OS -eq "Win2008")
+		{
+			If (!(Get-PSSnapin WebAdministration -ErrorAction SilentlyContinue))
+			{	 
+  				If (!(Test-Path $env:ProgramFiles\IIS\PowerShellSnapin\IIsConsole.psc1)) 
+				{
+					Start-Process -Wait -NoNewWindow -FilePath msiexec.exe -ArgumentList "/i `"$SPbits\PrerequisiteInstallerFiles\iis7psprov_x64.msi`" /passive /promptrestart"
+				}
+				Add-PSSnapin WebAdministration
+			}
+		}
+		Else # Win2008R2
+		{ 
+  			Import-Module WebAdministration
+		}
+	}
+	Catch
+	{
+		Write-Host -ForegroundColor White " - Could not load IIS Administration module."
+	}
+}
 #EndRegion

@@ -58,6 +58,7 @@
         <CentralAdmin Provision="true">
             <Database>AdminContentDB</Database>
             <Port>2010</Port>
+            <UseSSL>false</UseSSL>
         </CentralAdmin>
         <Database>
             <!-- If you are creating an alias, <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
@@ -117,6 +118,34 @@
             <SuperUser>DOMAIN\SP_CacheSuperUser</SuperUser>
             <SuperReader>DOMAIN\SP_CacheSuperReader</SuperReader>
         </ObjectCacheAccounts>
+        <!-- The <Logging> section allows you to move various log files to another location / volume, per best practices and to control disk space usage on the (default) C: drive.
+             It also allows you to specify some logging options, such as using NTFS compression for additional disk space savings.
+             The <Path> for all log types will be created if it doesn't yet exist. However, the root (drive, e.g. D:) must obviously pre-exist - and on ALL servers in your farm. -->
+        <Logging>
+            <IISLogs Compress="true">
+                <!-- The default <Path> is $Env:SystemDrive\Inetpub\logs\LogFiles - enter another path (e.g. D:\IISLogs) or leave <Path> empty to use the default. -->
+                <Path></Path>
+            </IISLogs>
+            <ULSLogs Compress="true">
+                <!-- The default <LogLocation> is $Env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\LOGS - enter another path (e.g. D:\Logs) or leave <LogLocation> empty to use the default. -->
+                <LogLocation></LogLocation>
+                <!-- <LogDiskSpaceUsageGB> specifies the maximum amout of disk space (GB) to use. If you specify a value here, LogMaxDiskSpaceUsageEnabled will automatically be set to True.
+                     Leave empty to use the default values (1000 GB, but with LogMaxDiskSpaceUsageEnabled set to False - so effectively NO restriction on disk space) -->
+                <LogDiskSpaceUsageGB></LogDiskSpaceUsageGB>
+                <!-- <DaysToKeepLogs> specifies the time, in days, to retain diagnostic log files. Leave empty to use the default (14 days). -->
+                <DaysToKeepLogs></DaysToKeepLogs>
+                <!-- <LogCutInterval> specifies the time, in minutes, before a new log file is generated. Leave empty to use the default (30 minutes). -->
+                <LogCutInterval></LogCutInterval>
+            </ULSLogs>
+            <UsageLogs Compress="true">
+                <!-- The default <UsageLogDir> is $Env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\LOGS - enter another path (e.g. D:\Logs) or leave <UsageLogDir> empty to use the default. -->
+                <UsageLogDir></UsageLogDir>
+                <!-- <UsageLogMaxSpaceGB> must be between 1 and 20 GB. Leave empty to use the default (5 GB) -->
+                <UsageLogMaxSpaceGB></UsageLogMaxSpaceGB>
+                <!-- <UsageLogCutTime> specifies the time, in minutes, of usage data collected per usage log file (acceptable values are between 1 and 1440, default 5). Leave empty to use the default. -->
+                <UsageLogCutTime></UsageLogCutTime>
+            </UsageLogs>
+        </Logging>
     </Farm>
     <!-- The WebApplications section configures the applications and sites that will be created. You can add additional <WebApplication> child tags to create extra web applications.
          The AddURLsToHOSTS flag will add all Alternate Access Mappings to the local server's HOSTS file and is useful if you are (for example):

@@ -65,6 +65,7 @@ Function Run-Install
 	DisableServices $xmlinput
 	DisableCRLCheck $xmlinput
 	InstallPrerequisites $xmlinput
+	ConfigureIISLogging $xmlinput
 	InstallSharePoint $xmlinput
 	InstallOfficeWebApps ($xmlinput)
 	InstallLanguagePacks $xmlinput
@@ -82,6 +83,7 @@ Function Setup-Farm
     CreateOrJoinFarm ($xmlinput) ([security.securestring]$SecPhrase) ([System.Management.Automation.PsCredential]$farmCredential)
     CheckFarmTopology ($xmlinput)
     ConfigureFarm ($xmlinput)
+	ConfigureDiagnosticLogging ($xmlinput)
     ConfigureOfficeWebApps ($xmlinput)
     ConfigureLanguagePacks ($xmlinput)
     AddManagedAccounts ($xmlinput)   
@@ -99,6 +101,7 @@ Function Setup-Services
 	CreateUserProfileServiceApplication ($xmlinput)
 	CreateStateServiceApp ($xmlinput)
 	CreateSPUsageApp ($xmlinput)
+	ConfigureUsageLogging ($xmlinput)
 	CreateWebAnalyticsApp ($xmlinput)
 	CreateSecureStoreServiceApp ($xmlinput)
 	ConfigureFoundationSearch ($xmlinput)
