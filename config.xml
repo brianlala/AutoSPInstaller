@@ -8,9 +8,10 @@
     <Setting Id="OFFICESERVERPREMIUM" Value="1" />
   </Package>
 
-  <ARP ARPCOMMENTS="" ARPCONTACT="" />
+  <ARP ARPCOMMENTS="Installed with AutoSPInstaller (http://autospinstaller.com)" ARPCONTACT="brian@autospinstaller.com" />
   <Logging Type="verbose" Path="%temp%" Template="SharePoint Server Setup(*).log"/>
   <Display Level="basic" CompletionNotice="No" AcceptEula="Yes"/>
+  <INSTALLLOCATION Value="%PROGRAMFILES%\Microsoft Office Servers\" />
   <PIDKEY Value=""/>
   <Setting Id="SERVERROLE" Value="APPLICATION"/>
   <Setting Id="USINGUIINSTALLMODE" Value="1"/>
