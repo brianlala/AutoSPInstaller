@@ -18,27 +18,27 @@
        This allows you to configure an entire multi-server farm with different servers fulfilling different roles
        using a single configuration file.
        e.g. <ExcelServices Provision="Server1 Server2"> would provision excel services only on Server1 and Server2. -->
-<Configuration Environment="Dev" Version="2.5.3">
+<Configuration Environment="Dev" Version="2.5.5">
     <!-- The Environment attribute above appears at the top of the installation transcript. It does not affect the installation -->
     <!-- The Install section controls what modifications are made to the Windows OS prior to installation and how the SharePoint installation is run -->
     <Install>
         <!-- ConfigFile is the name of the file containing the unattended install settings for SharePoint's setup.exe
-		     You must put your product key in this file -->
+             You must put your product key in this file -->
         <ConfigFile>config.xml</ConfigFile>
         <!-- If true, the SharePoint prerequisite installer will install from the \SharePoint\PrerequisiteInstallerFiles folder.
-		     If false, the prerequisites will be downloaded during install. In order to use true you must obviously download all the prerequisites in advance.
-			 You can use a script like http://autospinstaller.codeplex.com/releases/view/44442 to quickly accomplish this -->
+             If false, the prerequisites will be downloaded during install. In order to use true you must obviously download all the prerequisites in advance.
+             You can use a script like http://autospinstaller.codeplex.com/releases/view/44442 to quickly accomplish this -->
         <OfflineInstall>true</OfflineInstall>
         <Disable>
             <!-- Disables network loopback checks. This prevents the OS blocking access to your server under names other than its actual host name,
-			     which SharePoint needs to do for WebDAV requests. -->
+                 which SharePoint needs to do for WebDAV requests. -->
             <LoopbackCheck>true</LoopbackCheck>
             <!-- Disables windows services that are running by default on Windows 2008 that are not used by SharePoint to conserve resources -->
             <UnusedServices>true</UnusedServices>
             <!-- Switch off IE Enhanced Security configuration, so that your sites and Central Admin render properly in a browser on the server -->
             <IEEnhancedSecurity>true</IEEnhancedSecurity>
             <!-- Switch off checking whether the code-signing certificates used to sign the SharePoint code have been revoked. This slows down the
-			     start up time for SharePoint, particularly if the server cannot connect to the Internet to perform the revocation check. -->
+                 start up time for SharePoint, particularly if the server cannot connect to the Internet to perform the revocation check. -->
             <CertificateRevocationListCheck>false</CertificateRevocationListCheck>
         </Disable>
     </Install>
@@ -47,8 +47,8 @@
         <!--Enter the passphase that will be used to join additional servers to the farm. This farm passphrase will also be used for the Secure Store service app-->
         <Passphrase></Passphrase>
         <!-- The "Farm" account that will be used to run Central Administration and the timer service. If AddToLocalAdminsDuringSetup is true, it will be
-		     added to the server's local administrators group for the duration of the execution of the script. This is required for some steps, such as
-		     configuring the User Profile Synchronization service. If for some reason you need to leave the Farm account in the Administrators group after setup, set LeaveInLocalAdmins to true -->
+             added to the server's local administrators group for the duration of the execution of the script. This is required for some steps, such as
+             configuring the User Profile Synchronization service. If for some reason you need to leave the Farm account in the Administrators group after setup, set LeaveInLocalAdmins to true -->
         <Account AddToLocalAdminsDuringSetup="true" LeaveInLocalAdmins="false">
             <Username>DOMAIN\spfarm</Username>
             <Password></Password>
@@ -69,11 +69,11 @@
                      DBInstance="SERVER\INSTANCE"
                      DBPort="" />
             <!-- The DBPrefix is prepended to all database names. e.g. If you set this to TEST, your config DB will be TEST_ConfigDB.
-			     If you set the prefix to localhost, script will prepend each database with the name of the server on which the script is run. 
-			     Leave this blank for no prefix.
-			     NOTE: If you are installing a multi-server farm, it is recommended that you do not use localhost as services provisioned on different servers
-				       will have different prefixes.
-			-->
+                 If you set the prefix to localhost, script will prepend each database with the name of the server on which the script is run. 
+                 Leave this blank for no prefix.
+                 NOTE: If you are installing a multi-server farm, it is recommended that you do not use localhost as services provisioned on different servers
+                       will have different prefixes.
+            -->
             <DBPrefix>localhost</DBPrefix>
             <!-- The name of the farm configuration database -->
             <ConfigDB>ConfigDB</ConfigDB>
@@ -93,8 +93,8 @@
         <!-- The ManagedAccounts section configures all accounts that will be added to SharePoint as managed accounts. -->
         <ManagedAccounts>
             <!-- The CommonName values should remain unchanged; you can add additional managed accounts, but script expects certain static values for these 4 managed accounts.
-			     If you are creating additional web applications, use a new account for each web application with a new common name, unless you are creating a large number
-			     of web applications, in which case the additional memory consumption this requires outweighs the security benefits. -->
+                 If you are creating additional web applications, use a new account for each web application with a new common name, unless you are creating a large number
+                 of web applications, in which case the additional memory consumption this requires outweighs the security benefits. -->
             <ManagedAccount CommonName="spservice">
                 <username>DOMAIN\spservice</username>
                 <Password></Password>
@@ -152,21 +152,21 @@
          creating web apps whose URLs are not defined in DNS yet, a test farm, or if you are creating a DR farm, etc. -->
     <WebApplications AddURLsToHOSTS="false">
         <!-- Web application attributes are as follows:
-		type:
-			"Portal" is the primary site. Exactly one WebApplication should have this type. It is setup as a trusted file location 
-			for Excel services, and as the portal site connection for other site collections. The script also uses it internally
-			when it requires the URL of an arbitrary site.
-			"MySiteHost" is the host web application for mysites.
-			Any additional web applications that you create should have a type of your own choice such as "Other"
-		name: Name of the web application
-		applicationPool: Application pool name
-		applicationPoolAccount: DOMAIN\USERNAME of the account under which the application pool runs. This should be a managed account.
-		url: URL of the root site collection in the application pool. Do not include the port number, but do set http/https correctly.
-		port: Port on which the web application runs.
-		databaseName: Name of the first content database.
-		useClaims: false = disable claims based authentication. true = enable claims based authentication.
-		useBasicAuthentication: false = only accept Kerberos/NTLM claims. true = also accept Basic authentication claims. Has no effect if useClaims is false.
-		useOnlineWebPartCatalog: false = disable use of the online webpart gallery on the web application. true (default) enable it. -->
+        type:
+            "Portal" is the primary site. Exactly one WebApplication should have this type. It is setup as a trusted file location 
+            for Excel services, and as the portal site connection for other site collections. The script also uses it internally
+            when it requires the URL of an arbitrary site.
+            "MySiteHost" is the host web application for mysites.
+            Any additional web applications that you create should have a type of your own choice such as "Other"
+        name: Name of the web application
+        applicationPool: Application pool name
+        applicationPoolAccount: DOMAIN\USERNAME of the account under which the application pool runs. This should be a managed account.
+        url: URL of the root site collection in the application pool. Do not include the port number, but do set http/https correctly.
+        port: Port on which the web application runs.
+        databaseName: Name of the first content database.
+        useClaims: false = disable claims based authentication. true = enable claims based authentication.
+        useBasicAuthentication: false = only accept Kerberos/NTLM claims. true = also accept Basic authentication claims. Has no effect if useClaims is false.
+        useOnlineWebPartCatalog: false = disable use of the online webpart gallery on the web application. true (default) enable it. -->
         <WebApplication type="Portal"
                         name="Portal Home"
                         applicationPool="PortalHome"
@@ -183,17 +183,17 @@
             </ManagedPaths>
             <SiteCollections>
                 <!-- You can specify multiple site collections within a web application.
-				siteUrl: URL of the site collection. Include the port if it is non default for the protocol (80/443). Do not include default ports as this will make the script fail.
-				owner: Site collection owner account.
-				name: Name/title of the site collection.
-				description: Description of the site collection.
-				SearchUrl: URL of the search site. This may be in another web application / site collection.
-				CustomTemplate: Set to true if a custom template is to be used.
-				Template: Name of the template to use.
-				LCID: Locale ID of the language pack to use for the site collection.
-				Locale: Actual locale of the site for regional settings. e.g. for UK English you use the US English LCID of 1033 but the locale en-gb.
-				        If omitted, the default locale of the LCID is used.
-				Time24: If true, times are displayed using a 24 hour clock. If false, AM/PM is used. If omitted, the default for the LCID is applied. -->
+                siteUrl: URL of the site collection. Include the port if it is non default for the protocol (80/443). Do not include default ports as this will make the script fail.
+                owner: Site collection owner account.
+                name: Name/title of the site collection.
+                description: Description of the site collection.
+                SearchUrl: URL of the search site. This may be in another web application / site collection.
+                CustomTemplate: Set to true if a custom template is to be used.
+                Template: Name of the template to use.
+                LCID: Locale ID of the language pack to use for the site collection.
+                Locale: Actual locale of the site for regional settings. e.g. for UK English you use the US English LCID of 1033 but the locale en-gb.
+                        If omitted, the default locale of the LCID is used.
+                Time24: If true, times are displayed using a 24 hour clock. If false, AM/PM is used. If omitted, the default for the LCID is applied. -->
                 <SiteCollection siteUrl="http://localhost"
                                 owner="DOMAIN\portalacc"
                                 name="Portal Home"
@@ -238,10 +238,10 @@
         </WebApplication>
     </WebApplications>
     <!-- The ServiceApps section configures service applications included in the standard SharePoint licence.
-		Common Attributes:
-		Provision: Whether/which servers to provision the service application on
-		Name: Name of the application
-		ProxyName: name of the application proxy -->
+        Common Attributes:
+        Provision: Whether/which servers to provision the service application on
+        Name: Name of the application
+        ProxyName: name of the application proxy -->
     <ServiceApps>
         <ManagedMetadataServiceApp Provision="true"
                                    Name="Managed Metadata Service"
@@ -249,14 +249,17 @@
             <Database>MetaDataDB</Database>
         </ManagedMetadataServiceApp>
         <!-- EnableNetBIOSDomainName should be set to true if the host portion of your DNS Domain name is different than your NetBIOS domain name.
-			 StartProfileSync should be set to true to configure the User Profile Synchronization Service. NOTE: If this is set to TRUE in a multi-server
-			 farm, you must run this script first on the machine that will run the profile synchronization service. If you are running SP2010 SP1, you can 
-             specify the SyncConnectionAccount credentials and the script will attempt to create a default Sync connection using the new Add-SPProfileSyncConnection cmdlet -->
+             StartProfileSync should be set to true to configure the User Profile Synchronization Service. NOTE: If this is set to TRUE in a multi-server
+             farm, you must run this script first on the machine that will run the profile synchronization service. 
+             If you are running SP2010 SP1, you can set CreateDefaultSyncConnection to true and specify the SyncConnectionAccount credentials; 
+             the script will attempt to create a default Sync connection using the new (although unsupported) Add-SPProfileSyncConnection cmdlet.
+             NOTE: Add-SPProfileSyncConnection may be useful for experimental/non-production builds but as per http://www.harbar.net/archive/2011/07/12/332.aspx it's UNSUPPORTED in on-premises deployments -->
         <UserProfileServiceApp Provision="true"
                                Name="User Profile Service Application"
                                ProxyName="User Profile Service Application"
                                EnableNetBIOSDomainNames="false"
                                StartProfileSync="true"
+                               CreateDefaultSyncConnection="false"
                                SyncConnectionAccount="DOMAIN\UPSync"
                                SyncConnectionAccountPassword="" >
             <ProfileDB>ProfileDB</ProfileDB>
@@ -336,9 +339,9 @@
         </WordAutomationService>
     </ServiceApps>
     <!-- The EnterpriseSeviceApps section configures services only available with an Enterprise licence.
-		 Common Attributes:
-		 UnattendedIDUser: DOMAIN\UserName of the unattended user account. This does not have to be SharePoint managed account, and the same account can be re-used for all services.
-		 UnattendedIDPassword: Password of the unattended user account.	-->
+         Common Attributes:
+         UnattendedIDUser: DOMAIN\UserName of the unattended user account. This does not have to be SharePoint managed account, and the same account can be re-used for all services.
+         UnattendedIDPassword: Password of the unattended user account.	-->
     <EnterpriseServiceApps>
         <ExcelServices Provision="false"
                        Name="Excel Services Application"
@@ -368,8 +371,10 @@
     <OfficeWebApps Install="false"
                    ConfigFile="config-OWA.xml">
         <ExcelService Provision="false"
-                      Name="Excel Calculation Services"
-                      ProxyName="Excel Calculation Services">
+                      Name="Excel Web App"
+                      ProxyName="Excel Web App"
+                      UnattendedIDUser="DOMAIN\ExcelUser"
+                      UnattendedIDPassword="">
         </ExcelService>
         <WordViewingService Provision="false"
                             Name="Word Viewing Service"
@@ -383,7 +388,7 @@
     <!-- Install the Adobe PDF iFilter and configure the search indexer to use it. This also adds the proper icon for .pdf files in SharePoint. -->
     <AdobePDFIndexingAndIcon Configure="true"/>
     <!-- Install ForeFront Protection for SharePoint 2010.
-	     Configuration and licensing of ForeFront is performed by running its administration program from the Start Menu after installation. -->
+         Configuration and licensing of ForeFront is performed by running its administration program from the Start Menu after installation. -->
     <ForeFront Install="false"
                ConfigFile="answerfile-ForeFront.xml" />
 </Configuration>

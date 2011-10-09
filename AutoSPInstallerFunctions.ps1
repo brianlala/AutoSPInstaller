@@ -6,25 +6,25 @@
 Function ValidatePassphrase([xml]$xmlinput)
 {
 	# Check if passphrase is supplied
-	$script:FarmPassphrase = $xmlinput.Configuration.Farm.Passphrase
+	$FarmPassphrase = $xmlinput.Configuration.Farm.Passphrase
 	If (!($FarmPassphrase) -or ($FarmPassphrase -eq ""))
 	{		
 		Return
 	}
 	$groups=0
-	If ($script:FarmPassphrase -match "[a-z]") { $groups = $groups + 1 }
-	If ($script:FarmPassphrase -match "[A-Z]") { $groups = $groups + 1 }
-	If ($script:FarmPassphrase -match "[0-9]") { $groups = $groups + 1 }
-	If ($script:FarmPassphrase -match "[^a-zA-Z0-9]") { $groups = $groups + 1 }
+	If ($FarmPassphrase -match "[a-z]") { $groups = $groups + 1 }
+	If ($FarmPassphrase -match "[A-Z]") { $groups = $groups + 1 }
+	If ($FarmPassphrase -match "[0-9]") { $groups = $groups + 1 }
+	If ($FarmPassphrase -match "[^a-zA-Z0-9]") { $groups = $groups + 1 }
 	
 	If ($groups -lt 3 )
 	{
-		Write-Host -ForegroundColor Yellow " - Farm passphrase does not SharePoint complexity requirements. It must be 8 characters or longer and contain three of the following groups:"
+		Write-Host -ForegroundColor Yellow " - Farm passphrase does not meet complexity requirements. It must be 8 characters or longer and contain three of the following groups:"
 		Write-Host -ForegroundColor Yellow " - Upper case letters"
 		Write-Host -ForegroundColor Yellow " - Lower case letters"
 		Write-Host -ForegroundColor Yellow " - Digits"
 		Write-Host -ForegroundColor Yellow " - Other Characters"
-		Throw " - Farm passphrase does not meet SharePoint complexity requirements."
+		Throw " - Farm passphrase does not meet complexity requirements."
 	}
 }
 #EndRegion
@@ -93,22 +93,22 @@ Function RemoveIEEnhancedSecurity([xml]$xmlinput)
 	If ($xmlinput.Configuration.Install.Disable.IEEnhancedSecurity -eq "True") 
 	{
 		Write-Host -ForegroundColor White " - Disabling IE Enhanced Security..."
-		Set-ItemProperty -Path "Registry::\HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}" -Name isinstalled -Value 0
-		Set-ItemProperty -Path "Registry::\HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A8-37EF-4b3f-8CFC-4F3A74704073}" -Name isinstalled -Value 0
+		Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}" -Name isinstalled -Value 0
+		Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A8-37EF-4b3f-8CFC-4F3A74704073}" -Name isinstalled -Value 0
 		Rundll32 iesetup.dll, IEHardenLMSettings,1,True
 		Rundll32 iesetup.dll, IEHardenUser,1,True
 		Rundll32 iesetup.dll, IEHardenAdmin,1,True
-		If (Test-Path "Registry::\HKEY_CURRENT_USER\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}") 
+		If (Test-Path "HKCU:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}") 
 		{
-			Remove-Item -Path "Registry::\HKEY_CURRENT_USER\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}"
+			Remove-Item -Path "HKCU:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}"
 		}
-		If (Test-Path "Registry::\HKEY_CURRENT_USER\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A8-37EF-4b3f-8CFC-4F3A74704073}")
+		If (Test-Path "HKCU:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A8-37EF-4b3f-8CFC-4F3A74704073}")
 		{
-			Remove-Item -Path "Registry::\HKEY_CURRENT_USER\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A8-37EF-4b3f-8CFC-4F3A74704073}"
+			Remove-Item -Path "HKCU:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A8-37EF-4b3f-8CFC-4F3A74704073}"
 		}
 		
 		#This doesn't always exist
-		Remove-ItemProperty "Registry::\HKEY_CURRENT_USER\SOFTWARE\Microsoft\Internet Explorer\Main" "First Home Page" -ErrorAction SilentlyContinue
+		Remove-ItemProperty "HKCU:\SOFTWARE\Microsoft\Internet Explorer\Main" "First Home Page" -ErrorAction SilentlyContinue
 	}	
 	Else 
 	{
@@ -151,15 +151,9 @@ Function DisableCRLCheck([xml]$xmlinput)
 #Region Start logging to user's desktop
 Function StartTracing
 {
-    $script:LogTime = Get-Date -Format yyyy-MM-dd_h-mm
+    $LogTime = Get-Date -Format yyyy-MM-dd_h-mm
     $script:LogFile = "$env:USERPROFILE\Desktop\AutoSPInstaller-$LogTime.rtf"
     Start-Transcript -Path $LogFile -Force
-    
-    $script:StartDate = Get-Date
-    Write-Host -ForegroundColor White "-----------------------------------"
-    Write-Host -ForegroundColor White "| Automated SP2010 install script |"
-    Write-Host -ForegroundColor White "| Started on: $StartDate |"
-    Write-Host -ForegroundColor White "-----------------------------------"
 }
 #EndRegion
 
@@ -726,10 +720,10 @@ Function GetFarmCredentials([xml]$xmlinput)
 #Region Get Farm Passphrase
 Function GetFarmPassphrase([xml]$xmlinput)
 {
-	$script:FarmPassphrase = $xmlinput.Configuration.Farm.Passphrase
+	$FarmPassphrase = $xmlinput.Configuration.Farm.Passphrase
 	If (!($FarmPassphrase) -or ($FarmPassphrase -eq ""))
 	{
-		$script:FarmPassphrase = Read-Host -Prompt " - Please enter the farm passphrase now" -AsSecureString
+		$FarmPassphrase = Read-Host -Prompt " - Please enter the farm passphrase now" -AsSecureString
 		If (!($FarmPassphrase) -or ($FarmPassphrase -eq "")) { Throw " - Farm passphrase is required!" }
     }
 	Return $FarmPassphrase
@@ -786,9 +780,9 @@ Function UpdateProcessIdentity ($ServiceToUpdate)
 Function CreateOrJoinFarm([xml]$xmlinput, $SecPhrase, $farmCredential)
 {
     WriteLine
-	Start-SPAssignment -Global | Out-Null
+	##Start-SPAssignment -Global | Out-Null
 
-    $script:ConfigDB = $DBPrefix+$xmlinput.Configuration.Farm.Database.ConfigDB
+    $ConfigDB = $DBPrefix+$xmlinput.Configuration.Farm.Database.ConfigDB
     
     # Look for an existing farm and join the farm if not already joined, or create a new farm
     Try
@@ -1001,7 +995,8 @@ Function ConfigureLanguagePacks([xml]$xmlinput)
 		Start-Sleep 20
 		# Run PSConfig.exe per http://technet.microsoft.com/en-us/library/cc262108.aspx
 		Start-Process -FilePath $PSConfig -ArgumentList "-cmd upgrade -inplace v2v -passphrase `"$FarmPassphrase`" -wait -force" -NoNewWindow -Wait
-   		$PSConfigLog = get-childitem $((Get-SPDiagnosticConfig).LogLocation) | ? {$_.Name -like "PSCDiagnostics*"} | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
+                $PSConfigLogLocation = $((Get-SPDiagnosticConfig).LogLocation) -replace "%CommonProgramFiles%","$Env:CommonProgramFiles"
+   		$PSConfigLog = get-childitem $PSConfigLogLocation | ? {$_.Name -like "PSCDiagnostics*"} | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
     	If ($PSConfigLog -eq $null) 
     	{
     		Throw " - Could not find PSConfig log file!"
@@ -1381,11 +1376,23 @@ Function AssignCert([xml]$xmlinput)
 {
 	ImportWebAdministration
 	Write-Host -ForegroundColor White " - Assigning certificate to site `"https://$SSLHostHeader`:$SSLPort`""
-	# If our SSL host header is a FQDN containing the local domain, look for an existing wildcard cert
+	# Check for sub-domains
+ 	$NumDomainLevels = ($Env:USERDNSDOMAIN -split "\.").Count
+	If ($NumDomainLevels -gt 2) # For example, corp.domain.net
+	{
+		# Get only the last two (domain + TLD)
+		$TopDomain = $Env:USERDNSDOMAIN.Split("\.")[($NumDomainLevels - 2)] + "." + $Env:USERDNSDOMAIN.Split("\.")[($NumDomainLevels - 1)]
+	}
+	# If our SSL host header is a FQDN containing the local domain (or part of it, if the local domain is a subdomain), look for an existing wildcard cert
 	If ($SSLHostHeader -like "*.$env:USERDNSDOMAIN")
 	{
 		Write-Host -ForegroundColor White " - Looking for existing `"*.$env:USERDNSDOMAIN`" wildcard certificate..."
 		$Cert = Get-ChildItem cert:\LocalMachine\My | ? {$_.Subject -like "CN=``*.$env:USERDNSDOMAIN*"}
+	}
+	ElseIf (($NumDomainLevels -gt 2) -and ($SSLHostHeader -like "*.$TopDomain"))
+	{
+		Write-Host -ForegroundColor White " - Looking for existing `"*.$TopDomain`" wildcard certificate..."
+		$Cert = Get-ChildItem cert:\LocalMachine\My | ? {$_.Subject -like "CN=``*.$TopDomain*"}
 	}
 	Else
 	{
@@ -1406,6 +1413,12 @@ Function AssignCert([xml]$xmlinput)
 				# Create a new wildcard cert so we can potentially use it on other sites too
 				Start-Process -NoNewWindow -Wait -FilePath "$MakeCert" -ArgumentList "-r -pe -n `"CN=*.$env:USERDNSDOMAIN`" -eku 1.3.6.1.5.5.7.3.1 -ss My -sr localMachine -sky exchange -sp `"Microsoft RSA SChannel Cryptographic Provider`" -sy 12"
 				$Cert = Get-ChildItem cert:\LocalMachine\My | ? {$_.Subject -like "CN=``*.$env:USERDNSDOMAIN*"}
+			}
+			ElseIf (($NumDomainLevels -gt 2) -and ($SSLHostHeader -like "*.$TopDomain"))
+			{
+				# Create a new wildcard cert so we can potentially use it on other sites too
+				Start-Process -NoNewWindow -Wait -FilePath "$MakeCert" -ArgumentList "-r -pe -n `"CN=*.$TopDomain`" -eku 1.3.6.1.5.5.7.3.1 -ss My -sr localMachine -sky exchange -sp `"Microsoft RSA SChannel Cryptographic Provider`" -sy 12"
+				$Cert = Get-ChildItem cert:\LocalMachine\My | ? {$_.Subject -like "CN=``*.$TopDomain*"}
 			}
 			Else
 			{
@@ -1791,7 +1804,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
     				$NewMySitesDB = New-SPContentDatabase -Name $MySiteDB -WebApplication "$MySiteURL`:$MySitePort"
     				If (-not $?) { Throw " - Failed to create My Sites content DB" }
     			}
-    			If ((Get-SPSite | Where-Object {(($_.Url -like "$MySiteURL*") -and ($_.Port -eq "$MySitePort")) -eq $null}))
+				If (!(Get-SPSite | Where-Object {(($_.Url -like "$MySiteURL*") -and ($_.Port -eq "$MySitePort"))}))
     			{
     				Write-Host -ForegroundColor White " - Creating My Sites site collection $MySiteURL`:$MySitePort..."
     				# Verify that the Language we're trying to create the site in is currently installed on the server
@@ -1888,10 +1901,13 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
 				
 				If ($PortalAppPoolAcct)
 				{
-					# Grant the Portal App Pool account rights to the Profile DB
+					# Grant the Portal App Pool account rights to the Profile and Social DBs
 					$ProfileDB = $DBPrefix+$UserProfile.ProfileDB
+					$SocialDB = $DBPrefix+$UserProfile.SocialDB
 					Write-Host -ForegroundColor White " - Granting $PortalAppPoolAcct rights to $ProfileDB..."
 					Get-SPDatabase | ? {$_.Name -eq $ProfileDB} | Add-SPShellAdmin -UserName $PortalAppPoolAcct
+					Write-Host -ForegroundColor White " - Granting $PortalAppPoolAcct rights to $SocialDB..."
+					Get-SPDatabase | ? {$_.Name -eq $SocialDB} | Add-SPShellAdmin -UserName $PortalAppPoolAcct
 				}
 				Write-Host -ForegroundColor White " - Enabling the Activity Feed Timer Job.."
 				If ($ProfileServiceApp) {Get-SPTimerJob | ? {$_.TypeName -eq "Microsoft.Office.Server.ActivityFeed.ActivityFeedUPAJob"} | Enable-SPTimerJob}
@@ -1966,13 +1982,18 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
     					Else
     					{
     						Write-Host -BackgroundColor Blue -ForegroundColor Black $($ProfileSyncService.Status)
-    						# Need to restart IIS before we can do anything with the User Profile Sync Service
-    						Write-Host -ForegroundColor White " - Restarting IIS..."
-    						Start-Process -FilePath iisreset.exe -ArgumentList "-noforce" -Wait -NoNewWindow
-    					}
+    						# Need to recycle the Central Admin app pool before we can do anything with the User Profile Sync Service
+    						Write-Host -ForegroundColor White " - Recycling Central Admin app pool..."
+                            # From http://sharepoint.nauplius.net/2011/09/iisreset-not-required-after-starting.html
+                            $appPool = gwmi -Namespace "root\MicrosoftIISv2" -class "IIsApplicationPool" | where {$_.Name -eq "W3SVC/APPPOOLS/SharePoint Central Administration v4"}
+                            $appPool.Recycle()
+							$NewlyProvisionedSync = $true
+                        }
     				}
-					# Attempt to create a sync connection; only SharePoint 2010 Service Pack 1 and above supports the Add-SPProfileSyncConnection cmdlet
-					If (CheckForSP1)
+					# Attempt to create a sync connection only on a successful, newly-provisioned User Profile Sync service
+					# We don't have the ability to check for existing connections and we don't want to overwrite/duplicate any existing sync connections
+				    # Note that this isn't really supported anyhow, and that only SharePoint 2010 Service Pack 1 and above includes the Add-SPProfileSyncConnection cmdlet
+					If (CheckForSP1 -and ($($UserProfile.CreateDefaultSyncConnection) -eq $true) -and ($NewlyProvisionedSync -eq $true))
 					{
 						Write-Host -ForegroundColor White " - Creating a default Profile Sync connection..."
 						$ProfileServiceApp = Get-SPServiceApplication |?{$_.DisplayName -eq $UserProfileServiceName}
@@ -2045,6 +2066,9 @@ Function CreateUPSAsAdmin([xml]$xmlinput)
 		# Grant the current install account rights to the newly-created Profile DB - needed since it's going to be running PowerShell commands against it
 		Write-Output "`$ProfileDBId = Get-SPDatabase | ? {`$_.Name -eq `"$ProfileDB`"}" | Out-File $ScriptFile -Width 400 -Append
 		Write-Output "Add-SPShellAdmin -UserName `"$env:USERDOMAIN\$env:USERNAME`" -database `$ProfileDBId" | Out-File $ScriptFile -Width 400 -Append
+		# Grant the current install account rights to the newly-created Social DB as well
+		Write-Output "`$SocialDBId = Get-SPDatabase | ? {`$_.Name -eq `"$SocialDB`"}" | Out-File $ScriptFile -Width 400 -Append
+		Write-Output "Add-SPShellAdmin -UserName `"$env:USERDOMAIN\$env:USERNAME`" -database `$SocialDBId" | Out-File $ScriptFile -Width 400 -Append
 		# Start a process under the Farm Account's credentials, then spawn an elevated process within to finally execute the script file that actually creates the UPS
 		Start-Process -WorkingDirectory $PSHOME -FilePath "powershell.exe" -Credential $FarmCredential -ArgumentList "-Command Start-Process -WorkingDirectory `"'$PSHOME'`" -FilePath `"'powershell.exe'`" -ArgumentList `"'$ScriptFile'`" -Verb Runas" -Wait
 	}
@@ -2124,6 +2148,10 @@ Function CreateSPUsageApp([xml]$xmlinput)
 				$SPUsageApplicationProxy = Get-SPServiceApplicationProxy | where {$_.DisplayName -eq $SPUsageApplicationName}
 				$SPUsageApplicationProxy.Provision()
 				# End Usage Proxy Fix
+				Write-Host -ForegroundColor White " - Enabling usage processing timer job..."
+                                $UsageProcessingJob = Get-SPTimerJob | ? {$_.TypeName -eq "Microsoft.SharePoint.Administration.SPUsageProcessingJobDefinition"}
+                                $UsageProcessingJob.IsDisabled = $False
+                                $UsageProcessingJob.Update()                
 				Write-Host -ForegroundColor White " - Done provisioning SP Usage Application."
 			}
 			Else {Write-Host -ForegroundColor White " - SP Usage Application already provisioned."}
@@ -3571,6 +3599,230 @@ Function ConfigureOutgoingEmail
 }
 #EndRegion
 
+#Region Configure Adobe PDF Indexing and Display
+# ====================================================================================
+# Func: Configure-PDFSearchAndIcon
+# Desc: Downloads and installs the PDF iFilter, registers the PDF search file type and document icon for display in SharePoint
+# From: Adapted/combined from @brianlala's additions, @tonifrankola's http://www.sharepointusecases.com/index.php/2011/02/automate-pdf-configuration-for-sharepoint-2010-via-powershell/
+# And : Paul Hickman's Patch 9609 at http://autospinstaller.codeplex.com/SourceControl/list/patches
+# ====================================================================================
+
+Function Configure-PDFSearchAndIcon
+{
+	If ($xmlinput.Configuration.AdobePDFIndexingAndIcon.Configure -eq $true)
+	{
+		WriteLine
+		$PDFiFilterUrl = "http://download.adobe.com/pub/adobe/acrobat/win/9.x/PDFiFilter64installer.zip"
+		$PDFIconUrl = "http://www.adobe.com/images/pdficon_small.gif"
+		$SharePointRoot = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\14"
+		$DocIconFolderPath = "$SharePointRoot\TEMPLATE\XML"
+		$DocIconFilePath = "$DocIconFolderPath\DOCICON.XML"
+
+		Write-Host -ForegroundColor White " - Configuring PDF file indexing..."
+		$SourceFileLocations = @("$bits\PDF\","$bits\AdobePDF\",$env:TEMP)
+		# Look for the installer or the installer zip in the possible locations
+		ForEach ($SourceFileLocation in $SourceFileLocations)
+		{
+			If (Get-Item $($SourceFileLocation+"PDFFilter64installer.msi") -ErrorAction SilentlyContinue)
+			{
+				Write-Host -ForegroundColor White " - PDF iFilter installer found in $SourceFileLocation."
+				$iFilterInstaller = $SourceFileLocation+"PDFFilter64installer.msi"
+				Break
+			}
+			ElseIf (Get-Item $($SourceFileLocation+"PDFiFilter64installer.zip") -ErrorAction SilentlyContinue)
+			{
+				Write-Host -ForegroundColor White " - PDF iFilter installer zip file found in $SourceFileLocation."
+				$ZipLocation = $SourceFileLocation
+				$SourceFile = $SourceFileLocation+"PDFiFilter64installer.zip"
+				Break
+			}
+		}
+		# If the MSI hasn't been extracted from the zip yet then extract it
+		If (!($iFilterInstaller))
+		{
+			# If the zip file isn't present then download it first
+			If (!($SourceFile))
+			{
+				Write-Host -ForegroundColor White " - PDF iFilter installer or zip not found, downloading..."
+				$ZipLocation = $env:TEMP
+				$DestinationFile = $ZipLocation+"\PDFiFilter64installer.zip"
+				Import-Module BitsTransfer | Out-Null
+				Start-BitsTransfer -Source $PDFiFilterUrl -Destination $DestinationFile -DisplayName "Downloading Adobe PDF iFilter..." -Priority High -Description "From $PDFiFilterUrl..." -ErrorVariable err
+				If ($err) {Write-Warning " - Could not download Adobe PDF iFilter!"; Pause; break}
+				$SourceFile = $DestinationFile
+			}
+			Write-Host -ForegroundColor White " - Extracting Adobe PDF iFilter installer..."
+			$Shell = New-Object -ComObject Shell.Application
+			$iFilterZip = $Shell.Namespace($SourceFile)
+			$Location = $Shell.Namespace($ZipLocation)
+	    	$Location.Copyhere($iFilterZip.items())
+			$iFilterInstaller = $ZipLocation+"\PDFFilter64installer.msi"
+		}
+		Try
+		{
+			Write-Host -ForegroundColor White " - Installing Adobe PDF iFilter..."
+			Start-Process -FilePath "msiexec.exe" -ArgumentList "/i $iFilterInstaller /passive /norestart" -NoNewWindow -Wait
+		}
+		Catch {$_}
+		
+		If ((Get-PsSnapin |?{$_.Name -eq "Microsoft.SharePoint.PowerShell"})-eq $null)
+		{
+		   	Write-Host -ForegroundColor White " - Loading SharePoint Powershell Snapin..."
+			$PSSnapin = Add-PsSnapin Microsoft.SharePoint.PowerShell
+		}
+
+		Write-Host -ForegroundColor White " - Setting PDF search crawl extension..."
+		$searchApplications = Get-SPEnterpriseSearchServiceApplication
+		If ($searchApplications)
+		{		
+			ForEach ($searchApplication in $searchApplications)
+			{
+				Try
+				{
+					Get-SPEnterpriseSearchCrawlExtension -SearchApplication $searchApplication -Identity "pdf" -ErrorAction Stop | Out-Null
+					Write-Host -ForegroundColor White " - PDF file extension already set for $($searchApplication.DisplayName)."
+				}
+				Catch
+				{
+					New-SPEnterpriseSearchCrawlExtension -SearchApplication $searchApplication -Name "pdf" | Out-Null
+					Write-Host -ForegroundColor White " - PDF extension for $($searchApplication.DisplayName) now set."
+				}
+			}
+		}
+		Else {Write-Warning " - No search applications found."}
+		Write-Host -ForegroundColor White " - Updating registry..."
+		If ((Get-Item -Path Registry::"HKLM\SOFTWARE\Microsoft\Office Server\14.0\Search\Setup\Filters\.pdf" -ErrorAction SilentlyContinue) -eq $null)
+		{
+			$item = New-Item -Path Registry::"HKLM\SOFTWARE\Microsoft\Office Server\14.0\Search\Setup\Filters\.pdf"
+			$item | New-ItemProperty -Name Extension -PropertyType String -Value "pdf" | Out-Null
+			$item | New-ItemProperty -Name FileTypeBucket -PropertyType DWord -Value 1 | Out-Null
+			$item | New-ItemProperty -Name MimeTypes -PropertyType String -Value "application/pdf" | Out-Null
+		}
+		If ((Get-Item -Path Registry::"HKLM\SOFTWARE\Microsoft\Office Server\14.0\Search\Setup\ContentIndexCommon\Filters\Extension\.pdf" -ErrorAction SilentlyContinue) -eq $null)
+		{
+			$registryItem = New-Item -Path Registry::"HKLM\SOFTWARE\Microsoft\Office Server\14.0\Search\Setup\ContentIndexCommon\Filters\Extension\.pdf"
+			$registryItem | New-ItemProperty -Name "(default)" -PropertyType String -Value "{E8978DA6-047F-4E3D-9C78-CDBE46041603}" | Out-Null
+		}
+		##Write-Host -ForegroundColor White " - Restarting SharePoint Foundation Search Service..."
+		##Restart-Service SPSearch4
+		If ((Get-Service OSearch14).Status -eq "Running")
+		{
+			Write-Host -ForegroundColor White " - Restarting SharePoint Search Service..."
+			Restart-Service OSearch14
+		}
+		Write-Host -ForegroundColor White " - Done configuring PDF search."
+
+		Write-Host -ForegroundColor White " - Configuring PDF Icon..."
+		$pdfIcon = "icpdf.gif"
+		If (!(Get-Item $SharePointRoot\Template\Images\$pdfIcon -ErrorAction SilentlyContinue))
+		{
+			ForEach ($SourceFileLocation in $SourceFileLocations)
+			{
+				# Check each possible source file location for the PDF icon
+				$CopyIcon = Copy-Item -Path $SourceFileLocation\$pdfIcon -Destination $SharePointRoot\Template\Images\$pdfIcon -PassThru -ErrorAction SilentlyContinue
+				If ($CopyIcon)
+				{
+					Write-Host -ForegroundColor White " - PDF icon found at $SourceFileLocation\$pdfIcon"
+					Break
+				}
+			}
+			If (!($CopyIcon))
+			{
+				Write-Host -ForegroundColor White " - `"$pdfIcon`" not found; downloading it now..."
+				Import-Module BitsTransfer | Out-Null
+				Start-BitsTransfer -Source $PDFIconUrl -Destination "$SharePointRoot\Template\Images\$pdfIcon" -DisplayName "Downloading PDF Icon..." -Priority High -Description "From $PDFIconUrl..." -ErrorVariable err
+				If ($err) {Write-Warning " - Could not download PDF Icon!"; Pause; break}
+			}
+			If (Get-Item $SharePointRoot\Template\Images\$pdfIcon) {Write-Host -ForegroundColor White " - PDF icon copied successfully."}
+			Else {Throw}
+		}
+		$xml = New-Object XML
+		$xml.Load($DocIconFilePath)
+		If ($xml.SelectSingleNode("//Mapping[@Key='pdf']") -eq $null)
+		{
+			Try
+			{
+				Write-Host -ForegroundColor White " - Creating backup of DOCICON.XML file..."
+				$backupFile = "$DocIconFolderPath\DOCICON_Backup.xml"
+				Copy-Item $DocIconFilePath $backupFile
+				Write-Host -ForegroundColor White " - Writing new DOCICON.XML..."
+				$pdf = $xml.CreateElement("Mapping")
+				$pdf.SetAttribute("Key","pdf")
+				$pdf.SetAttribute("Value",$pdfIcon)
+				$xml.DocIcons.ByExtension.AppendChild($pdf) | Out-Null
+			    $xml.Save($DocIconFilePath)
+			}
+			Catch {$_; Pause; Break}
+		}
+        # Add the PDF MIME type to each web app so PDFs can be directly viewed/opened without saving locally first
+		# More granular and generally preferable to setting the whole web app to "Permissive" file handling
+		$MimeType = "application/pdf"
+		Write-Host -ForegroundColor White " - Adding PDF MIME type `"$MimeType`" web apps..."
+		ForEach ($WebAppConfig in $xmlinput.Configuration.WebApplications.WebApplication)
+		{
+			$webApp = Get-SPWebApplication $($WebAppConfig.url)
+			If ($webApp.AllowedInlineDownloadedMimeTypes -notcontains $MimeType)
+            {
+                Write-Host -ForegroundColor White "  - $($WebAppConfig.url): Adding..." -NoNewline
+                $webApp.AllowedInlineDownloadedMimeTypes.Add($MimeType)
+                $webApp.Update()
+				Write-Host -ForegroundColor White "Done."
+            }
+			Else
+			{
+                Write-Host -ForegroundColor White "  - $($WebAppConfig.url): Already added."
+            }
+		}
+		Write-Host -ForegroundColor White " - Restarting IIS..."
+		iisreset
+		Write-Host -ForegroundColor White " - Done configuring PDF indexing and icon display."
+		WriteLine
+	}
+}
+#EndRegion
+
+#Region Install Forefront
+# ====================================================================================
+# Func: InstallForeFront
+# Desc: Installs ForeFront Protection 2010 for SharePoint Sites
+# ====================================================================================
+Function InstallForeFront
+{
+	If (ShouldIProvision($xmlinput.Configuration.ForeFront) -eq $true)
+	{
+		WriteLine
+		If (Test-Path "$env:PROGRAMFILES\Microsoft ForeFront Protection for SharePoint\Launcher.exe")
+		{
+			Write-Host -ForegroundColor White " - ForeFront binaries appear to be already installed - skipping install."
+		}
+		Else
+		{
+			# Install ForeFront
+			$config = $dp0 + "\" + $xmlinput.Configuration.ForeFront.ConfigFile
+			If (Test-Path "$bits\Forefront\setup.exe")
+			{
+				Write-Host -ForegroundColor White " - Installing ForeFront binaries..."
+				Try
+				{
+					Start-Process "$bits\Forefront\setup.exe" -ArgumentList "/a `"$config`" /p" -Wait
+					If (-not $?) {Throw}
+					Write-Host -ForegroundColor White " - Done installing ForeFront."
+				}
+				Catch 
+				{
+					Throw " - Error $LastExitCode occurred running $bits\ForeFront\setup.exe"
+				}
+			}
+			Else 
+			{
+				Throw " - ForeFront installer not found in $bits\ForeFront folder"
+			}
+		}
+		WriteLine
+	}
+}
+#EndRegion
+
 #Region Miscellaneous/Utility Functions
 # ===================================================================================
 # Func: Load SharePoint Powershell Snapin
@@ -3582,14 +3834,7 @@ Function Load-SharePoint-Powershell
 	{
     	WriteLine
 		Write-Host -ForegroundColor White " - Loading SharePoint Powershell Snapin"
-		Try 
-		{
-			Add-PsSnapin Microsoft.SharePoint.PowerShell
-			# Lately, loading the snapin throws an error: "System.TypeInitializationException: The type initializer for 'Microsoft.SharePoint.Utilities.SPUtility' threw an exception. ---> System.IO.FileNotFoundException:"...
-			If (!$?) {Throw}
-		}
-		# ...so we'll try a second time to add the snapin
-		Catch {Add-PsSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null}
+		Add-PsSnapin Microsoft.SharePoint.PowerShell -ErrorAction Stop
 		WriteLine
 	}
 }

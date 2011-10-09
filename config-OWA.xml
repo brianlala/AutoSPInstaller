@@ -10,4 +10,5 @@
 	<Setting Id="USINGUIINSTALLMODE" Value="1"/>
 	<Setting Id="SETUPTYPE" Value="CLEAN_INSTALL"/>
 	<Setting Id="SETUP_REBOOT" Value="Never"/>
+	<Setting Id="AllowWindowsClientInstall" Value="True"/>
 </Configuration>

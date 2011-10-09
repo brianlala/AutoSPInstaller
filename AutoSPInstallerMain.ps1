@@ -3,7 +3,6 @@ param
     [string]$InputFile = $(throw '- Need parameter input file (e.g. "c:\SP2010\AutoSPInstaller\AutoSPInstallerInput.xml")')
 )
 
-##$xmlinput = [xml] (get-content $InputFile)
 # Globally update all instances of "localhost" in the input file to actual local server name
 [xml]$xmlinput = (Get-Content $InputFile) -replace ("localhost", $env:COMPUTERNAME)
 
@@ -174,7 +173,7 @@ Function Finalize-Install
 	$EndDate = Get-Date
 	Write-Host -ForegroundColor White "-----------------------------------"
 	Write-Host -ForegroundColor White "| Automated SP2010 install script |"
-	Write-Host -ForegroundColor White "| Started on: $StartDate |"
+	Write-Host -ForegroundColor White "| Started on: $env:StartDate |"
 	Write-Host -ForegroundColor White "| Completed:  $EndDate |"
 	Write-Host -ForegroundColor White "-----------------------------------"
 
@@ -199,6 +198,12 @@ Function Finalize-Install
 #Region MAIN - Check for input file and start the install
 
 StartTracing
+If (!$env:StartDate) {$env:StartDate = Get-Date}
+Write-Host -ForegroundColor White "-----------------------------------"
+Write-Host -ForegroundColor White "| Automated SP2010 install script |"
+Write-Host -ForegroundColor White "| Started on: $env:StartDate |"
+Write-Host -ForegroundColor White "-----------------------------------"
+
 Try 
 {
 	PrepForInstall
@@ -210,11 +215,23 @@ Try
 Catch 
 {
 	WriteLine
-	Write-Host -ForegroundColor Yellow "Script aborted!"	
+	Write-Host -ForegroundColor Yellow " - Script aborted!"	
 	If ($_.FullyQualifiedErrorId -ne $null -and $_.FullyQualifiedErrorId.StartsWith(" - ")) 
 	{
-		#Error messages starting " - " are thrown directly from this script
+		# Error messages starting with " - " are thrown directly from this script
 		Write-Host -ForegroundColor Red $_.FullyQualifiedErrorId
+	}
+	# Lately, loading the snapin throws an error: "System.TypeInitializationException: The type initializer for 'Microsoft.SharePoint.Utilities.SPUtility' threw an exception. ---> System.IO.FileNotFoundException:"...
+	ElseIf ($_.Exception.Message -like "*Microsoft.SharePoint.Utilities.SPUtility*")
+	{
+        Write-Host -ForegroundColor Yellow " - A known (annoying) issue occurred loading the SharePoint Powershell snapin."
+        Write-Host -ForegroundColor Yellow " - We need to re-launch the script to clear this condition."
+        $ScriptCommandLine = $($MyInvocation.Line)
+        Write-Host -ForegroundColor White " - Re-Launching:"
+        Write-Host -ForegroundColor White " - $ScriptCommandLine"
+        Start-Process -WorkingDirectory $PSHOME -FilePath "powershell.exe" -ArgumentList "$ScriptCommandLine" -Verb RunAs
+        Start-Sleep 10
+        Exit
 	}
 	Else
 	{
@@ -224,14 +241,15 @@ Catch
 	$EndDate = Get-Date
 	Write-Host -ForegroundColor White "-----------------------------------"
 	Write-Host -ForegroundColor White "| Automated SP2010 install script |"
-	Write-Host -ForegroundColor White "| Started on: $StartDate |"
+	Write-Host -ForegroundColor White "| Started on: $env:StartDate |"
 	Write-Host -ForegroundColor White "| Aborted:    $EndDate |"
 	Write-Host -ForegroundColor White "-----------------------------------"
 }
 Finally 
 {
-	Stop-Transcript
-	Pause
+    Stop-Transcript
+	If ($ScriptCommandLine) {Exit}
+	Else {Pause}
 	Invoke-Item $LogFile
 }
 
