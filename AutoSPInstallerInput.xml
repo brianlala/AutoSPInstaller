@@ -18,7 +18,7 @@
        This allows you to configure an entire multi-server farm with different servers fulfilling different roles
        using a single configuration file.
        e.g. <ExcelServices Provision="Server1 Server2"> would provision excel services only on Server1 and Server2. -->
-<Configuration Environment="Dev" Version="2.5.5">
+<Configuration Environment="Dev" Version="2.5.7">
     <!-- The Environment attribute above appears at the top of the installation transcript. It does not affect the installation -->
     <!-- The Install section controls what modifications are made to the Windows OS prior to installation and how the SharePoint installation is run -->
     <Install>
@@ -76,7 +76,7 @@
             -->
             <DBPrefix>localhost</DBPrefix>
             <!-- The name of the farm configuration database -->
-            <ConfigDB>ConfigDB</ConfigDB>
+            <ConfigDB>Config</ConfigDB>
         </Database>
         <!-- The Services section configures the core service instances & components that are part of SharePoint Foundation -->
         <Services>
@@ -129,7 +129,7 @@
             <ULSLogs Compress="true">
                 <!-- The default <LogLocation> is $Env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\LOGS - enter another path (e.g. D:\Logs) or leave <LogLocation> empty to use the default. -->
                 <LogLocation></LogLocation>
-                <!-- <LogDiskSpaceUsageGB> specifies the maximum amout of disk space (GB) to use. If you specify a value here, LogMaxDiskSpaceUsageEnabled will automatically be set to True.
+                <!-- <LogDiskSpaceUsageGB> specifies the maximum amount of disk space (GB) to use. If you specify a value here, LogMaxDiskSpaceUsageEnabled will automatically be set to True.
                      Leave empty to use the default values (1000 GB, but with LogMaxDiskSpaceUsageEnabled set to False - so effectively NO restriction on disk space) -->
                 <LogDiskSpaceUsageGB></LogDiskSpaceUsageGB>
                 <!-- <DaysToKeepLogs> specifies the time, in days, to retain diagnostic log files. Leave empty to use the default (14 days). -->
@@ -246,7 +246,7 @@
         <ManagedMetadataServiceApp Provision="true"
                                    Name="Managed Metadata Service"
                                    ProxyName="Managed Metadata Service">
-            <Database>MetaDataDB</Database>
+            <Database>MetaData</Database>
         </ManagedMetadataServiceApp>
         <!-- EnableNetBIOSDomainName should be set to true if the host portion of your DNS Domain name is different than your NetBIOS domain name.
              StartProfileSync should be set to true to configure the User Profile Synchronization Service. NOTE: If this is set to TRUE in a multi-server
@@ -262,9 +262,9 @@
                                CreateDefaultSyncConnection="false"
                                SyncConnectionAccount="DOMAIN\UPSync"
                                SyncConnectionAccountPassword="" >
-            <ProfileDB>ProfileDB</ProfileDB>
-            <SyncDB>SyncDB</SyncDB>
-            <SocialDB>SocialDB</SocialDB>
+            <ProfileDB>Profile</ProfileDB>
+            <SyncDB>Sync</SyncDB>
+            <SocialDB>Social</SocialDB>
         </UserProfileServiceApp>
         <EnterpriseSearchService Provision="true"
                                  ContactEmail=""
@@ -277,30 +277,32 @@
                                  PerformanceLevel="PartlyReduced"
                                  Account="DOMAIN\SPSearch"
                                  Password=""
-                                 ShareName="SearchShare">
+                                 ShareName="SearchIndex">
             <EnterpriseSearchServiceApplications>
                 <EnterpriseSearchServiceApplication Name="Search Service Application"
                                                     DatabaseServer=""
-                                                    DatabaseName="EnterpriseSearch"
+                                                    DatabaseName="Search"
                                                     FailoverDatabaseServer=""
                                                     Partitioned="false"
                                                     Partitions="1"
                                                     SearchServiceApplicationType="Regular"
                                                     ContentAccessAccount="DOMAIN\SearchContentAccess"
-                                                    ContentAccessAccountPWD="">
-                    <ApplicationPool Name="SharePoint Enterprise Search Application Pool" Account="DOMAIN\SPSearch" Password="" />
+                                                    ContentAccessAccountPassword="">
+                    <ApplicationPool Name="SharePoint Search Application Pool" Account="DOMAIN\SPSearch" Password="" />
                     <CrawlServers>
                         <Server Name="localhost" />
                     </CrawlServers>
                     <QueryServers>
                         <Server Name="localhost" />
                     </QueryServers>
+                    <!-- You should specify all the servers you listed in QueryServers in the SearchQueryAndSiteSettingsServers node below as well -->
                     <SearchQueryAndSiteSettingsServers>
                         <Server Name="localhost" />
                     </SearchQueryAndSiteSettingsServers>
+                    <!-- You can only run the AdminComponent on one server per Search Service App, so only list one server here -->
                     <AdminComponent>
                         <Server Name="localhost" />
-                        <ApplicationPool Name="SharePoint Enterprise Search Application Pool" Account="DOMAIN\SPSearch" />
+                        <ApplicationPool Name="SharePoint Search Application Pool" Account="DOMAIN\SPSearch" />
                     </AdminComponent>
                     <Proxy Name="Search Service Application" Partitioned="false">
                         <ProxyGroup Name="Default" />
@@ -385,8 +387,15 @@
                            ProxyName="PowerPoint Service Application">
         </PowerPointService>
     </OfficeWebApps>
-    <!-- Install the Adobe PDF iFilter and configure the search indexer to use it. This also adds the proper icon for .pdf files in SharePoint. -->
-    <AdobePDFIndexingAndIcon Configure="true"/>
+    <!-- The AdobePDF section can install the Adobe PDF iFilter and configure the search indexer to use it, plus add the proper icon for .pdf files in SharePoint.
+         Also, we can configure SharePoint web app MIME type associations to allow direct opening of PDF files (instead of the default behavior of only allowing 'save as') -->
+    <AdobePDF>
+        <!-- The iFilter element supports a comma- or space-delimited list of server names on which to install the PDF iFilter. Useful if you want to selectively install ONLY on crawl servers, for example. -->
+        <iFilter Install="false" />
+        <!-- Both the Icon and MIMEType elements support only "true" or "false"; you probably would want the icon on all farm servers, and MIMEType is a web app-wide setting anyhow, not bound to specific servers -->
+        <Icon Configure="true" />
+        <MIMEType Configure="true"/>
+    </AdobePDF>
     <!-- Install ForeFront Protection for SharePoint 2010.
          Configuration and licensing of ForeFront is performed by running its administration program from the Start Menu after installation. -->
     <ForeFront Install="false"

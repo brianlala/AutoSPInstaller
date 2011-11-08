@@ -66,7 +66,7 @@ Function Run-Install
 	InstallPrerequisites $xmlinput
 	ConfigureIISLogging $xmlinput
 	InstallSharePoint $xmlinput
-	InstallOfficeWebApps ($xmlinput)
+	InstallOfficeWebApps $xmlinput
 	InstallLanguagePacks $xmlinput
 	FixTaxonomyPickerBug
 }
@@ -75,50 +75,50 @@ Function Run-Install
 #Region Setup Farm
 Function Setup-Farm
 {
-    [System.Management.Automation.PsCredential]$farmCredential  = GetFarmCredentials ($xmlinput) 
-    [security.securestring]$SecPhrase = GetSecureFarmPassphrase ($xmlinput)
-    ConfigureFarmAdmin ($xmlinput)
+    [System.Management.Automation.PsCredential]$farmCredential  = GetFarmCredentials $xmlinput
+    [security.securestring]$SecPhrase = GetSecureFarmPassphrase $xmlinput
+    ConfigureFarmAdmin $xmlinput
     Load-SharePoint-Powershell
-    CreateOrJoinFarm ($xmlinput) ([security.securestring]$SecPhrase) ([System.Management.Automation.PsCredential]$farmCredential)
-    CheckFarmTopology ($xmlinput)
-    ConfigureFarm ($xmlinput)
-	ConfigureDiagnosticLogging ($xmlinput)
-    ConfigureOfficeWebApps ($xmlinput)
-    ConfigureLanguagePacks ($xmlinput)
-    AddManagedAccounts ($xmlinput)   
-    CreateWebApplications ($xmlinput)
+    CreateOrJoinFarm $xmlinput ([security.securestring]$SecPhrase) ([System.Management.Automation.PsCredential]$farmCredential)
+    CheckFarmTopology $xmlinput
+    ConfigureFarm $xmlinput
+    ConfigureDiagnosticLogging $xmlinput
+    ConfigureOfficeWebApps $xmlinput
+    ConfigureLanguagePacks $xmlinput
+    AddManagedAccounts $xmlinput
+    CreateWebApplications $xmlinput
 }
 #EndRegion
 
 #Region Setup Services
 Function Setup-Services
 {
-    StartSandboxedCodeService ($xmlinput)
-    CreateMetadataServiceApp ($xmlinput)
+    StartSandboxedCodeService $xmlinput
+    CreateMetadataServiceApp $xmlinput
 	StartSearchQueryAndSiteSettingsService
-	StartClaimsToWindowsTokenService ($xmlinput)
-	CreateUserProfileServiceApplication ($xmlinput)
-	CreateStateServiceApp ($xmlinput)
-	CreateSPUsageApp ($xmlinput)
-	ConfigureUsageLogging ($xmlinput)
-	CreateWebAnalyticsApp ($xmlinput)
-	CreateSecureStoreServiceApp ($xmlinput)
-	ConfigureFoundationSearch ($xmlinput)
-	ConfigureTracing ($xmlinput)
-	CreateEnterpriseSearchServiceApp ($xmlinput)
-	CreateBusinessDataConnectivityServiceApp ($xmlinput)
-	CreateExcelServiceApp ($xmlinput)
-	CreateAccessServiceApp ($xmlinput)
-	CreateVisioServiceApp ($xmlinput)
-	CreatePerformancePointServiceApp ($xmlinput)
-	CreateWordAutomationServiceApp ($xmlinput)
-	CreateExcelOWAServiceApp ($xmlinput)
-	CreatePowerPointServiceApp ($xmlinput)
-	CreateWordViewingServiceApp ($xmlinput)
-	InstallSMTP ($xmlinput)
-	ConfigureOutgoingEmail ($xmlinput)
-	Configure-PDFSearchAndIcon ($xmlinput)
-	InstallForeFront ($xmlinput)
+	StartClaimsToWindowsTokenService $xmlinput
+	CreateUserProfileServiceApplication $xmlinput
+	CreateStateServiceApp $xmlinput
+	CreateSPUsageApp $xmlinput
+	ConfigureUsageLogging $xmlinput
+	CreateWebAnalyticsApp $xmlinput
+	CreateSecureStoreServiceApp $xmlinput
+	ConfigureFoundationSearch $xmlinput
+	ConfigureTracing $xmlinput
+	CreateEnterpriseSearchServiceApp $xmlinput
+	CreateBusinessDataConnectivityServiceApp $xmlinput
+	CreateExcelServiceApp $xmlinput
+	CreateAccessServiceApp $xmlinput
+	CreateVisioServiceApp $xmlinput
+	CreatePerformancePointServiceApp $xmlinput
+	CreateWordAutomationServiceApp $xmlinput
+	CreateExcelOWAServiceApp $xmlinput
+	CreatePowerPointServiceApp $xmlinput
+	CreateWordViewingServiceApp $xmlinput
+	InstallSMTP $xmlinput
+	ConfigureOutgoingEmail $xmlinput
+	Configure-PDFSearchAndIcon $xmlinput
+	InstallForeFront $xmlinput
 }
 #EndRegion
 
@@ -170,11 +170,11 @@ Function Finalize-Install
 	
 	Write-Host -ForegroundColor White " - Completed!`a"
 	$Host.UI.RawUI.WindowTitle = " -- Completed -- "
-	$EndDate = Get-Date
+	$env:EndDate = Get-Date
 	Write-Host -ForegroundColor White "-----------------------------------"
 	Write-Host -ForegroundColor White "| Automated SP2010 install script |"
 	Write-Host -ForegroundColor White "| Started on: $env:StartDate |"
-	Write-Host -ForegroundColor White "| Completed:  $EndDate |"
+	Write-Host -ForegroundColor White "| Completed:  $env:EndDate |"
 	Write-Host -ForegroundColor White "-----------------------------------"
 
 	# Launch any site collections we created
@@ -238,11 +238,11 @@ Catch
 		#Other error messages are exceptions. Can't find a way to make this Red
 		$_ | Format-List -Force
 	}
-	$EndDate = Get-Date
+	$env:EndDate = Get-Date
 	Write-Host -ForegroundColor White "-----------------------------------"
 	Write-Host -ForegroundColor White "| Automated SP2010 install script |"
 	Write-Host -ForegroundColor White "| Started on: $env:StartDate |"
-	Write-Host -ForegroundColor White "| Aborted:    $EndDate |"
+	Write-Host -ForegroundColor White "| Aborted:    $env:EndDate |"
 	Write-Host -ForegroundColor White "-----------------------------------"
 }
 Finally 
