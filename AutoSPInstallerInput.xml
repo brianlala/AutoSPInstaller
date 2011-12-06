@@ -249,8 +249,8 @@
             <Database>MetaData</Database>
         </ManagedMetadataServiceApp>
         <!-- EnableNetBIOSDomainName should be set to true if the host portion of your DNS Domain name is different than your NetBIOS domain name.
-             StartProfileSync should be set to true to configure the User Profile Synchronization Service. NOTE: If this is set to TRUE in a multi-server
-             farm, you must run this script first on the machine that will run the profile synchronization service. 
+             To provision the User Profile Synchronization service, the value of StartProfileSync should be set to "true".
+			 NOTE: If this is set to "true" in a multi-server farm, the first server that gets the User Profile Service installed on it will also have Profile Sync provisioned on it.
              If you are running SP2010 SP1, you can set CreateDefaultSyncConnection to true and specify the SyncConnectionAccount credentials; 
              the script will attempt to create a default Sync connection using the new (although unsupported) Add-SPProfileSyncConnection cmdlet.
              NOTE: Add-SPProfileSyncConnection may be useful for experimental/non-production builds but as per http://www.harbar.net/archive/2011/07/12/332.aspx it's UNSUPPORTED in on-premises deployments -->

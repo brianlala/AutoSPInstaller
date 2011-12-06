@@ -4037,9 +4037,9 @@ Function CheckSQLAccess
                     $SQLVersion = $objSQLDataReader.GetValue(0)
            			[int]$SQLMajorVersion,[int]$SQLMinorVersion,[int]$SQLBuild,$null = $SQLVersion -split "\."
                     # SharePoint needs minimum SQL 2008 10.0.2714.0 or SQL 2005 9.0.4220.0 per http://support.microsoft.com/kb/976215
-            		If ((($SQLMajorVersion -ge 10) -and ($SQLMinorVersion -lt 5) -and ($SQLBuild -lt 2714)) -or (($SQLMajorVersion -eq 9) -and ($SQLBuild -lt 4220)))
+            		If ((($SQLMajorVersion -eq 10) -and ($SQLMinorVersion -lt 5) -and ($SQLBuild -lt 2714)) -or (($SQLMajorVersion -eq 9) -and ($SQLBuild -lt 4220)))
             		{
-            			Throw " - SharePoint 2010 requires SQL 2005 SP3 CU3, SQL 2008 SP1 CU2, or SQL 2008 R2."
+            			Throw " - Unsupported SQL version!"
             		}
 					If ($objSQLDataReader.GetValue(1) -eq 1)
 					{
@@ -4075,7 +4075,7 @@ Function CheckSQLAccess
 			}
 			Catch 
 			{
-				Write-Host -ForegroundColor Red "Fail"
+				Write-Host -ForegroundColor Red " - Fail"
 				$errText = $Error[0].ToString()
 				If ($errText.Contains("network-related"))
 				{
@@ -4085,6 +4085,10 @@ Function CheckSQLAccess
 				{
 					Throw " - Not able to login. SQL Server login not created."
 				}
+                ElseIf ($errText.Contains("Unsupported SQL version"))
+                {
+                    Throw " - SharePoint 2010 requires SQL 2005 SP3+CU3, SQL 2008 SP1+CU2, or SQL 2008 R2."
+                }
 				Else
 				{
 					Throw " - $currentUser does not have `'$serverRole`' role!"
@@ -4186,9 +4190,21 @@ Function InstallSMTP
 	{
 		WriteLine
 		Write-Host -ForegroundColor White " - Installing SMTP Server feature..."
-		Import-Module ServerManager
-		Add-WindowsFeature -Name SMTP-Server | Out-Null
-		If (!($?)) {Throw " - Failed to install SMTP Server!"}
+		$QueryOS = Gwmi Win32_OperatingSystem
+  		$QueryOS = $QueryOS.Version 
+    	$OS = ""
+    	If ($QueryOS.contains("6.1")) {$OS = "Win2008R2"}
+    	ElseIf ($QueryOS.contains("6.0")) {$OS = "Win2008"}
+		If ($OS -eq "Win2008R2")
+		{
+			Import-Module ServerManager
+			Add-WindowsFeature -Name SMTP-Server | Out-Null
+			If (!($?)) {Throw " - Failed to install SMTP Server!"}
+		}
+			Else # Win2008
+		{
+			Start-Process -FilePath servermanagercmd.exe -ArgumentList "-install smtp-server" -Wait -NoNewWindow
+		}
 		Write-Host -ForegroundColor White " - Done."
 		WriteLine
 	}

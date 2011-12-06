@@ -34,10 +34,10 @@ IF NOT EXIST "%SYSTEMROOT%\system32\windowspowershell\v1.0\powershell.exe" (
 	)
 :: Check for Powershell v2.0
 ECHO - Checking for Powershell 2.0...
-"%SYSTEMROOT%\system32\windowspowershell\v1.0\powershell.exe" $host.Version.Major | find "2" >nul
-IF ERRORLEVEL 1 (
+"%SYSTEMROOT%\system32\windowspowershell\v1.0\powershell.exe" $host.Version.Major | find "1" >nul
+IF %ERRORLEVEL% == 0 (
 	COLOR 0C
-	ECHO - This script requires PowerShell version 2.0!
+	ECHO - This script requires a minimum PowerShell version of 2.0!
 	ECHO - Please uninstall v1.0, install v2.0, then re-run this script.
 	COLOR
 	pause
