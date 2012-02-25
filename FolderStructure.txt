@@ -3,6 +3,7 @@
 \SP2010\AutoSPInstaller\AutoSPInstallerMain.ps1
 \SP2010\AutoSPInstaller\AutoSPInstallerFunctions.ps1
 \SP2010\AutoSPInstaller\AutoSPInstallerFunctionsCustom.ps1
+\SP2010\AutoSPInstaller\AutoSPInstallerConfigureRemoteTarget.ps1
 \SP2010\AutoSPInstaller\config.xml
 \SP2010\AutoSPInstaller\README.rtf
 \SP2010\AutoSPInstaller\Hotfixes\

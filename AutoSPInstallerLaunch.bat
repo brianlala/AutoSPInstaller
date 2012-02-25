@@ -5,6 +5,14 @@ cls
 FOR /F "tokens=2-4 delims=/ " %%i IN ('date /t') DO SET SHORTDATE=%%i-%%j-%%k
 FOR /F "tokens=1-3 delims=: " %%i IN ('time /t') DO SET SHORTTIME=%%i-%%j%%k
 SET LaunchedFromBAT=1
+:: Updated to support passing the input XML file as an argument to this batch file
+IF "%1"=="" GOTO GETINPUT
+IF EXIST "%~dp0\%1" Set InputFile="%~dp0\%1"
+IF EXIST "%1" Set InputFile="%1"
+ECHO - Specified Input File:
+ECHO - %InputFile%
+GOTO START
+:GETINPUT
 IF EXIST "%~dp0\AutoSPInstallerInput-%COMPUTERNAME%.xml" (
 	Set InputFile="%~dp0\AutoSPInstallerInput-%COMPUTERNAME%.xml"
 	ECHO - Using %COMPUTERNAME%-specific Input File.
