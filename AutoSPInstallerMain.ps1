@@ -102,11 +102,9 @@ Function Install-Remote
     }
     Else
     {
-        Write-Host -ForegroundColor Yellow " - The local computer `"$env:COMPUTERNAME`" is not specified as a farm member in:"
+        Write-Host -ForegroundColor Yellow " - There are other servers specified as farm members in:"
         Write-Host -ForegroundColor Yellow " - $InputFile"
-        Write-Host -ForegroundColor Yellow " - and <RemoteInstall> is not set to `"true`" - nothing to do."
-        Pause "exit"
-        Invoke-Item $LogFile
+        Write-Host -ForegroundColor Yellow " - but <RemoteInstall> is not set to `"true`" - nothing else to do."
     }
 }
 #EndRegion
@@ -317,6 +315,7 @@ If ($FarmServers -like "$env:COMPUTERNAME*")
     	{
     		# Error messages starting with " - " are thrown directly from this script
     		Write-Host -ForegroundColor Red $_.FullyQualifiedErrorId
+            Pause "exit"
     	}
     	# Lately, loading the snapin throws an error: "System.TypeInitializationException: The type initializer for 'Microsoft.SharePoint.Utilities.SPUtility' threw an exception. ---> System.IO.FileNotFoundException:"...
     	ElseIf ($_.Exception.Message -like "*Microsoft.SharePoint.Utilities.SPUtility*")
@@ -344,6 +343,7 @@ If ($FarmServers -like "$env:COMPUTERNAME*")
     	Write-Host -ForegroundColor White "| Aborted:    $env:EndDate |"
     	Write-Host -ForegroundColor White "-----------------------------------"
         $Aborted = $true
+        If (!$ScriptCommandLine) {Pause "exit"}
     }
     Finally 
     {
@@ -384,7 +384,7 @@ Else ##If (!($FarmServers -like "$env:COMPUTERNAME*"))
     Install-Remote
     Finalize-Install
 }
-        If ((Confirm-LocalSession) -and !$Aborted) # Only do this stuff if this was a local session and it succeeded
+If ((Confirm-LocalSession) -and !$Aborted) # Only do this stuff if this was a local session and it succeeded
 {
     $StartDate = $env:StartDate
 	Write-Host -ForegroundColor White "-----------------------------------"
@@ -393,8 +393,7 @@ Else ##If (!($FarmServers -like "$env:COMPUTERNAME*"))
 	Write-Host -ForegroundColor White "| Completed:  $env:EndDate |"
 	Write-Host -ForegroundColor White "-----------------------------------"
     If ($isTracing) {Stop-Transcript; $script:isTracing = $false}
-    If ($ScriptCommandLine) {Exit}
-    Else {Pause "exit"}
+    Pause "exit"
     Invoke-Item $LogFile
 }
 #EndRegion

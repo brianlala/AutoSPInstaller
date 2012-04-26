@@ -220,7 +220,7 @@ Function DisableServices([xml]$xmlinput)
             If (($SvcState -eq "Running") -and ($SvcStartMode -eq "Auto"))
             {
                 Stop-Service -Name $SvcName
-                Set-Service -name $SvcName -startupType Manual
+                Set-Service -name $SvcName -StartupType Manual
                 Write-Host -ForegroundColor White " - Service $SvcName is now set to Manual start"
             }
             Else 
@@ -239,7 +239,7 @@ Function DisableServices([xml]$xmlinput)
             If (($SvcState -eq "Running") -and (($SvcStartMode -eq "Auto") -or ($SvcStartMode -eq "Manual")))
             {
                 Stop-Service -Name $SvcName
-                Set-Service -name $SvcName -startupType Disabled
+                Set-Service -name $SvcName -StartupType Disabled
                 Write-Host -ForegroundColor White " - Service $SvcName is now stopped and disabled."
             }
             Else 
@@ -272,55 +272,77 @@ Function InstallPrerequisites([xml]$xmlinput)
     	Write-Host -ForegroundColor White " - Installing Prerequisite Software:"
     	Try 
     	{
-            If ((Gwmi Win32_OperatingSystem).Version -eq "6.1.7601") # Win2008 R2 SP1
+            if ((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*") # Install prerequisites manually without using PrerequisiteInstaller if we're on Windows Server 8
             {
-                # Due to the issue described in http://support.microsoft.com/kb/2581903 (related to installing the KB976462 hotfix) 
-                # we install the .Net 3.5.1 features prior to attempting the PrerequisiteInstaller on Win2008 R2 SP1
-                Write-Host -ForegroundColor White "  - .Net Framework..."
-                # Get the current progress preference
-                $pref = $ProgressPreference
-                # Hide the progress bar since it tends to not disappear
-                $ProgressPreference = "SilentlyContinue"
-                Import-Module ServerManager
-                Add-WindowsFeature NET-Framework | Out-Null
-                # Restore progress preference
-                $ProgressPreference = $pref
+                if ($xmlinput.Configuration.Install.OfflineInstall -eq $true)
+                {
+                    Start-Process -FilePath MsiExec.exe -ArgumentList "/i `"$env:SPbits\PrerequisiteInstallerFiles\sqlncli.msi`" /passive" -Wait
+                    Start-Process -FilePath "$env:SPbits\PrerequisiteInstallerFiles\MSChart.exe" -ArgumentList "/passive" -Wait
+                    Import-Module ServerManager | Out-Null
+                    $ProgressPreference = "SilentlyContinue"
+                    If (!(Get-WindowsFeature -Name NET-Framework-Features).Installed) {Add-WindowsFeature -Name NET-Framework-Features | Out-Null}
+                    If (!(Get-WindowsFeature -Name Windows-Identity-Foundation).Installed) {Add-WindowsFeature Windows-Identity-Foundation | Out-Null}
+                    Start-Process -FilePath MsiExec.exe -ArgumentList "/i `"$env:SPbits\PrerequisiteInstallerFiles\Synchronization.msi`" /passive" -Wait
+                    Start-Process -FilePath MsiExec.exe -ArgumentList "/i `"$env:SPbits\PrerequisiteInstallerFiles\FilterPack\FilterPack.msi`" /passive" -Wait
+                    Start-Process -FilePath MsiExec.exe -ArgumentList "/i `"$env:SPbits\PrerequisiteInstallerFiles\SQLSERVER2008_ASADOMD10.msi`" /passive" -Wait
+                    Start-Process -FilePath MsiExec.exe -ArgumentList "/i `"$env:SPbits\PrerequisiteInstallerFiles\rsSharePoint.msi`" /passive" -Wait
+                    Start-Process -FilePath MsiExec.exe -ArgumentList "/i `"$env:SPbits\PrerequisiteInstallerFiles\SpeechPlatformRuntime.msi`" /passive" -Wait
+                    Start-Process -FilePath MsiExec.exe -ArgumentList "/i `"$env:SPbits\PrerequisiteInstallerFiles\MSSpeech_SR_en-US_TELE.msi`" /passive" -Wait
+                }
+                else {Write-Warning " - You must specify OfflineInstall=`"true`" to install on Windows Server 8"; pause "exit"; throw}
             }
-            If ($xmlinput.Configuration.Install.OfflineInstall -eq $true) # Install all prerequisites from local folder
-    		{
-				Write-Host -ForegroundColor White "  - SQL Native Client..."
-                # Install SQL native client before running pre-requisite installer as newest versions require an IACCEPTSQLNCLILICENSETERMS=YES argument
-				Start-Process "$env:SPbits\PrerequisiteInstallerFiles\sqlncli.msi" -Wait -ArgumentList "/passive /norestart IACCEPTSQLNCLILICENSETERMS=YES"
-			    Write-Host -ForegroundColor Blue "  - Running Prerequisite Installer..." -NoNewline
-                $startTime = Get-Date
-    			Start-Process "$env:SPbits\PrerequisiteInstaller.exe" -ArgumentList "/unattended `
-    																				/SQLNCli:`"$env:SPbits\PrerequisiteInstallerFiles\sqlncli.msi`" `
-    																				/ChartControl:`"$env:SPbits\PrerequisiteInstallerFiles\MSChart.exe`" `
-    																				/NETFX35SP1:`"$env:SPbits\PrerequisiteInstallerFiles\dotnetfx35.exe`" `
-    																				/PowerShell:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.0-KB968930-x64.msu`" `
-    																				/KB976394:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.0-KB976394-x64.msu`" `
-    																				/KB976462:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.1-KB976462-v2-x64.msu`" `
-    																				/IDFX:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.0-KB974405-x64.msu`" `
-    																				/IDFXR2:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.1-KB974405-x64.msu`" `
-    																				/Sync:`"$env:SPbits\PrerequisiteInstallerFiles\Synchronization.msi`" `
-    																				/FilterPack:`"$env:SPbits\PrerequisiteInstallerFiles\FilterPack\FilterPack.msi`" `
-    																				/ADOMD:`"$env:SPbits\PrerequisiteInstallerFiles\SQLSERVER2008_ASADOMD10.msi`" `
-    																				/ReportingServices:`"$env:SPbits\PrerequisiteInstallerFiles\rsSharePoint.msi`" `
-    																				/Speech:`"$env:SPbits\PrerequisiteInstallerFiles\SpeechPlatformRuntime.msi`" `
-    																				/SpeechLPK:`"$env:SPbits\PrerequisiteInstallerFiles\MSSpeech_SR_en-US_TELE.msi`""																		
-    			If (-not $?) {Throw}
-    		}
-    		Else # Regular prerequisite install - download required files
-    		{
-			    Write-Host -ForegroundColor Blue "  - Running Prerequisite Installer..." -NoNewline
-                $startTime = Get-Date
-    			Start-Process "$env:SPbits\PrerequisiteInstaller.exe" -ArgumentList "/unattended" -WindowStyle Minimized
-    			If (-not $?) {Throw}
-    		}
-            Show-Progress -Process PrerequisiteInstaller -Color Blue -Interval 5
-            $delta,$null = (New-TimeSpan -Start $startTime -End (Get-Date)).ToString() -split "\."
-            Write-Host -ForegroundColor White "  - Prerequisite Installer completed in $delta."
-    	}
+            else # Install using PrerequisiteInstaller as usual
+            {
+                If ((Gwmi Win32_OperatingSystem).Version -eq "6.1.7601") # Win2008 R2 SP1
+                {
+                    # Due to the issue described in http://support.microsoft.com/kb/2581903 (related to installing the KB976462 hotfix) 
+                    # we install the .Net 3.5.1 features prior to attempting the PrerequisiteInstaller on Win2008 R2 SP1
+                    Write-Host -ForegroundColor White "  - .Net Framework..."
+                    # Get the current progress preference
+                    $pref = $ProgressPreference
+                    # Hide the progress bar since it tends to not disappear
+                    $ProgressPreference = "SilentlyContinue"
+                    Import-Module ServerManager
+                    If (!(Get-WindowsFeature -Name NET-Framework).Installed) {Add-WindowsFeature -Name NET-Framework | Out-Null}
+                    # Restore progress preference
+                    $ProgressPreference = $pref
+                }
+                If ($xmlinput.Configuration.Install.OfflineInstall -eq $true) # Install all prerequisites from local folder
+        		{
+    				Write-Host -ForegroundColor White "  - SQL Native Client..."
+                    # Install SQL native client before running pre-requisite installer as newest versions require an IACCEPTSQLNCLILICENSETERMS=YES argument
+    				Start-Process "$env:SPbits\PrerequisiteInstallerFiles\sqlncli.msi" -Wait -ArgumentList "/passive /norestart IACCEPTSQLNCLILICENSETERMS=YES"
+    			    Write-Host -ForegroundColor Blue "  - Running Prerequisite Installer..." -NoNewline
+                    $startTime = Get-Date
+        			Start-Process "$env:SPbits\PrerequisiteInstaller.exe" -ArgumentList "/unattended `
+        																				/SQLNCli:`"$env:SPbits\PrerequisiteInstallerFiles\sqlncli.msi`" `
+        																				/ChartControl:`"$env:SPbits\PrerequisiteInstallerFiles\MSChart.exe`" `
+        																				/NETFX35SP1:`"$env:SPbits\PrerequisiteInstallerFiles\dotnetfx35.exe`" `
+        																				/PowerShell:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.0-KB968930-x64.msu`" `
+        																				/KB976394:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.0-KB976394-x64.msu`" `
+        																				/KB976462:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.1-KB976462-v2-x64.msu`" `
+        																				/IDFX:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.0-KB974405-x64.msu`" `
+        																				/IDFXR2:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.1-KB974405-x64.msu`" `
+        																				/Sync:`"$env:SPbits\PrerequisiteInstallerFiles\Synchronization.msi`" `
+        																				/FilterPack:`"$env:SPbits\PrerequisiteInstallerFiles\FilterPack\FilterPack.msi`" `
+        																				/ADOMD:`"$env:SPbits\PrerequisiteInstallerFiles\SQLSERVER2008_ASADOMD10.msi`" `
+        																				/ReportingServices:`"$env:SPbits\PrerequisiteInstallerFiles\rsSharePoint.msi`" `
+        																				/Speech:`"$env:SPbits\PrerequisiteInstallerFiles\SpeechPlatformRuntime.msi`" `
+        																				/SpeechLPK:`"$env:SPbits\PrerequisiteInstallerFiles\MSSpeech_SR_en-US_TELE.msi`""																		
+        			If (-not $?) {Throw}
+        		}
+        		Else # Regular prerequisite install - download required files
+        		{
+    			    Write-Host -ForegroundColor Blue "  - Running Prerequisite Installer..." -NoNewline
+                    $startTime = Get-Date
+        			Start-Process "$env:SPbits\PrerequisiteInstaller.exe" -ArgumentList "/unattended" -WindowStyle Minimized
+        			If (-not $?) {Throw}
+        		}
+                Show-Progress -Process PrerequisiteInstaller -Color Blue -Interval 5
+                $delta,$null = (New-TimeSpan -Start $startTime -End (Get-Date)).ToString() -split "\."
+                Write-Host -ForegroundColor White "  - Prerequisite Installer completed in $delta."
+    	    }
+        }
     	Catch 
     	{
     		Write-Host -ForegroundColor Red " - Error: $LastExitCode"
@@ -343,7 +365,7 @@ Function InstallPrerequisites([xml]$xmlinput)
     		$PreReqLastError = $PreReqLog | select-string -SimpleMatch -Pattern "Error" -Encoding Unicode | ? {$_.Line  -notlike "*Startup task*"}
     		If ($PreReqLastError)
     		{
-    			Write-Warning $PreReqLastError.Line
+    			ForEach ($preReqError in $PreReqLastError.Line) {Write-Warning $PreReqError}
     			$PreReqLastReturncode = $PreReqLog | select-string -SimpleMatch -Pattern "Last return code" -Encoding Unicode | Select-Object -Last 1
     			If ($PreReqLastReturnCode) {Write-Warning $PreReqLastReturncode.Line}
 				If (($PreReqLastReturncode -like "*-2145124329*") -or ($PreReqLastReturncode -like "*2359302*") -or ($PreReqLastReturncode -eq "5"))
@@ -590,7 +612,7 @@ Function InstallLanguagePacks([xml]$xmlinput)
 			{
     	        Write-Host -ForegroundColor Blue " - Installing extracted language pack $LanguagePackFolder..." -NoNewline
     	        Start-Process -WorkingDirectory "$bits\LanguagePacks\$LanguagePackFolder\" -FilePath "setup.exe" -ArgumentList "/config $bits\LanguagePacks\$LanguagePackFolder\Files\SetupSilent\config.xml"
-                Show-Progress -Process PrerequisiteInstaller -Color Blue -Interval 5
+                Show-Progress -Process setup -Color Blue -Interval 5
 			}
 		}
     	Write-Host -ForegroundColor White " - Language Pack installation complete."
@@ -992,7 +1014,7 @@ Function ConfigureLanguagePacks([xml]$xmlinput)
 		Write-Host -ForegroundColor White " - Configuring language packs..."
 		# Let's sleep for a while to let the farm config catch up...
 		Start-Sleep 20
-        If ($AttemptNum -eq $null) {$AttemptNum += 1}
+        $AttemptNum += 1
 		# Run PSConfig.exe per http://technet.microsoft.com/en-us/library/cc262108.aspx
 		Start-Process -FilePath $PSConfig -ArgumentList "-cmd upgrade -inplace v2v -passphrase `"$FarmPassphrase`" -wait -force" -NoNewWindow -Wait
         $PSConfigLogLocation = $((Get-SPDiagnosticConfig).LogLocation) -replace "%CommonProgramFiles%","$env:CommonProgramFiles"
@@ -1043,6 +1065,17 @@ Function AddManagedAccounts([xml]$xmlinput)
 		$AdminGroup = ([ADSI]"WinNT://$env:COMPUTERNAME/$builtinAdminGroup,group")
 		# This syntax comes from Ying Li (http://myitforum.com/cs2/blogs/yli628/archive/2007/08/30/powershell-script-to-add-remove-a-domain-user-to-the-local-administrators-group-on-a-remote-machine.aspx)
 		$LocalAdmins = $AdminGroup.psbase.invoke("Members") | ForEach-Object {$_.GetType().InvokeMember("Name", 'GetProperty', $null, $_, $null)}
+        # Ensure Secondary Logon service is enabled and started
+        If (!((Get-Service -Name seclogon).Status -eq "Running"))
+        {
+            If ((Get-Service -Name seclogon).StartMode -eq "Disabled")
+            {
+                Write-Host -ForegroundColor White " - Enabling Secondary Logon service..."
+                Set-Service -Name seclogon -StartupType Automatic
+            }
+            Write-Host -ForegroundColor White " - Starting Secondary Logon service..."
+            Start-Service -Name seclogon
+        }
 		
 		ForEach ($account in $xmlinput.Configuration.Farm.ManagedAccounts.ManagedAccount)
 		{
@@ -1078,7 +1111,6 @@ Function AddManagedAccounts([xml]$xmlinput)
 				$_
 				Write-Host -ForegroundColor White "."
 				Write-Warning " - Could not create local user profile for $username"
-				Pause "continue"
 				break
 			}
             $ManagedAccount = Get-SPManagedAccount | Where-Object {$_.UserName -eq $username}
@@ -1943,6 +1975,9 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
     			# Apply the changes to the User Profile service application
 				Set-SPServiceApplicationSecurity $ServiceAppIDToSecure -objectSecurity $ProfileServiceAppSecurity -Admin
 				Set-SPServiceApplicationSecurity $ServiceAppIDToSecure -objectSecurity $ProfileServiceAppPermissions
+
+                # Add link to resources list
+				AddResourcesLink "User Profile Administration" ("_layouts/ManageUserProfileServiceApplication.aspx?ApplicationID=" +  $ProfileServiceApp.Id)
 				
 				If ($PortalAppPoolAcct)
 				{
@@ -2031,12 +2066,13 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
     						Write-Host -ForegroundColor White " - Recycling Central Admin app pool..."
                             # From http://sharepoint.nauplius.net/2011/09/iisreset-not-required-after-starting.html
                             $appPool = gwmi -Namespace "root\MicrosoftIISv2" -class "IIsApplicationPool" | where {$_.Name -eq "W3SVC/APPPOOLS/SharePoint Central Administration v4"}
-                            $appPool.Recycle()
-							$NewlyProvisionedSync = $true
+                            If ($appPool)
+                            {
+                                $appPool.Recycle()
+                            }
+                            $NewlyProvisionedSync = $true                            
                         }
     				}
-					#Add link to resources list
-					AddResourcesLink "User Profile Administration" ("_layouts/ManageUserProfileServiceApplication.aspx?ApplicationID=" +  $ProfileServiceApp.Id)
 					
 					# Attempt to create a sync connection only on a successful, newly-provisioned User Profile Sync service
 					# We don't have the ability to check for existing connections and we don't want to overwrite/duplicate any existing sync connections
@@ -2953,13 +2989,18 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
             }
         }
 
-        $queryTopology = Get-SPEnterpriseSearchQueryTopology -SearchApplication $searchApp | where {$_.QueryComponents.Count -gt 0 -or $_.State -eq "Inactive"}
-
-        If ($queryTopology -eq $null) {
+        $queryTopologies = Get-SPEnterpriseSearchQueryTopology -SearchApplication $searchApp | where {$_.QueryComponents.Count -gt 0 -or $_.State -eq "Inactive"}
+        If ($queryTopologies.Count -lt 1) {
             Write-Host -ForegroundColor White " - Creating new query topology..."
             $queryTopology = $searchApp | New-SPEnterpriseSearchQueryTopology -Partitions $appConfig.Partitions
         } Else {
             Write-Host -ForegroundColor White " - A query topology with query components already exists, skipping query topology creation."
+            If ($queryTopologies.Count -gt 1)
+            {
+                # Try to select the query topology that has components
+                $queryTopology = $queryTopologies | where {$_.QueryComponents.Count -gt 0}
+            }
+            Else {$queryTopology = $queryTopologies}
         }
 
         If ($installQuerySvc) {
@@ -3779,13 +3820,17 @@ Function Configure-PDFSearchAndIcon
 			# If the zip file isn't present then download it first
 			If (!($SourceFile))
 			{
-				Write-Host -ForegroundColor White " - PDF iFilter installer or zip not found, downloading..."
-				$ZipLocation = $env:TEMP
-				$DestinationFile = $ZipLocation+"\PDFiFilter64installer.zip"
-				Import-Module BitsTransfer | Out-Null
-				Start-BitsTransfer -Source $PDFiFilterUrl -Destination $DestinationFile -DisplayName "Downloading Adobe PDF iFilter..." -Priority High -Description "From $PDFiFilterUrl..." -ErrorVariable err
-				If ($err) {Write-Warning " - Could not download Adobe PDF iFilter!"; Pause "exit"; break}
-				$SourceFile = $DestinationFile
+                Write-Host -ForegroundColor White " - PDF iFilter installer or zip not found, downloading..."
+                If (Confirm-LocalSession)
+                {
+    				$ZipLocation = $env:TEMP
+    				$DestinationFile = $ZipLocation+"\PDFiFilter64installer.zip"
+    				Import-Module BitsTransfer | Out-Null
+    				Start-BitsTransfer -Source $PDFiFilterUrl -Destination $DestinationFile -DisplayName "Downloading Adobe PDF iFilter..." -Priority High -Description "From $PDFiFilterUrl..." -ErrorVariable err
+    				If ($err) {Write-Warning " - Could not download Adobe PDF iFilter!"; Pause "exit"; break}
+    				$SourceFile = $DestinationFile
+                }
+                Else {Write-Warning "- The remote use of BITS is not supported. Please pre-download the PDF install files and try again."}
 			}
 			Write-Host -ForegroundColor White " - Extracting Adobe PDF iFilter installer..."
 			$Shell = New-Object -ComObject Shell.Application
@@ -3848,11 +3893,11 @@ Function Configure-PDFSearchAndIcon
     }
     If ($xmlinput.Configuration.AdobePDF.Icon.Configure -eq $true)
 	{
-		$PDFIconUrl = "http://www.adobe.com/images/pdficon_small.gif"
+		$PDFIconUrl = "http://helpx.adobe.com/content/dam/kb/en/837/cpsid_83709/attachments/AdobePDF.png"
 		$DocIconFolderPath = "$SharePointRoot\TEMPLATE\XML"
 		$DocIconFilePath = "$DocIconFolderPath\DOCICON.XML"
 		Write-Host -ForegroundColor White " - Configuring PDF Icon..."
-		$pdfIcon = "icpdf.gif"
+		$pdfIcon = "AdobePDF.png"
 		If (!(Get-Item $SharePointRoot\Template\Images\$pdfIcon -ErrorAction SilentlyContinue))
 		{
 			ForEach ($SourceFileLocation in $SourceFileLocations)
@@ -3888,6 +3933,8 @@ Function Configure-PDFSearchAndIcon
 				$pdf = $xml.CreateElement("Mapping")
 				$pdf.SetAttribute("Key","pdf")
 				$pdf.SetAttribute("Value",$pdfIcon)
+                $pdf.SetAttribute("EditText","Adobe Acrobat or Reader X")
+                $pdf.SetAttribute("OpenControl","AdobeAcrobat.OpenDocuments")
 				$xml.DocIcons.ByExtension.AppendChild($pdf) | Out-Null
 			    $xml.Save($DocIconFilePath)
 				Write-Host -ForegroundColor White " - Restarting IIS..."
@@ -3969,40 +4016,49 @@ Function InstallForeFront
 #Region Remote Functions
 Function Get-FarmServers ([xml]$xmlinput)
 {
-    $server = $null
+    $servers = $null
     $FarmServers = @()
     # Look for server name references in the XML
     ForEach ($node in $xmlinput.SelectNodes("//*[@Provision]|//*[@Install]|//*[CrawlServers]|//*[QueryServers]|//*[SearchQueryAndSiteSettingsServers]|//*[AdminComponent]|//*[@Start]"))
     {
         # Try to set the server name from the various elements/attributes
-    	$server = @(GetFromNode $node "Provision")
-    	If ([string]::IsNullOrEmpty($server)) { $server = @(GetFromNode $node "Install") }
-    	If ([string]::IsNullOrEmpty($server)) { $server = @(GetFromNode $node "Start") }
-        If ([string]::IsNullOrEmpty($server)) 
+    	$servers = @(GetFromNode $node "Provision")
+    	If ([string]::IsNullOrEmpty($servers)) { $servers = @(GetFromNode $node "Install") }
+    	If ([string]::IsNullOrEmpty($servers)) { $servers = @(GetFromNode $node "Start") }
+        If ([string]::IsNullOrEmpty($servers)) 
         {
             foreach ($serverElement in $node.CrawlServers.Server) {$crawlServers += @($serverElement.GetAttribute("Name"))}
             foreach ($serverElement in $node.QueryServers.Server) {$queryServers += @($serverElement.GetAttribute("Name"))}
             foreach ($serverElement in $node.SearchQueryAndSiteSettingsServers.Server) {$siteQueryAndSSServers += @($serverElement.GetAttribute("Name"))}
             foreach ($serverElement in $node.AdminComponent.Server) {$adminServers += @($serverElement.GetAttribute("Name"))}
-            $server = $crawlServers+$queryServers+$siteQueryAndSSServers+$adminServers
+            $servers = $crawlServers+$queryServers+$siteQueryAndSSServers+$adminServers
         }
        
         # Accomodate and clean up comma and/or space-separated server names
-        $server = $server -split "," -replace " ", ""
-        # Remove any "true", "false" or zero-length values as we only want server names
-        If ($server -eq "true" -or $server -eq "false" -or [string]::IsNullOrEmpty($server))
+        # First get rid of any recurring spaces or commas
+        While ($servers -match "  ")
         {
-            $server = $null
+            $servers = $servers -replace "  ", " "
+        }
+        While ($servers -match ",,")
+        {
+            $servers = $servers -replace ",,", ","
+        }
+        $servers = $servers -split "," -split " "
+        # Remove any "true", "false" or zero-length values as we only want server names
+        If ($servers -eq "true" -or $servers -eq "false" -or [string]::IsNullOrEmpty($servers))
+        {
+            $servers = $null
         }
         else
         {
             # Add any server(s) we found to our $FarmServers array
-            $FarmServers = @($FarmServers+$server)
+            $FarmServers = @($FarmServers+$servers)
         }
     }
 
-    # Remove any duplicates
-    $FarmServers = $FarmServers | Select-Object -Unique
+    # Remove any blanks and duplicates
+    $FarmServers = $FarmServers | Where-Object {$_ -ne ""} | Select-Object -Unique
     Return $FarmServers
 }
 
@@ -4073,7 +4129,7 @@ Function Install-NetFramework ($Server, $Password)
                                 # Hide the progress bar since it tends to not disappear
                                 $ProgressPreference = "SilentlyContinue"
                                 Import-Module ServerManager
-                                Add-WindowsFeature NET-Framework | Out-Null
+                                If (!(Get-WindowsFeature -Name NET-Framework).Installed) {Add-WindowsFeature -Name NET-Framework | Out-Null}
                                 # Restore progress preference
                                 $ProgressPreference = $pref} -Session $Session
 }
