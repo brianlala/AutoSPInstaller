@@ -1,4 +1,4 @@
-param 
+﻿param 
 (
     [string]$InputFile = $(throw '- Need parameter input file (e.g. "c:\SP2010\AutoSPInstaller\AutoSPInstallerInput.xml")'),
     [string]$targetServer = "",

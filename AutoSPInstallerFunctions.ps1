@@ -1,4 +1,4 @@
-# ===================================================================================
+﻿# ===================================================================================
 # EXTERNAL FUNCTIONS
 # ===================================================================================
 
@@ -565,6 +565,7 @@ Function ConfigureOfficeWebApps([xml]$xmlinput)
 			# Install Help Files
 			Write-Host -ForegroundColor White " - Installing Help Collection..."
 			Install-SPHelpCollection -All
+            WaitForHelpInstallToFinish
 			# Install application content 
 			Write-Host -ForegroundColor White " - Installing Application Content..."
 			Install-SPApplicationContent
@@ -915,6 +916,44 @@ Function CheckFarmTopology([xml]$xmlinput)
 }
 
 # ===================================================================================
+# Func: WaitForHelpInstallToFinish
+# Desc: Waits for the Help Collection timer job to complete before proceeding, in order to avoid concurrency errors
+# From: Adapted from a function submitted by CodePlex user jwthompson98
+# ===================================================================================
+Function WaitForHelpInstallToFinish
+{
+    Write-Host -ForegroundColor Blue "  - Waiting for Help Collection Installation timer job..." -NoNewline
+    # Wait for the timer job to start
+    Do
+    {
+        Write-Host -ForegroundColor Blue "." -NoNewline
+        Start-Sleep -Seconds 1
+    }
+    Until
+    (
+        (Get-SPFarm).TimerService.RunningJobs | Where-Object {$_.JobDefinition.TypeName -eq "Microsoft.SharePoint.Help.HelpCollectionInstallerJob"}
+    )
+    Write-Host -ForegroundColor Blue "Started."
+    Write-Host -ForegroundColor Blue "  - Waiting for Help Collection Installation timer job to complete: " -NoNewline
+    # Monitor the timer job and display progress
+    $helpJob = (Get-SPFarm).TimerService.RunningJobs | Where-Object {$_.JobDefinition.TypeName -eq "Microsoft.SharePoint.Help.HelpCollectionInstallerJob"} | Sort StartTime | Select -Last 1
+    While ($helpJob -ne $null)
+    {
+        Write-Host -ForegroundColor White "$($helpJob.PercentageDone)%" -NoNewline
+        Start-Sleep -Milliseconds 250
+        for ($i = 0; $i -lt 3; $i++)
+        {   
+            Write-Host -ForegroundColor Blue "." -NoNewline
+            Start-Sleep -Milliseconds 250
+        }
+        $backspaceCount = (($helpJob.PercentageDone).ToString()).Length + 3
+        for ($count = 0; $count -le $backspaceCount; $count++) {Write-Host "`b `b" -NoNewline}
+        $helpJob = (Get-SPFarm).TimerService.RunningJobs | Where-Object {$_.JobDefinition.TypeName -eq "Microsoft.SharePoint.Help.HelpCollectionInstallerJob"} | Sort StartTime | Select -Last 1
+    }
+    Write-Host -ForegroundColor Blue "Done."
+}
+
+# ===================================================================================
 # Func: ConfigureFarm
 # Desc: Setup Central Admin Web Site, Check the topology of an existing farm, and configure the farm as required.
 # ===================================================================================
@@ -931,6 +970,7 @@ Function ConfigureFarm([xml]$xmlinput)
 			# Install Help Files
 				Write-Host -ForegroundColor White " - Installing Help Collection..."
 				Install-SPHelpCollection -All
+                WaitForHelpInstallToFinish
 		}
 		# Secure resources
 		Write-Host -ForegroundColor White " - Securing Resources..."
@@ -1033,6 +1073,7 @@ Function ConfigureLanguagePacks([xml]$xmlinput)
     			While ($AttemptNum -le 4)
                 {
                     Write-Host -ForegroundColor White " - An error occurred configuring language packs, trying again ($AttemptNum)..."
+                    Start-Sleep -Seconds 5
                     ConfigureLanguagePacks $xmlinput
                 }
 			    If ($AttemptNum -ge 5)
@@ -1068,11 +1109,8 @@ Function AddManagedAccounts([xml]$xmlinput)
         # Ensure Secondary Logon service is enabled and started
         If (!((Get-Service -Name seclogon).Status -eq "Running"))
         {
-            If ((Get-Service -Name seclogon).StartMode -eq "Disabled")
-            {
-                Write-Host -ForegroundColor White " - Enabling Secondary Logon service..."
-                Set-Service -Name seclogon -StartupType Automatic
-            }
+            Write-Host -ForegroundColor White " - Enabling Secondary Logon service..."
+            Set-Service -Name seclogon -StartupType Manual
             Write-Host -ForegroundColor White " - Starting Secondary Logon service..."
             Start-Service -Name seclogon
         }
@@ -1563,6 +1601,15 @@ Function CreateWebApp([System.Xml.XmlElement]$WebApp)
 	$InstalledOfficeServerLanguages = (Get-Item "HKLM:\Software\Microsoft\Office Server\14.0\InstalledLanguages").GetValueNames() | ? {$_ -ne ""}
     If ($url -like "https://*") {$UseSSL = $true; $HostHeader = $url -replace "https://",""}        
     Else {$HostHeader = $url -replace "http://",""}
+    # Set the directory path for the web app to something a bit more friendly
+    ImportWebAdministration    
+    # Get the default root location for web apps
+    $iisWebDir = (Get-ItemProperty "IIS:\Sites\Default Web Site\" -name physicalPath) -replace ("%SystemDrive%","$env:SystemDrive")
+    If (!([string]::IsNullOrEmpty($iisWebDir)))
+    {
+        $pathSwitch = @{Path = "$iisWebDir\wss\VirtualDirectories\$WebAppName-$port"}
+    }
+
     $GetSPWebApplication = Get-SPWebApplication | Where-Object {$_.DisplayName -eq $WebAppName}
 	If ($GetSPWebApplication -eq $null)
    	{
@@ -1578,7 +1625,7 @@ Function CreateWebApp([System.Xml.XmlElement]$WebApp)
 			{			
 	   			$AuthProvider = New-SPAuthenticationProvider -UseWindowsIntegratedAuthentication
 			}  
-   			New-SPWebApplication -Name $WebAppName -ApplicationPoolAccount $account -ApplicationPool $AppPool -DatabaseServer $DBServer -DatabaseName $database -HostHeader $HostHeader -Url $url -Port $port -SecureSocketsLayer:$UseSSL -AuthenticationProvider $AuthProvider | Out-Null
+   			New-SPWebApplication -Name $WebAppName -ApplicationPoolAccount $account -ApplicationPool $AppPool -DatabaseServer $DBServer -DatabaseName $database -HostHeader $HostHeader -Url $url -Port $port -SecureSocketsLayer:$UseSSL -AuthenticationProvider $AuthProvider @pathSwitch | Out-Null
 			If (-not $?) { Throw " - Failed to create web application" }
 
 			If ((Gwmi Win32_OperatingSystem).Version -ne "6.1.7601") # If we aren't running SP1 for Win2008 R2, we may need the claims hotfix
@@ -1591,7 +1638,7 @@ Function CreateWebApp([System.Xml.XmlElement]$WebApp)
    		Else
    		{
     		# Create the web app using Classic mode authentication
-   			New-SPWebApplication -Name $WebAppName -ApplicationPoolAccount $account -ApplicationPool $AppPool -DatabaseServer $DBServer -DatabaseName $database -HostHeader $HostHeader -Url $url -Port $port -SecureSocketsLayer:$UseSSL | Out-Null
+   			New-SPWebApplication -Name $WebAppName -ApplicationPoolAccount $account -ApplicationPool $AppPool -DatabaseServer $DBServer -DatabaseName $database -HostHeader $HostHeader -Url $url -Port $port -SecureSocketsLayer:$UseSSL @pathSwitch | Out-Null
 			If (-not $?) { Throw " - Failed to create web application" }
    		}
         SetupManagedPaths $WebApp
@@ -1834,6 +1881,14 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
 		If($UserProfileServiceName -eq $null) {$UserProfileServiceName = "User Profile Service Application"}
 		If($UserProfileServiceProxyName -eq $null) {$UserProfileServiceProxyName = $UserProfileServiceName}
 		If (!$farmCredential) {[System.Management.Automation.PsCredential]$farmCredential = GetFarmCredentials $xmlinput}
+        # Set the directory path for the web app to something a bit more friendly
+        ImportWebAdministration    
+        # Get the default root location for web apps
+        $iisWebDir = (Get-ItemProperty "IIS:\Sites\Default Web Site\" -name physicalPath) -replace ("%SystemDrive%","$env:SystemDrive")
+        If (!([string]::IsNullOrEmpty($iisWebDir)))
+        {
+            $pathSwitch = @{Path = "$iisWebDir\wss\VirtualDirectories\$WebAppName-$port"}
+        }        
 
         If (ShouldIProvision($UserProfile) -eq $true) 
         {        
@@ -1868,7 +1923,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
     			If ($GetSPWebApplication -eq $Null)
     			{
     			    Write-Host -ForegroundColor White " - Creating Web App `"$MySiteName`"..."
-    				New-SPWebApplication -Name $MySiteName -ApplicationPoolAccount $MySiteAppPoolAcct -ApplicationPool $MySiteAppPool -DatabaseServer $MySiteDBServer -DatabaseName $MySiteDB -HostHeader $MySiteHostHeader -Url $MySiteURL -Port $MySitePort -SecureSocketsLayer:$MySiteUseSSL | Out-Null
+    				New-SPWebApplication -Name $MySiteName -ApplicationPoolAccount $MySiteAppPoolAcct -ApplicationPool $MySiteAppPool -DatabaseServer $MySiteDBServer -DatabaseName $MySiteDB -HostHeader $MySiteHostHeader -Url $MySiteURL -Port $MySitePort -SecureSocketsLayer:$MySiteUseSSL @pathSwitch | Out-Null
     			}
     			Else
     			{
@@ -2276,16 +2331,16 @@ Function CreateSPUsageApp([xml]$xmlinput)
 				$SPUsageApplicationProxy = Get-SPServiceApplicationProxy | where {$_.DisplayName -eq $SPUsageApplicationName}
 				$SPUsageApplicationProxy.Provision()
 				# End Usage Proxy Fix
-				Write-Host -ForegroundColor White " - Enabling usage processing timer job..."
-                                $UsageProcessingJob = Get-SPTimerJob | ? {$_.TypeName -eq "Microsoft.SharePoint.Administration.SPUsageProcessingJobDefinition"}
-                                $UsageProcessingJob.IsDisabled = $False
-                                $UsageProcessingJob.Update()                
-				Write-Host -ForegroundColor White " - Done provisioning SP Usage Application."
-			}
-			Else {Write-Host -ForegroundColor White " - SP Usage Application already provisioned."}
-		}
-		Catch
-		{
+			    Write-Host -ForegroundColor White " - Enabling usage processing timer job..."
+                $UsageProcessingJob = Get-SPTimerJob | ? {$_.TypeName -eq "Microsoft.SharePoint.Administration.SPUsageProcessingJobDefinition"}
+                $UsageProcessingJob.IsDisabled = $False
+                $UsageProcessingJob.Update()                
+                Write-Host -ForegroundColor White " - Done provisioning SP Usage Application."
+            }
+            Else {Write-Host -ForegroundColor White " - SP Usage Application already provisioned."}
+        }
+        Catch
+        {
 			Write-Output $_
 			Throw " - Error provisioning the SP Usage Application"
 		}
@@ -2861,7 +2916,7 @@ Function ConfigureTracing ([xml]$xmlinput)
 
 # Original script for SharePoint 2010 beta2 by Gary Lapointe ()
 # 
-# Modified by S?ren Laurits Nielsen (soerennielsen.wordpress.com):
+# Modified by Søren Laurits Nielsen (soerennielsen.wordpress.com):
 # 
 # Modified to fix some errors since some cmdlets have changed a bit since beta 2 and added support for "ShareName" for 
 # the query component. It is required for non DC computers. 
@@ -2965,9 +3020,27 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
 			Else {Write-Host -ForegroundColor White " - Administration component already initialized."}
 		}
 		
-		Write-Host -ForegroundColor White " - Setting content access account for $($appconfig.Name)..."
-		$searchApp | Set-SPEnterpriseSearchServiceApplication -DefaultContentAccessAccountName $svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication.ContentAccessAccount `
-												 			  -DefaultContentAccessAccountPassword $secContentAccessAcctPWD
+        try 
+        {
+            Write-Host -ForegroundColor White " - Setting content access account for $($appconfig.Name)..."
+            $searchApp | Set-SPEnterpriseSearchServiceApplication -DefaultContentAccessAccountName $svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication.ContentAccessAccount `
+			    									 			  -DefaultContentAccessAccountPassword $secContentAccessAcctPWD -ErrorVariable err
+        }
+		catch	
+		{
+	   		if ($err -like "*update conflict*")
+			{
+				Write-Warning " - A concurrency error occured, trying again."
+                Write-Host -ForegroundColor White " - Setting content access account for $($appconfig.Name)..."
+                $searchApp | Set-SPEnterpriseSearchServiceApplication -DefaultContentAccessAccountName $svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication.ContentAccessAccount `
+    			    									 			  -DefaultContentAccessAccountPassword $secContentAccessAcctPWD -ErrorVariable err
+			}
+			else 
+			{
+				throw $_
+			}
+		}
+        finally {Clear-Variable err}
 
         $crawlTopology = Get-SPEnterpriseSearchCrawlTopology -SearchApplication $searchApp | where {$_.CrawlComponents.Count -gt 0 -or $_.State -eq "Inactive"}
 
@@ -2980,7 +3053,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
  
         If ($installCrawlSvc) {
             $crawlComponent = $crawlTopology.CrawlComponents | where {$_.ServerName -eq $env:ComputerName}
-            If ($crawlTopology.CrawlComponents.Count -eq 0 -and $crawlComponent -eq $null) {
+            If ($crawlTopology.CrawlComponents.Count -eq 0 -or $crawlComponent -eq $null) {
                 $crawlStore = $searchApp.CrawlStores | where {$_.Name -eq "$($DBPrefix+$appConfig.DatabaseName)_CrawlStore"}
                 Write-Host -ForegroundColor White " - Creating new crawl component..."
                 $crawlComponent = New-SPEnterpriseSearchCrawlComponent -SearchServiceInstance $searchSvc -SearchApplication $searchApp -CrawlTopology $crawlTopology -CrawlDatabase $crawlStore.Id.ToString() -IndexLocation $appConfig.IndexLocation
@@ -2998,9 +3071,13 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
             If ($queryTopologies.Count -gt 1)
             {
                 # Try to select the query topology that has components
-                $queryTopology = $queryTopologies | where {$_.QueryComponents.Count -gt 0}
+                $queryTopology = $queryTopologies | Where-Object {$_.QueryComponents.Count -gt 0} | Select-Object -First 1
             }
-            Else {$queryTopology = $queryTopologies}
+            Else 
+            {
+                # Just set it to $queryTopologies since there is only one
+                $queryTopology = $queryTopologies
+            }
         }
 
         If ($installQuerySvc) {
@@ -3830,7 +3907,7 @@ Function Configure-PDFSearchAndIcon
     				If ($err) {Write-Warning " - Could not download Adobe PDF iFilter!"; Pause "exit"; break}
     				$SourceFile = $DestinationFile
                 }
-                Else {Write-Warning "- The remote use of BITS is not supported. Please pre-download the PDF install files and try again."}
+                Else {Write-Warning " - The remote use of BITS is not supported. Please pre-download the PDF install files and try again."}
 			}
 			Write-Host -ForegroundColor White " - Extracting Adobe PDF iFilter installer..."
 			$Shell = New-Object -ComObject Shell.Application
