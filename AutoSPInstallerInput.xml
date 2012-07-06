@@ -102,19 +102,19 @@
                  If you are creating additional web applications, use a new account for each web application with a new common name, unless you are creating a large number
                  of web applications, in which case the additional memory consumption this requires outweighs the security benefits. -->
             <ManagedAccount CommonName="spservice">
-                <username>DOMAIN\SP_Services</username>
+                <Username>DOMAIN\SP_Services</Username>
                 <Password></Password>
             </ManagedAccount>
             <ManagedAccount CommonName="portalapppool">
-                <username>DOMAIN\SP_PortalAppPool</username>
+                <Username>DOMAIN\SP_PortalAppPool</Username>
                 <Password></Password>
             </ManagedAccount>
             <ManagedAccount CommonName="mysiteapppool">
-                <username>DOMAIN\SP_ProfilesAppPool</username>
+                <Username>DOMAIN\SP_ProfilesAppPool</Username>
                 <Password></Password>
             </ManagedAccount>
             <ManagedAccount CommonName="searchservice">
-                <username>DOMAIN\SP_SearchService</username>
+                <Username>DOMAIN\SP_SearchService</Username>
                 <Password></Password>
             </ManagedAccount>
         </ManagedAccounts>

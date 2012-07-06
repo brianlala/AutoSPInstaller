@@ -1055,8 +1055,9 @@ Function ConfigureLanguagePacks([xml]$xmlinput)
 		# Let's sleep for a while to let the farm config catch up...
 		Start-Sleep 20
         $AttemptNum += 1
-		# Run PSConfig.exe per http://technet.microsoft.com/en-us/library/cc262108.aspx
-		Start-Process -FilePath $PSConfig -ArgumentList "-cmd upgrade -inplace v2v -passphrase `"$FarmPassphrase`" -wait -force" -NoNewWindow -Wait
+        # Run PSConfig.exe per http://sharepoint.stackexchange.com/questions/9927/sp2010-psconfig-fails-trying-to-configure-farm-after-installing-language-packs
+        # Note this was changed from v2v to b2b as suggested by CodePlex user jwthompson98 
+        Start-Process -FilePath $PSConfig -ArgumentList "-cmd upgrade -inplace b2b -force -cmd applicationcontent -install -cmd installfeatures" -NoNewWindow -Wait
         $PSConfigLogLocation = $((Get-SPDiagnosticConfig).LogLocation) -replace "%CommonProgramFiles%","$env:CommonProgramFiles"
    		$PSConfigLog = get-childitem $PSConfigLogLocation | ? {$_.Name -like "PSCDiagnostics*"} | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
     	If ($PSConfigLog -eq $null) 
@@ -3450,6 +3451,8 @@ Function CreateExcelServiceApp ([xml]$xmlinput)
     			If (-not $?) { Throw " - Failed to create $ExcelAppName" }
 				Write-Host -ForegroundColor White " - Configuring service app settings..."
 				Set-SPExcelFileLocation -Identity "http://" -LocationType SharePoint -IncludeChildren -Address $PortalURL`:$PortalPort -ExcelServiceApplication $ExcelAppName -ExternalDataAllowed 2 -WorkbookSizeMax 10
+                $caUrl = (Get-Item -Path 'HKLM:\SOFTWARE\Microsoft\Shared Tools\Web Server Extensions\14.0\WSS').GetValue("CentralAdministrationURL")
+                New-SPExcelFileLocation -LocationType SharePoint -IncludeChildren -Address $caUrl -ExcelServiceApplication $ExcelAppName -ExternalDataAllowed 2 -WorkbookSizeMax 10
 
 				# Configure unattended accounts, based on:
 				# http://blog.falchionconsulting.com/index.php/2010/10/service-accounts-and-managed-service-accounts-in-sharepoint-2010/
