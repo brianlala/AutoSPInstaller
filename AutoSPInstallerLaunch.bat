@@ -35,18 +35,18 @@ GOTO END
 IF NOT EXIST "%SYSTEMROOT%\system32\windowspowershell\v1.0\powershell.exe" (
 	COLOR 0C
 	ECHO - "powershell.exe" not found!
-	ECHO - This script requires PowerShell - install v2.0, then re-run this script.
+	ECHO - This script requires PowerShell - install v2.0/3.0, then re-run this script.
 	COLOR
 	pause
 	EXIT
 	)
-:: Check for Powershell v2.0
-ECHO - Checking for Powershell 2.0...
+:: Check for Powershell v2.0 (minimum)
+ECHO - Checking for Powershell 2.0 (minimum)...
 "%SYSTEMROOT%\system32\windowspowershell\v1.0\powershell.exe" $host.Version.Major | find "1" >nul
 IF %ERRORLEVEL% == 0 (
 	COLOR 0C
 	ECHO - This script requires a minimum PowerShell version of 2.0!
-	ECHO - Please uninstall v1.0, install v2.0, then re-run this script.
+	ECHO - Please uninstall v1.0, install v2.0/3.0, then re-run this script.
 	COLOR
 	pause
 	EXIT
