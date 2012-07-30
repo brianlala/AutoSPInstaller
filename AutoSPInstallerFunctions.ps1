@@ -299,19 +299,97 @@ Function InstallPrerequisites([xml]$xmlinput)
             }
             else # Install using PrerequisiteInstaller as usual
             {
-                If (((Gwmi Win32_OperatingSystem).Version -eq "6.1.7601") -and ($env:spVer -eq "14")) # Win2008 R2 SP1 with SP2010
+                If ((Gwmi Win32_OperatingSystem).Version -eq "6.1.7601") # Win2008 R2 SP1
                 {
-                    # Due to the issue described in http://support.microsoft.com/kb/2581903 (related to installing the KB976462 hotfix) 
-                    # we install the .Net 3.5.1 features prior to attempting the PrerequisiteInstaller on Win2008 R2 SP1
-                    Write-Host -ForegroundColor White "  - .Net Framework..."
-                    # Get the current progress preference
-                    $pref = $ProgressPreference
-                    # Hide the progress bar since it tends to not disappear
-                    $ProgressPreference = "SilentlyContinue"
-                    Import-Module ServerManager
-                    If (!(Get-WindowsFeature -Name NET-Framework).Installed) {Add-WindowsFeature -Name NET-Framework | Out-Null}
-                    # Restore progress preference
-                    $ProgressPreference = $pref
+                    If ($env:spVer -eq "14") # SP2010
+                    {
+                        # Due to the issue described in http://support.microsoft.com/kb/2581903 (related to installing the KB976462 hotfix) 
+                        # we install the .Net 3.5.1 features prior to attempting the PrerequisiteInstaller on Win2008 R2 SP1
+                        Write-Host -ForegroundColor White "  - .Net Framework..."
+                        # Get the current progress preference
+                        $pref = $ProgressPreference
+                        # Hide the progress bar since it tends to not disappear
+                        $ProgressPreference = "SilentlyContinue"
+                        Import-Module ServerManager
+                        If (!(Get-WindowsFeature -Name NET-Framework).Installed) {Add-WindowsFeature -Name NET-Framework | Out-Null}
+                        # Restore progress preference
+                        $ProgressPreference = $pref
+                    }
+                    ElseIf ($env:spVer -eq "15") # SP2013
+                    {
+                        Write-Host -ForegroundColor White " - SharePoint 2013 `"missing hotfix`" prerequisites..."
+                        # Install the 3 "missing prerequisites" for SP2013 Preview per http://www.toddklindt.com/blog/Lists/Posts/Post.aspx?ID=349
+                        # Expand hotfix executable to $env:SPbits\PrerequisiteInstallerFiles\
+                        $missingHotfixes = @{"Windows6.1-KB2708075-x64.msu" = "http://hotfixv4.microsoft.com/Windows%207/Windows%20Server2008%20R2%20SP1/sp2/Fix402568/7600/free/447698_intl_x64_zip.exe";
+                                             "Windows6.1-KB2554876-v2-x64.msu" = "http://hotfixv4.microsoft.com/Windows%207/Windows%20Server2008%20R2%20SP1/sp2/Fix368051/7600/free/433385_intl_x64_zip.exe";
+                                             "Windows6.1-KB2472264-v3-x64.msu" = "http://hotfixv4.microsoft.com/Windows%207/Windows%20Server2008%20R2%20SP1/sp2/Fix354400/7600/free/427087_intl_x64_zip.exe"}
+                        $hotfixLocation = $env:SPbits+"\PrerequisiteInstallerFiles"
+                        ForEach ($hotfixPatch in $missingHotfixes.Keys)
+                        {
+                            $hotfixKB = $hotfixPatch.Split('-')[1]
+                            # Check if the hotfix is already installed
+                            Write-Host -ForegroundColor White " - Checking for $hotfixKB..." -NoNewline
+                            If (!(Get-HotFix -Id $hotfixKB -ErrorAction SilentlyContinue))
+                            {
+                                Write-Host -ForegroundColor White "Missing; attempting to install..."
+                                $hotfixUrl = $missingHotfixes.$hotfixPatch
+                                $hotfixFile = $hotfixUrl.Split('/')[-1] 
+                                $hotfixFileZip = $hotfixFile+".zip"
+                                $hotfixZipPath = Join-Path -Path $hotfixLocation -ChildPath $hotfixFileZip
+                                # Check if the .msu file is already present
+                                If (Test-Path "$env:SPbits\PrerequisiteInstallerFiles\$hotfixPatch")
+                                {
+                                    Write-Host -ForegroundColor White " - Hotfix file `"$hotfixPatch`" found."
+                                }
+                                Else # Check if the downloaded package exists with a .zip extension
+                                {
+                                    If (!([string]::IsNullOrEmpty($hotfixFileZip)) -and (Test-Path "$hotfixLocation\$hotfixFileZip"))
+                                    {
+                                        Write-Host -ForegroundColor White " - File $hotfixFile (zip) found."
+                                    }
+                                	Else
+                                    {
+                                        If (Test-Path "$hotfixLocation\$hotfixFile") # Check if the downloaded package exists
+                                    	{
+                                    		Write-Host -ForegroundColor White " - File $hotfixFile found."
+                                    	}
+                                        Else # Go ahead and download the missing package
+                                    	{
+                                            Try
+                                            {
+                                        		# Begin download
+                                                Write-Host -ForegroundColor White " - Hotfix $hotfixPatch not found in $env:SPbits\PrerequisiteInstallerFiles"
+                                                Write-Host -ForegroundColor White " - Attempting to download..." -NoNewline
+                                                Import-Module BitsTransfer | Out-Null
+                                                Start-BitsTransfer -Source $hotfixUrl -Destination "$hotfixLocation\$hotfixFileZip" -DisplayName "Downloading `'$hotfixFile`' to $hotfixLocation" -Priority High -Description "From $hotfixUrl..." -ErrorVariable err
+                                                if ($err) {Write-Host "."; Throw " - Could not download from $hotfixUrl!"}
+                                                Write-Host "Done!"
+                                        	}
+                                            Catch
+                                            {
+                                            	Write-Warning " - An error occurred attempting to download `"$hotfixFile`"."
+                                            	break
+                                            }
+                                        }
+                                        # Give the file a .zip extension so we can work with it like a compressed folder
+                                        Rename-Item -Path "$hotfixLocation\$hotfixFile" -NewName $hotfixFileZip -Force -ErrorAction SilentlyContinue
+                                    }
+                                    Write-Host -ForegroundColor White " - Extracting `"$hotfixPatch`" from `"$hotfixFile`"..." -NoNewline
+                                    $Shell = New-Object -ComObject Shell.Application
+                                    $hotfixFileZipNs = $Shell.Namespace($hotfixZipPath)
+                                    $hotfixLocationNs = $Shell.Namespace($hotfixLocation)
+                                    $hotfixLocationNs.Copyhere($hotfixFileZipNs.items())
+                                    Write-Host -ForegroundColor White "Done."
+                                }
+                                # Install the hotfix
+                                $extractedHotfixPath = Join-Path -Path $hotfixLocation -ChildPath $hotfixPatch
+                                Write-Host -ForegroundColor White " - Installing hotfix $hotfixPatch..." -NoNewline
+                                Start-Process -FilePath "wusa.exe" -ArgumentList "`"$extractedHotfixPath`" /quiet /norestart" -Wait -NoNewWindow
+                                Write-Host -ForegroundColor White "Done."
+                            }
+                            Else {Write-Host -ForegroundColor White "Already installed."}
+                        }
+                    }
                 }
                 If ($xmlinput.Configuration.Install.OfflineInstall -eq $true) # Install all prerequisites from local folder
                 {
@@ -388,16 +466,27 @@ Function InstallPrerequisites([xml]$xmlinput)
         Else 
         {
             # Get error(s) from log
-            $PreReqLastError = $PreReqLog | select-string -SimpleMatch -Pattern "Error" -Encoding Unicode | ? {$_.Line  -notlike "*Startup task*"}
+            $PreReqLastError = $PreReqLog | Select-String -SimpleMatch -Pattern "Error" -Encoding Unicode | ? {$_.Line  -notlike "*Startup task*"}
             If ($PreReqLastError)
             {
                 ForEach ($preReqError in $PreReqLastError.Line) {Write-Warning $PreReqError}
-                $PreReqLastReturncode = $PreReqLog | select-string -SimpleMatch -Pattern "Last return code" -Encoding Unicode | Select-Object -Last 1
+                $PreReqLastReturncode = $PreReqLog | Select-String -SimpleMatch -Pattern "Last return code" -Encoding Unicode | Select-Object -Last 1
                 If ($PreReqLastReturnCode) {Write-Warning $PreReqLastReturncode.Line}
                 If (($PreReqLastReturncode -like "*-2145124329*") -or ($PreReqLastReturncode -like "*2359302*") -or ($PreReqLastReturncode -eq "5"))
                 {
                     Write-Host -ForegroundColor White " - A known issue occurred installing one of the prerequisites - retrying..."
                     InstallPreRequisites ([xml]$xmlinput)
+                }
+                ElseIf ($PreReqLog | Select-String -SimpleMatch -Pattern "Error when enabling ASP.NET v4.0.30319" -Encoding unicode)
+                {
+                    # Account for new issue with Win2012 RC and SP2013
+                    Write-Host -ForegroundColor White " - A known issue occurred configuring .NET 4 / IIS."
+                    $PreReqKnownIssueRestart = $true
+                }
+                ElseIf ($PreReqLog | Select-String -SimpleMatch -Pattern "pending restart blocks the installation" -Encoding Unicode)
+                {
+                    Write-Host -ForegroundColor White " - A pending restart blocks the installation."
+                    $PreReqKnownIssueRestart = $true
                 }
                 Else
                 {
@@ -406,8 +495,8 @@ Function InstallPrerequisites([xml]$xmlinput)
                 }
             }
             # Look for restart requirement in log
-            $PreReqRestartNeeded = $PreReqLog | select-string -SimpleMatch -Pattern "0XBC2=3010" -Encoding Unicode
-            If ($PreReqRestartNeeded)
+            $PreReqRestartNeeded = ($PreReqLog | Select-String -SimpleMatch -Pattern "0XBC2=3010" -Encoding Unicode) -or ($PreReqLog | Select-String -SimpleMatch -Pattern "0X3E9=1001" -Encoding Unicode)
+            If ($PreReqRestartNeeded -or $PreReqKnownIssueRestart)
             {
                 Write-Host -ForegroundColor White " - Setting AutoSPInstaller restart requirement in the registry..."
                 $regKey = New-Item -Path "HKLM:\SOFTWARE\AutoSPInstaller\" -Force -ErrorAction SilentlyContinue
@@ -596,7 +685,7 @@ Function ConfigureOfficeWebApps([xml]$xmlinput)
             # Install Help Files
             Write-Host -ForegroundColor White " - Installing Help Collection..."
             Install-SPHelpCollection -All
-            WaitForHelpInstallToFinish
+            ##WaitForHelpInstallToFinish
             # Install application content 
             Write-Host -ForegroundColor White " - Installing Application Content..."
             Install-SPApplicationContent
@@ -1000,7 +1089,7 @@ Function ConfigureFarm([xml]$xmlinput)
             # Install Help Files
                 Write-Host -ForegroundColor White " - Installing Help Collection..."
                 Install-SPHelpCollection -All
-                WaitForHelpInstallToFinish
+                ##WaitForHelpInstallToFinish
         }
         # Secure resources
         Write-Host -ForegroundColor White " - Securing Resources..."
@@ -2997,296 +3086,487 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
 {
     If (ShouldIProvision($xmlinput.Configuration.ServiceApps.EnterpriseSearchService) -eq $true)
     {
-    WriteLine
-    Write-Host -ForegroundColor White " - Provisioning Enterprise Search..."
-    # SLN: Added support for local host
-    $svcConfig = $xmlinput.Configuration.ServiceApps.EnterpriseSearchService
-    $PortalWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "Portal"}
-    $PortalURL = $PortalWebApp.URL
-    $PortalPort = $PortalWebApp.Port
-    $MySiteWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "MySiteHost"}
-    $MySiteURL = $MySiteWebApp.URL
-    $MySitePort = $MySiteWebApp.Port
-    If ($MySiteURL -like "https://*") {$MySiteHostHeader = $MySiteURL -replace "https://",""}        
-    Else {$MySiteHostHeader = $MySiteURL -replace "http://",""}
-    $secSearchServicePassword = ConvertTo-SecureString -String $svcConfig.Password -AsPlainText -Force
-    $secContentAccessAcctPWD = ConvertTo-SecureString -String $svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication.ContentAccessAccountPassword -AsPlainText -Force
+        WriteLine
+        Write-Host -ForegroundColor White " - Provisioning Enterprise Search..."
+        # SLN: Added support for local host
+        $svcConfig = $xmlinput.Configuration.ServiceApps.EnterpriseSearchService
+        $PortalWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "Portal"}
+        $PortalURL = $PortalWebApp.URL
+        $PortalPort = $PortalWebApp.Port
+        $MySiteWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "MySiteHost"}
+        $MySiteURL = $MySiteWebApp.URL
+        $MySitePort = $MySiteWebApp.Port
+        If ($MySiteURL -like "https://*") {$MySiteHostHeader = $MySiteURL -replace "https://",""}        
+        Else {$MySiteHostHeader = $MySiteURL -replace "http://",""}
+        $secSearchServicePassword = ConvertTo-SecureString -String $svcConfig.Password -AsPlainText -Force
+        $secContentAccessAcctPWD = ConvertTo-SecureString -String $svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication.ContentAccessAccountPassword -AsPlainText -Force
 
-    $searchSvc = Get-SPEnterpriseSearchServiceInstance -Local
-    If ($searchSvc -eq $null) {
-        Throw " - Unable to retrieve search service."
-    }
-
-    Get-SPEnterpriseSearchService | Set-SPEnterpriseSearchService  `
-      -ContactEmail $svcConfig.ContactEmail -ConnectionTimeout $svcConfig.ConnectionTimeout `
-      -AcknowledgementTimeout $svcConfig.AcknowledgementTimeout -ProxyType $svcConfig.ProxyType `
-      -IgnoreSSLWarnings $svcConfig.IgnoreSSLWarnings -InternetIdentity $svcConfig.InternetIdentity -PerformanceLevel $svcConfig.PerformanceLevel `
-      -ServiceAccount $svcConfig.Account -ServicePassword $secSearchServicePassword
-
-    Write-Host -ForegroundColor White " - Setting default index location on search service..."
-    $searchSvc | Set-SPEnterpriseSearchServiceInstance -DefaultIndexLocation $svcConfig.IndexLocation -ErrorAction SilentlyContinue -ErrorVariable err
-
-    $svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication | ForEach-Object {
-        $appConfig = $_
-        If (($appConfig.DatabaseServer -ne "") -and ($appConfig.DatabaseServer -ne $null))
-        {
-            $DBServer = $appConfig.DatabaseServer
+        $searchSvc = Get-SPEnterpriseSearchServiceInstance -Local
+        If ($searchSvc -eq $null) {
+            Throw " - Unable to retrieve search service."
         }
-        Else
-        {
-            $DBServer = $xmlinput.Configuration.Farm.Database.DBServer
-        }
-
-        # Try and get the application pool if it already exists
-        $pool = Get-ApplicationPool $appConfig.ApplicationPool
-        $adminPool = Get-ApplicationPool $appConfig.AdminComponent.ApplicationPool
-
-        $searchApp = Get-SPEnterpriseSearchServiceApplication -Identity $appConfig.Name -ErrorAction SilentlyContinue
-
-        If ($searchApp -eq $null) {
-            Write-Host -ForegroundColor White " - Creating $($appConfig.Name)..."
-            $searchApp = New-SPEnterpriseSearchServiceApplication -Name $appConfig.Name `
-                -DatabaseServer $DBServer `
-                -DatabaseName $($DBPrefix+$appConfig.DatabaseName) `
-                -FailoverDatabaseServer $appConfig.FailoverDatabaseServer `
-                -ApplicationPool $pool `
-                -AdminApplicationPool $adminPool `
-                -Partitioned:([bool]::Parse($appConfig.Partitioned)) ##`
-                ##-SearchApplicationType $appConfig.SearchServiceApplicationType
-        } Else {
-            Write-Host -ForegroundColor White " - Enterprise search service application already exists, skipping creation."
-        }
+        Write-Host -ForegroundColor White " - Configuring search service..." -NoNewline
+        Get-SPEnterpriseSearchService | Set-SPEnterpriseSearchService  `
+          -ContactEmail $svcConfig.ContactEmail -ConnectionTimeout $svcConfig.ConnectionTimeout `
+          -AcknowledgementTimeout $svcConfig.AcknowledgementTimeout -ProxyType $svcConfig.ProxyType `
+          -IgnoreSSLWarnings $svcConfig.IgnoreSSLWarnings -InternetIdentity $svcConfig.InternetIdentity -PerformanceLevel $svcConfig.PerformanceLevel `
+          -ServiceAccount $svcConfig.Account -ServicePassword $secSearchServicePassword
+        If ($?) {Write-Host -ForegroundColor White "Done."}
         
-        #Add link to resources list
-        AddResourcesLink "Search Administration" ("searchadministration.aspx?appid=" +  $SearchApp.Id)
-
-        $installCrawlSvc = (($appConfig.CrawlServers.Server | where {$_.Name -eq $env:computername}) -ne $null)
-        $installQuerySvc = (($appConfig.QueryServers.Server | where {$_.Name -eq $env:computername}) -ne $null)
-        $installAdminCmpnt = (($appConfig.AdminComponent.Server | where {$_.Name -eq $env:computername}) -ne $null)
-        $installSyncSvc = (($appConfig.SearchQueryAndSiteSettingsServers.Server | where {$_.Name -eq $env:computername}) -ne $null)
-
-        If ($searchSvc.Status -ne "Online" -and ($installCrawlSvc -or $installQuerySvc)) {
-            $searchSvc | Start-SPEnterpriseSearchServiceInstance
-        }
-
-        If ($installAdminCmpnt) {
-            Write-Host -ForegroundColor White " - Setting administration component..."
-            Set-SPEnterpriseSearchAdministrationComponent -SearchApplication $searchApp -SearchServiceInstance $searchSvc
+        Write-Host -ForegroundColor White " - Setting default index location on search service instance..." -NoNewline
+        $searchSvc | Set-SPEnterpriseSearchServiceInstance -DefaultIndexLocation $svcConfig.IndexLocation -ErrorAction SilentlyContinue
+        If ($?) {Write-Host -ForegroundColor White "Done."}
         
-            $AdminCmpnt = $searchApp | Get-SPEnterpriseSearchAdministrationComponent
-            If ($AdminCmpnt.Initialized -eq $false)
-            {
-                Write-Host -ForegroundColor Blue " - Waiting for administration component initialization..." -NoNewline
-                While ($AdminCmpnt.Initialized -ne $true)
+        If ($env:spVer -eq "14") # SharePoint 2010 steps
+        {
+            $svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication | ForEach-Object {
+                $appConfig = $_
+                If (($appConfig.DatabaseServer -ne "") -and ($appConfig.DatabaseServer -ne $null))
                 {
-                    Write-Host -ForegroundColor Blue "." -NoNewline
-                    Start-Sleep 1
-                    $AdminCmpnt = $searchApp | Get-SPEnterpriseSearchAdministrationComponent
+                    $DBServer = $appConfig.DatabaseServer
                 }
-                Write-Host -BackgroundColor Blue -ForegroundColor Black $($AdminCmpnt.Initialized -replace "True","Done.")
-            }
-            Else {Write-Host -ForegroundColor White " - Administration component already initialized."}
-        }
-        
-        try 
-        {
-            Write-Host -ForegroundColor White " - Setting content access account for $($appconfig.Name)..."
-            $searchApp | Set-SPEnterpriseSearchServiceApplication -DefaultContentAccessAccountName $svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication.ContentAccessAccount `
-                                                                  -DefaultContentAccessAccountPassword $secContentAccessAcctPWD -ErrorVariable err
-        }
-        catch   
-        {
-            if ($err -like "*update conflict*")
-            {
-                Write-Warning " - A concurrency error occured, trying again."
-                Write-Host -ForegroundColor White " - Setting content access account for $($appconfig.Name)..."
-                $searchApp | Set-SPEnterpriseSearchServiceApplication -DefaultContentAccessAccountName $svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication.ContentAccessAccount `
-                                                                      -DefaultContentAccessAccountPassword $secContentAccessAcctPWD -ErrorVariable err
-            }
-            else 
-            {
-                throw $_
-            }
-        }
-        finally {Clear-Variable err}
-
-        $crawlTopology = Get-SPEnterpriseSearchCrawlTopology -SearchApplication $searchApp | where {$_.CrawlComponents.Count -gt 0 -or $_.State -eq "Inactive"}
-
-        If ($crawlTopology -eq $null) {
-            Write-Host -ForegroundColor White " - Creating new crawl topology..."
-            $crawlTopology = $searchApp | New-SPEnterpriseSearchCrawlTopology
-        } Else {
-            Write-Host -ForegroundColor White " - A crawl topology with crawl components already exists, skipping crawl topology creation."
-        }
- 
-        If ($installCrawlSvc) {
-            $crawlComponent = $crawlTopology.CrawlComponents | where {$_.ServerName -eq $env:ComputerName}
-            If ($crawlTopology.CrawlComponents.Count -eq 0 -or $crawlComponent -eq $null) {
-                $crawlStore = $searchApp.CrawlStores | where {$_.Name -eq "$($DBPrefix+$appConfig.DatabaseName)_CrawlStore"}
-                Write-Host -ForegroundColor White " - Creating new crawl component..."
-                $crawlComponent = New-SPEnterpriseSearchCrawlComponent -SearchServiceInstance $searchSvc -SearchApplication $searchApp -CrawlTopology $crawlTopology -CrawlDatabase $crawlStore.Id.ToString() -IndexLocation $appConfig.IndexLocation
-            } Else {
-                Write-Host -ForegroundColor White " - Crawl component already exist, skipping crawl component creation."
-            }
-        }
-
-        $queryTopologies = Get-SPEnterpriseSearchQueryTopology -SearchApplication $searchApp | where {$_.QueryComponents.Count -gt 0 -or $_.State -eq "Inactive"}
-        If ($queryTopologies.Count -lt 1) {
-            Write-Host -ForegroundColor White " - Creating new query topology..."
-            $queryTopology = $searchApp | New-SPEnterpriseSearchQueryTopology -Partitions $appConfig.Partitions
-        } Else {
-            Write-Host -ForegroundColor White " - A query topology with query components already exists, skipping query topology creation."
-            If ($queryTopologies.Count -gt 1)
-            {
-                # Try to select the query topology that has components
-                $queryTopology = $queryTopologies | Where-Object {$_.QueryComponents.Count -gt 0} | Select-Object -First 1
-            }
-            Else 
-            {
-                # Just set it to $queryTopologies since there is only one
-                $queryTopology = $queryTopologies
-            }
-        }
-
-        If ($installQuerySvc) {
-            $queryComponent = $queryTopology.QueryComponents | where {$_.ServerName -eq $env:ComputerName}
-            If ($queryComponent -eq $null) {
-                $partition = ($queryTopology | Get-SPEnterpriseSearchIndexPartition)
-                Write-Host -ForegroundColor White " - Creating new query component..."
-                $queryComponent = New-SPEnterpriseSearchQueryComponent -IndexPartition $partition -QueryTopology $queryTopology -SearchServiceInstance $searchSvc -ShareName $svcConfig.ShareName
-                Write-Host -ForegroundColor White " - Setting index partition and property store database..."
-                $propertyStore = $searchApp.PropertyStores | where {$_.Name -eq "$($DBPrefix+$appConfig.DatabaseName)_PropertyStore"}
-                $partition | Set-SPEnterpriseSearchIndexPartition -PropertyDatabase $propertyStore.Id.ToString()
-            } Else {
-                Write-Host -ForegroundColor White " - Query component already exists, skipping query component creation."
-            }
-        }
-
-        If ($installSyncSvc) {            
-            # SLN: Updated to new syntax
-            $SearchQueryAndSiteSettingsServices = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Search.Administration.SearchQueryAndSiteSettingsServiceInstance"}
-            $SearchQueryAndSiteSettingsService = $SearchQueryAndSiteSettingsServices | ? {$_.Server.Address -eq $env:COMPUTERNAME}
-            If (-not $?) { Throw " - Failed to find Search Query and Site Settings service instance" }
-            # Start Service instance
-            Write-Host -ForegroundColor White " - Starting Search Query and Site Settings Service Instance..."
-            If($SearchQueryAndSiteSettingsService.Status -eq "Disabled")
-            { 
-                $SearchQueryAndSiteSettingsService.Provision()
-                If (-not $?) { Throw " - Failed to start Search Query and Site Settings service instance" }
-                # Wait
-                Write-Host -ForegroundColor Blue " - Waiting for Search Query and Site Settings service..." -NoNewline
-                While ($SearchQueryAndSiteSettingsService.Status -ne "Online") 
+                Else
                 {
-                    Write-Host -ForegroundColor Blue "." -NoNewline
-                    Start-Sleep 1
+                    $DBServer = $xmlinput.Configuration.Farm.Database.DBServer
+                }
+
+                # Try and get the application pool if it already exists
+                $pool = Get-ApplicationPool $appConfig.ApplicationPool
+                $adminPool = Get-ApplicationPool $appConfig.AdminComponent.ApplicationPool
+
+                $searchApp = Get-SPEnterpriseSearchServiceApplication -Identity $appConfig.Name -ErrorAction SilentlyContinue
+
+                If ($searchApp -eq $null) {
+                    Write-Host -ForegroundColor White " - Creating $($appConfig.Name)..."
+                    $searchApp = New-SPEnterpriseSearchServiceApplication -Name $appConfig.Name `
+                        -DatabaseServer $DBServer `
+                        -DatabaseName $($DBPrefix+$appConfig.DatabaseName) `
+                        -FailoverDatabaseServer $appConfig.FailoverDatabaseServer `
+                        -ApplicationPool $pool `
+                        -AdminApplicationPool $adminPool `
+                        -Partitioned:([bool]::Parse($appConfig.Partitioned)) `
+                        -SearchApplicationType $appConfig.SearchServiceApplicationType
+                } Else {
+                    Write-Host -ForegroundColor White " - Enterprise search service application already exists, skipping creation."
+                }
+                
+                #Add link to resources list
+                AddResourcesLink "Search Administration" ("searchadministration.aspx?appid=" +  $searchApp.Id)
+
+                $installCrawlSvc = (($appConfig.CrawlServers.Server | where {$_.Name -eq $env:computername}) -ne $null)
+                $installQuerySvc = (($appConfig.QueryServers.Server | where {$_.Name -eq $env:computername}) -ne $null)
+                $installAdminCmpnt = (($appConfig.AdminComponent.Server | where {$_.Name -eq $env:computername}) -ne $null)
+                $installSyncSvc = (($appConfig.SearchQueryAndSiteSettingsServers.Server | where {$_.Name -eq $env:computername}) -ne $null)
+
+                If ($searchSvc.Status -ne "Online" -and ($installCrawlSvc -or $installQuerySvc)) {
+                    $searchSvc | Start-SPEnterpriseSearchServiceInstance
+                }
+
+                If ($installAdminCmpnt) {
+                    Write-Host -ForegroundColor White " - Setting administration component..."
+                    Set-SPEnterpriseSearchAdministrationComponent -SearchApplication $searchApp -SearchServiceInstance $searchSvc
+                
+                    $AdminCmpnt = $searchApp | Get-SPEnterpriseSearchAdministrationComponent
+                    If ($AdminCmpnt.Initialized -eq $false)
+                    {
+                        Write-Host -ForegroundColor Blue " - Waiting for administration component initialization..." -NoNewline
+                        While ($AdminCmpnt.Initialized -ne $true)
+                        {
+                            Write-Host -ForegroundColor Blue "." -NoNewline
+                            Start-Sleep 1
+                            $AdminCmpnt = $searchApp | Get-SPEnterpriseSearchAdministrationComponent
+                        }
+                        Write-Host -BackgroundColor Blue -ForegroundColor Black $($AdminCmpnt.Initialized -replace "True","Done.")
+                    }
+                    Else {Write-Host -ForegroundColor White " - Administration component already initialized."}
+                }
+                # Update the default Content Access Account
+                try 
+                {
+                    Write-Host -ForegroundColor White " - Setting content access account for $($appconfig.Name)..."
+                    $searchApp | Set-SPEnterpriseSearchServiceApplication -DefaultContentAccessAccountName $svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication.ContentAccessAccount `
+                                                                          -DefaultContentAccessAccountPassword $secContentAccessAcctPWD -ErrorVariable err
+                }
+                catch   
+                {
+                    if ($err -like "*update conflict*")
+                    {
+                        Write-Warning " - A concurrency error occured, trying again."
+                        Write-Host -ForegroundColor White " - Setting content access account for $($appconfig.Name)..."
+                        $searchApp | Set-SPEnterpriseSearchServiceApplication -DefaultContentAccessAccountName $svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication.ContentAccessAccount `
+                                                                              -DefaultContentAccessAccountPassword $secContentAccessAcctPWD -ErrorVariable err
+                    }
+                    else 
+                    {
+                        throw $_
+                    }
+                }
+                finally {Clear-Variable err}
+                
+                $crawlTopology = Get-SPEnterpriseSearchCrawlTopology -SearchApplication $searchApp | where {$_.CrawlComponents.Count -gt 0 -or $_.State -eq "Inactive"}
+
+                If ($crawlTopology -eq $null) {
+                    Write-Host -ForegroundColor White " - Creating new crawl topology..."
+                    $crawlTopology = $searchApp | New-SPEnterpriseSearchCrawlTopology
+                } Else {
+                    Write-Host -ForegroundColor White " - A crawl topology with crawl components already exists, skipping crawl topology creation."
+                }
+         
+                If ($installCrawlSvc) {
+                    $crawlComponent = $crawlTopology.CrawlComponents | where {$_.ServerName -eq $env:ComputerName}
+                    If ($crawlTopology.CrawlComponents.Count -eq 0 -or $crawlComponent -eq $null) {
+                        $crawlStore = $searchApp.CrawlStores | where {$_.Name -eq "$($DBPrefix+$appConfig.DatabaseName)_CrawlStore"}
+                        Write-Host -ForegroundColor White " - Creating new crawl component..."
+                        $crawlComponent = New-SPEnterpriseSearchCrawlComponent -SearchServiceInstance $searchSvc -SearchApplication $searchApp -CrawlTopology $crawlTopology -CrawlDatabase $crawlStore.Id.ToString() -IndexLocation $appConfig.IndexLocation
+                    } Else {
+                        Write-Host -ForegroundColor White " - Crawl component already exist, skipping crawl component creation."
+                    }
+                }
+
+                $queryTopologies = Get-SPEnterpriseSearchQueryTopology -SearchApplication $searchApp | where {$_.QueryComponents.Count -gt 0 -or $_.State -eq "Inactive"}
+                If ($queryTopologies.Count -lt 1) {
+                    Write-Host -ForegroundColor White " - Creating new query topology..."
+                    $queryTopology = $searchApp | New-SPEnterpriseSearchQueryTopology -Partitions $appConfig.Partitions
+                } Else {
+                    Write-Host -ForegroundColor White " - A query topology with query components already exists, skipping query topology creation."
+                    If ($queryTopologies.Count -gt 1)
+                    {
+                        # Try to select the query topology that has components
+                        $queryTopology = $queryTopologies | Where-Object {$_.QueryComponents.Count -gt 0} | Select-Object -First 1
+                    }
+                    Else 
+                    {
+                        # Just set it to $queryTopologies since there is only one
+                        $queryTopology = $queryTopologies
+                    }
+                }
+
+                If ($installQuerySvc) {
+                    $queryComponent = $queryTopology.QueryComponents | where {$_.ServerName -eq $env:ComputerName}
+                    If ($queryComponent -eq $null) {
+                        $partition = ($queryTopology | Get-SPEnterpriseSearchIndexPartition)
+                        Write-Host -ForegroundColor White " - Creating new query component..."
+                        $queryComponent = New-SPEnterpriseSearchQueryComponent -IndexPartition $partition -QueryTopology $queryTopology -SearchServiceInstance $searchSvc -ShareName $svcConfig.ShareName
+                        Write-Host -ForegroundColor White " - Setting index partition and property store database..."
+                        $propertyStore = $searchApp.PropertyStores | where {$_.Name -eq "$($DBPrefix+$appConfig.DatabaseName)_PropertyStore"}
+                        $partition | Set-SPEnterpriseSearchIndexPartition -PropertyDatabase $propertyStore.Id.ToString()
+                    } Else {
+                        Write-Host -ForegroundColor White " - Query component already exists, skipping query component creation."
+                    }
+                }
+
+                If ($installSyncSvc) {            
+                    # SLN: Updated to new syntax
                     $SearchQueryAndSiteSettingsServices = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Search.Administration.SearchQueryAndSiteSettingsServiceInstance"}
                     $SearchQueryAndSiteSettingsService = $SearchQueryAndSiteSettingsServices | ? {$_.Server.Address -eq $env:COMPUTERNAME}
+                    If (-not $?) { Throw " - Failed to find Search Query and Site Settings service instance" }
+                    # Start Service instance
+                    Write-Host -ForegroundColor White " - Starting Search Query and Site Settings Service Instance..."
+                    If ($SearchQueryAndSiteSettingsService.Status -eq "Disabled")
+                    { 
+                        $SearchQueryAndSiteSettingsService.Provision()
+                        If (-not $?) { Throw " - Failed to start Search Query and Site Settings service instance" }
+                        # Wait
+                        Write-Host -ForegroundColor Blue " - Waiting for Search Query and Site Settings service..." -NoNewline
+                        While ($SearchQueryAndSiteSettingsService.Status -ne "Online") 
+                        {
+                            Write-Host -ForegroundColor Blue "." -NoNewline
+                            Start-Sleep 1
+                            $SearchQueryAndSiteSettingsServices = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Search.Administration.SearchQueryAndSiteSettingsServiceInstance"}
+                            $SearchQueryAndSiteSettingsService = $SearchQueryAndSiteSettingsServices | ? {$_.Server.Address -eq $env:COMPUTERNAME}
+                        }
+                        Write-Host -BackgroundColor Blue -ForegroundColor Black $($SearchQueryAndSiteSettingsService.Status)
+                    }
+                    Else {Write-Host -ForegroundColor White " - Search Query and Site Settings Service already started."}
+                    }
+
+                # Don't activate until we've added all components
+                $allCrawlServersDone = $true
+                $appConfig.CrawlServers.Server | ForEach-Object {
+                    $crawlServer = $_.Name
+                    $top = $crawlTopology.CrawlComponents | where {$_.ServerName -eq $crawlServer}
+                    If ($top -eq $null) { $allCrawlServersDone = $false }
                 }
-                Write-Host -BackgroundColor Blue -ForegroundColor Black $($SearchQueryAndSiteSettingsService.Status)
-            }
-            Else {Write-Host -ForegroundColor White " - Search Query and Site Settings Service already started."}
-            }
 
-        # Don't activate until we've added all components
-        $allCrawlServersDone = $true
-        $appConfig.CrawlServers.Server | ForEach-Object {
-            $crawlServer = $_.Name
-            $top = $crawlTopology.CrawlComponents | where {$_.ServerName -eq $crawlServer}
-            If ($top -eq $null) { $allCrawlServersDone = $false }
+                If ($allCrawlServersDone -and $crawlTopology.State -ne "Active") {
+                    Write-Host -ForegroundColor White " - Setting new crawl topology to active..."
+                    $crawlTopology | Set-SPEnterpriseSearchCrawlTopology -Active -Confirm:$false
+                    Write-Host -ForegroundColor Blue " - Waiting for Crawl Components..." -NoNewLine
+                    while ($true) 
+                    {
+                        $ct = Get-SPEnterpriseSearchCrawlTopology -Identity $crawlTopology -SearchApplication $searchApp
+                        $state = $ct.CrawlComponents | where {$_.State -ne "Ready"}
+                        If ($ct.State -eq "Active" -and $state -eq $null) 
+                        {
+                            break
+                        }
+                        Write-Host -ForegroundColor Blue "." -NoNewLine
+                        Start-Sleep 1
+                    }
+                    Write-Host -BackgroundColor Blue -ForegroundColor Black $($crawlTopology.State)
+
+                    # Need to delete the original crawl topology that was created by default
+                    $searchApp | Get-SPEnterpriseSearchCrawlTopology | where {$_.State -eq "Inactive"} | Remove-SPEnterpriseSearchCrawlTopology -Confirm:$false
+                }
+
+                $allQueryServersDone = $true
+                $appConfig.QueryServers.Server | ForEach-Object {
+                    $queryServer = $_.Name
+                    $top = $queryTopology.QueryComponents | where {$_.ServerName -eq $queryServer}
+                    If ($top -eq $null) { $allQueryServersDone = $false }
+                }
+
+                # Make sure we have a crawl component added and started before trying to enable the query component
+                If ($allCrawlServersDone -and $allQueryServersDone -and $queryTopology.State -ne "Active") {
+                    Write-Host -ForegroundColor White " - Setting query topology as active..."
+                    $queryTopology | Set-SPEnterpriseSearchQueryTopology -Active -Confirm:$false -ErrorAction SilentlyContinue -ErrorVariable err
+                    Write-Host -ForegroundColor Blue " - Waiting for Query Components..." -NoNewLine
+                    while ($true) 
+                    {
+                        $qt = Get-SPEnterpriseSearchQueryTopology -Identity $queryTopology -SearchApplication $searchApp
+                        $state = $qt.QueryComponents | where {$_.State -ne "Ready"}
+                        If ($qt.State -eq "Active" -and $state -eq $null) 
+                        {
+                            break
+                        }
+                        Write-Host -ForegroundColor Blue "." -NoNewLine
+                        Start-Sleep 1
+                    }
+                    Write-Host -BackgroundColor Blue -ForegroundColor Black $($queryTopology.State)
+                    
+                    # Need to delete the original query topology that was created by default
+                    $origQueryTopology = $searchApp | Get-SPEnterpriseSearchQueryTopology | where {$_.QueryComponents.Count -eq 0}
+                    If ($origQueryTopology.State -eq "Inactive")
+                    {
+                        Write-Host -ForegroundColor White " - Removing original (default) query topology..."
+                        $origQueryTopology | Remove-SPEnterpriseSearchQueryTopology -Confirm:$false 
+                    }
+                }
+
+                $proxy = Get-SPEnterpriseSearchServiceApplicationProxy -Identity $appConfig.Proxy.Name -ErrorAction SilentlyContinue
+                If ($proxy -eq $null) {
+                    Write-Host -ForegroundColor White " - Creating enterprise search service application proxy..."
+                    $proxy = New-SPEnterpriseSearchServiceApplicationProxy -Name $appConfig.Proxy.Name -SearchApplication $searchApp -Partitioned:([bool]::Parse($appConfig.Proxy.Partitioned))
+                } Else {
+                    Write-Host -ForegroundColor White " - Enterprise search service application proxy already exists, skipping creation."
+                }
+
+                If ($proxy.Status -ne "Online") {
+                    $proxy.Status = "Online"
+                    $proxy.Update()
+                }
+
+                $proxy | Set-ProxyGroupsMembership $appConfig.Proxy.ProxyGroup
+            }
+            WriteLine
         }
-
-        If ($allCrawlServersDone -and $crawlTopology.State -ne "Active") {
-            Write-Host -ForegroundColor White " - Setting new crawl topology to active..."
-            $crawlTopology | Set-SPEnterpriseSearchCrawlTopology -Active -Confirm:$false
-            Write-Host -ForegroundColor Blue " - Waiting for Crawl Components..." -NoNewLine
-            while ($true) 
-            {
-                $ct = Get-SPEnterpriseSearchCrawlTopology -Identity $crawlTopology -SearchApplication $searchApp
-                $state = $ct.CrawlComponents | where {$_.State -ne "Ready"}
-                If ($ct.State -eq "Active" -and $state -eq $null) 
+        ElseIf ($env:spVer -eq "15") # SharePoint 2013 steps, customized from an initial script by Alpesh Nakar (@alpesh) 
+        {
+            $svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication | ForEach-Object {
+                $appConfig = $_
+                If (($appConfig.DatabaseServer -ne "") -and ($appConfig.DatabaseServer -ne $null))
                 {
-                    break
+                    $DBServer = $appConfig.DatabaseServer
                 }
-                Write-Host -ForegroundColor Blue "." -NoNewLine
-                Start-Sleep 1
-            }
-            Write-Host -BackgroundColor Blue -ForegroundColor Black $($crawlTopology.State)
-
-            # Need to delete the original crawl topology that was created by default
-            $searchApp | Get-SPEnterpriseSearchCrawlTopology | where {$_.State -eq "Inactive"} | Remove-SPEnterpriseSearchCrawlTopology -Confirm:$false
-        }
-
-        $allQueryServersDone = $true
-        $appConfig.QueryServers.Server | ForEach-Object {
-            $queryServer = $_.Name
-            $top = $queryTopology.QueryComponents | where {$_.ServerName -eq $queryServer}
-            If ($top -eq $null) { $allQueryServersDone = $false }
-        }
-
-        # Make sure we have a crawl component added and started before trying to enable the query component
-        If ($allCrawlServersDone -and $allQueryServersDone -and $queryTopology.State -ne "Active") {
-            Write-Host -ForegroundColor White " - Setting query topology as active..."
-            $queryTopology | Set-SPEnterpriseSearchQueryTopology -Active -Confirm:$false -ErrorAction SilentlyContinue -ErrorVariable err
-            Write-Host -ForegroundColor Blue " - Waiting for Query Components..." -NoNewLine
-            while ($true) 
-            {
-                $qt = Get-SPEnterpriseSearchQueryTopology -Identity $queryTopology -SearchApplication $searchApp
-                $state = $qt.QueryComponents | where {$_.State -ne "Ready"}
-                If ($qt.State -eq "Active" -and $state -eq $null) 
+                Else
                 {
-                    break
+                    $DBServer = $xmlinput.Configuration.Farm.Database.DBServer
                 }
-                Write-Host -ForegroundColor Blue "." -NoNewLine
-                Start-Sleep 1
+
+                $installAdminCmpnt = (($appConfig.AdminComponent.Server | where {$_.Name -eq $env:computername}) -ne $null)
+                If ($installAdminCmpnt) {$searchServerName = $env:COMPUTERNAME}
+                $pool = Get-ApplicationPool $appConfig.ApplicationPool
+                $adminPool = Get-ApplicationPool $appConfig.AdminComponent.ApplicationPool            
+                $appPoolUserName = $svcConfig.Account
+                $searchSAName = $appConfig.Name
+
+                $saAppPool = Get-SPServiceApplicationPool -Identity $pool -ErrorAction SilentlyContinue
+                if($saAppPool -eq $null)
+                {
+                    Write-Host -ForegroundColor White " - Creating Service Application Pool..."
+
+                    $appPoolAccount = Get-SPManagedAccount -Identity $appPoolUserName -ErrorAction SilentlyContinue
+                    if($appPoolAccount -eq $null)
+                    {
+                        Write-Host -ForegroundColor White " - Please supply the password for the Service Account..."
+                        $appPoolCred = Get-Credential $appPoolUserName
+                        $appPoolAccount = New-SPManagedAccount -Credential $appPoolCred -ErrorAction SilentlyContinue
+                    }
+
+                    $appPoolAccount = Get-SPManagedAccount -Identity $appPoolUserName -ErrorAction SilentlyContinue
+
+                    if($appPoolAccount -eq $null)
+                    {
+                        Throw " - Cannot create or find the managed account $appPoolUserName, please ensure the account exists."
+                    }
+
+                    New-SPServiceApplicationPool -Name $pool -Account $appPoolAccount -ErrorAction SilentlyContinue | Out-Null
+                }
+
+                Write-Host -ForegroundColor White " - Checking Search Service Instance..." -NoNewline
+                If ($searchSvc.Status -eq "Disabled") ##-and ($installCrawlSvc -or $installQuerySvc))
+                {
+                    Write-Host -ForegroundColor White "Starting..." -NoNewline
+                    $searchSvc | Start-SPEnterpriseSearchServiceInstance
+                    If (!$?) {Throw " - Could not start the Search Service Instance."}
+                    # Wait
+                    While ($searchSvc.Status -ne "Online") 
+                    {
+                        Write-Host -ForegroundColor Blue "." -NoNewline
+                        Start-Sleep 1
+                        $searchSvc = Get-SPEnterpriseSearchServiceInstance -Local
+                    }
+                    Write-Host -BackgroundColor Blue -ForegroundColor Black $($searchSvc.Status)
+                }
+                Else {Write-Host -ForegroundColor White "Already $($searchSvc.Status)."}
+                
+                Write-Host -ForegroundColor White " - Checking Search Query and Site Settings Service Instance..." -NoNewline
+                $SearchQueryAndSiteSettingsService = Get-SPEnterpriseSearchQueryAndSiteSettingsServiceInstance -Local
+                If ($SearchQueryAndSiteSettingsService.Status -eq "Disabled")
+                {
+                    Write-Host -ForegroundColor White "Starting..." -NoNewline
+                    $SearchQueryAndSiteSettingsService | Start-SPEnterpriseSearchQueryAndSiteSettingsServiceInstance
+                    If (!$?) {Throw " - Could not start the Search Query and Site Settings Service Instance."}
+                    Write-Host -ForegroundColor White "Done."
+                }
+                Else {Write-Host -ForegroundColor White "Already $($SearchQueryAndSiteSettingsService.Status)."}
+
+                Write-Host -ForegroundColor White " - Checking Search Service Application..." -NoNewline
+                $searchApp = Get-SPEnterpriseSearchServiceApplication -Identity $appConfig.Name -ErrorAction SilentlyContinue
+                If ($searchApp -eq $null)
+                {
+                    Write-Host -ForegroundColor White "Creating $($appConfig.Name)..." -NoNewline
+                    $searchApp = New-SPEnterpriseSearchServiceApplication -Name $appConfig.Name `
+                        -DatabaseServer $DBServer `
+                        -DatabaseName $($DBPrefix+$appConfig.DatabaseName) `
+                        -FailoverDatabaseServer $appConfig.FailoverDatabaseServer `
+                        -ApplicationPool $pool `
+                        -AdminApplicationPool $adminPool `
+                        -Partitioned:([bool]::Parse($appConfig.Partitioned))
+                    If (!$?) {Throw " - An error occurred creating the $($appConfig.Name) application."}
+                    Write-Host -ForegroundColor White "Done."
+                }
+                Else {Write-Host -ForegroundColor White "Already exists."}
+
+                # Update the default Content Access Account
+                try 
+                {
+                    Write-Host -ForegroundColor White " - Setting content access account for $($appconfig.Name)..." -NoNewline
+                    $searchApp | Set-SPEnterpriseSearchServiceApplication -DefaultContentAccessAccountName $svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication.ContentAccessAccount `
+                                                                          -DefaultContentAccessAccountPassword $secContentAccessAcctPWD -ErrorVariable err
+                    if ($?) {Write-Host -ForegroundColor White "Done."}
+                }
+                catch   
+                {
+                    if ($err -like "*update conflict*")
+                    {
+                        Write-Host -ForegroundColor White "."
+                        Write-Warning " - A concurrency error occured, trying again."
+                        Write-Host -ForegroundColor White " - Setting content access account for $($appconfig.Name)..." -NoNewline
+                        $searchApp | Set-SPEnterpriseSearchServiceApplication -DefaultContentAccessAccountName $svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication.ContentAccessAccount `
+                                                                              -DefaultContentAccessAccountPassword $secContentAccessAcctPWD -ErrorVariable err
+                        if ($?) {Write-Host -ForegroundColor White "Done."}
+                    }
+                    else 
+                    {
+                        throw $_
+                    }
+                }
+                finally {Clear-Variable err}
+                
+                #To clone the active topology
+                $clone = $searchApp.ActiveTopology.Clone()
+
+                Write-Host -ForegroundColor White " - Checking administration component..." -NoNewline
+                Write-Host -ForegroundColor White "Creating..." -NoNewline
+                New-SPEnterpriseSearchAdminComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
+                If ($?) {Write-Host -ForegroundColor White "Done."}
+                Else {Write-Host -ForegroundColor White "Already exists."}
+                Write-Host -ForegroundColor White " - Checking content processing component..." -NoNewline
+                If (!($searchApp.ActiveTopology.GetComponents() | Where-Object {$_.Name -like "ContentProcessingComponent*"}))
+                {
+                    Write-Host -ForegroundColor White "Creating..." -NoNewline
+                    New-SPEnterpriseSearchContentProcessingComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
+                    If ($?) {Write-Host -ForegroundColor White "Done."}
+                }
+                Else {Write-Host -ForegroundColor White "Already exists."}
+                Write-Host -ForegroundColor White " - Checking analytics processing component..." -NoNewline
+                If (!($searchApp.ActiveTopology.GetComponents() | Where-Object {$_.Name -like "AnalyticsProcessingComponent*"}))
+                {
+                    Write-Host -ForegroundColor White "Creating..." -NoNewline
+                    New-SPEnterpriseSearchAnalyticsProcessingComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
+                    If ($?) {Write-Host -ForegroundColor White "Done."}
+                }
+                Else {Write-Host -ForegroundColor White "Already exists."}
+                Write-Host -ForegroundColor White " - Checking crawl component..." -NoNewline
+                If (!($searchApp.ActiveTopology.GetComponents() | Where-Object {$_.Name -like "CrawlComponent*"}))
+                {
+                    Write-Host -ForegroundColor White "Creating..." -NoNewline
+                    New-SPEnterpriseSearchCrawlComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
+                    If ($?) {Write-Host -ForegroundColor White "Done."}
+                }
+                Else {Write-Host -ForegroundColor White "Already exists."}
+                Write-Host -ForegroundColor White " - Checking index component..." -NoNewline
+                If (!($searchApp.ActiveTopology.GetComponents() | Where-Object {$_.Name -like "IndexComponent*"}))
+                {
+                    Write-Host -ForegroundColor White "Creating..." -NoNewline
+                    New-SPEnterpriseSearchIndexComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
+                    If ($?) {Write-Host -ForegroundColor White "Done."}
+                }
+                Else {Write-Host -ForegroundColor White "Already exists."}
+                Write-Host -ForegroundColor White " - Checking query processing component..." -NoNewline
+                If (!($searchApp.ActiveTopology.GetComponents() | Where-Object {$_.Name -like "QueryProcessingComponent*"}))
+                {
+                    Write-Host -ForegroundColor White "Creating..." -NoNewline
+                    New-SPEnterpriseSearchQueryProcessingComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
+                    If ($?) {Write-Host -ForegroundColor White "Done."}
+                }
+                Else {Write-Host -ForegroundColor White "Already exists."}
+                
+                $searchApp | Get-SPEnterpriseSearchAdministrationComponent | Set-SPEnterpriseSearchAdministrationComponent -SearchServiceInstance $searchSvc
+                
+                Write-Host -ForegroundColor White " - Activating Search Topology..." -NoNewline
+                $clone.Activate()
+                If ($?) {Write-Host -ForegroundColor White "Done."}
+
+                Write-Host -ForegroundColor White " - Checking search service application proxy..." -NoNewline
+                If (!(Get-SPEnterpriseSearchServiceApplicationProxy -Identity $appConfig.Proxy.Name -ErrorAction SilentlyContinue))
+                {
+                    Write-Host -ForegroundColor White "Creating..." -NoNewline
+                    $searchAppProxy = New-SPEnterpriseSearchServiceApplicationProxy -Name $appConfig.Proxy.Name -SearchApplication $appConfig.Name
+                }
+                Else {Write-Host -ForegroundColor White "Already exists."}
+                
+                #Add link to resources list
+                AddResourcesLink "Search Administration" ("searchadministration.aspx?appid=" +  $searchApp.Id)
+
+                Write-Host -ForegroundColor White " - Search Service Application successfully provisioned."
+                WriteLine
             }
-            Write-Host -BackgroundColor Blue -ForegroundColor Black $($queryTopology.State)
-            
-            # Need to delete the original query topology that was created by default
-            $origQueryTopology = $searchApp | Get-SPEnterpriseSearchQueryTopology | where {$_.QueryComponents.Count -eq 0}
-            If ($origQueryTopology.State -eq "Inactive")
-            {
-                Write-Host -ForegroundColor White " - Removing original (default) query topology..."
-                $origQueryTopology | Remove-SPEnterpriseSearchQueryTopology -Confirm:$false 
-            }
         }
+        
+        # SLN: Create the network share (will report an error if exist)
+        # default to primitives 
+        $PathToShare = """" + $svcConfig.ShareName + "=" + $svcConfig.IndexLocation + """"
+        # The path to be shared should exist if the Enterprise Search App creation succeeded earlier
+        EnsureFolder $svcConfig.IndexLocation
+        Write-Host -ForegroundColor White " - Creating network share $PathToShare"
+        Start-Process -FilePath net.exe -ArgumentList "share $PathToShare `"/GRANT:WSS_WPG,CHANGE`"" -NoNewWindow -Wait -ErrorAction SilentlyContinue
 
-        $proxy = Get-SPEnterpriseSearchServiceApplicationProxy -Identity $appConfig.Proxy.Name -ErrorAction SilentlyContinue
-        If ($proxy -eq $null) {
-            Write-Host -ForegroundColor White " - Creating enterprise search service application proxy..."
-            $proxy = New-SPEnterpriseSearchServiceApplicationProxy -Name $appConfig.Proxy.Name -SearchApplication $searchApp -Partitioned:([bool]::Parse($appConfig.Proxy.Partitioned))
-        } Else {
-            Write-Host -ForegroundColor White " - Enterprise search service application proxy already exists, skipping creation."
+        # Set the crawl start addresses (including the elusive sps3:// URL required for People Search, if My Sites are provisioned)
+        $CrawlStartAddresses = $PortalURL+":"+$PortalPort
+        If ($MySiteURL -and $MySitePort -and $MySiteHostHeader)
+        {   
+        	# Need to set the correct sps (People Search) URL protocol in case My Sites are SSL-bound
+        	If ($MySiteURL -like "https*") {$PeopleSearchProtocol = "sps3s://"}
+        	Else {$PeopleSearchProtocol = "sps3://"}
+        	$CrawlStartAddresses += ","+$MySiteURL+":"+$MySitePort+","+$PeopleSearchProtocol+$MySiteHostHeader+":"+$MySitePort
         }
-
-        If ($proxy.Status -ne "Online") {
-            $proxy.Status = "Online"
-            $proxy.Update()
-        }
-
-        $proxy | Set-ProxyGroupsMembership $appConfig.Proxy.ProxyGroup
+        Write-Host -ForegroundColor White " - Setting up crawl addresses for default content source..." -NoNewline
+        Get-SPEnterpriseSearchServiceApplication | Get-SPEnterpriseSearchCrawlContentSource | Set-SPEnterpriseSearchCrawlContentSource -StartAddresses $CrawlStartAddresses
+        If ($?) {Write-Host -ForegroundColor White "Done."}
     }
-
-    # SLN: Create the network share (will report an error if exist)
-    # default to primitives 
-    $PathToShare = """" + $svcConfig.ShareName + "=" + $svcConfig.IndexLocation + """"
-    # The path to be shared should exist if the Enterprise Search App creation succeeded earlier
-    EnsureFolder $svcConfig.IndexLocation
-    Write-Host -ForegroundColor White " - Creating network share $PathToShare"
-    Start-Process -FilePath net.exe -ArgumentList "share $PathToShare `"/GRANT:WSS_WPG,CHANGE`"" -NoNewWindow -Wait -ErrorAction SilentlyContinue
-
-    # Set the crawl start addresses (including the elusive sps3:// URL required for People Search, if My Sites are provisioned)
-    $CrawlStartAddresses = $PortalURL+":"+$PortalPort
-    If ($MySiteURL -and $MySitePort -and $MySiteHostHeader)
-    {   
-        # Need to set the correct sps (People Search) URL protocol in case My Sites are SSL-bound
-        If ($MySiteURL -like "https*") {$PeopleSearchProtocol = "sps3s://"}
-        Else {$PeopleSearchProtocol = "sps3://"}
-        $CrawlStartAddresses += ","+$MySiteURL+":"+$MySitePort+","+$PeopleSearchProtocol+$MySiteHostHeader+":"+$MySitePort
-    }
-    Get-SPEnterpriseSearchServiceApplication | Get-SPEnterpriseSearchCrawlContentSource | Set-SPEnterpriseSearchCrawlContentSource -StartAddresses $CrawlStartAddresses
     
-    WriteLine
-    }
     Else
     {
         WriteLine
@@ -3517,9 +3797,9 @@ Function CreateExcelServiceApp ([xml]$xmlinput)
                 $ExcelServiceApp = New-SPExcelServiceApplication -name $ExcelAppName -ApplicationPool $($ApplicationPool.Name) -Default
                 If (-not $?) { Throw " - Failed to create $ExcelAppName" }
                 Write-Host -ForegroundColor White " - Configuring service app settings..."
-                Set-SPExcelFileLocation -Identity "http://" -LocationType SharePoint -IncludeChildren -Address $PortalURL`:$PortalPort -ExcelServiceApplication $ExcelAppName -ExternalDataAllowed 2 -WorkbookSizeMax 10
+                Set-SPExcelFileLocation -Identity "http://" -LocationType SharePoint -IncludeChildren -Address $PortalURL`:$PortalPort -ExcelServiceApplication $ExcelAppName -ExternalDataAllowed 2 -WorkbookSizeMax 10 | Out-Null
                 $caUrl = (Get-Item -Path "HKLM:\SOFTWARE\Microsoft\Shared Tools\Web Server Extensions\$env:spVer.0\WSS").GetValue("CentralAdministrationURL")
-                New-SPExcelFileLocation -LocationType SharePoint -IncludeChildren -Address $caUrl -ExcelServiceApplication $ExcelAppName -ExternalDataAllowed 2 -WorkbookSizeMax 10
+                New-SPExcelFileLocation -LocationType SharePoint -IncludeChildren -Address $caUrl -ExcelServiceApplication $ExcelAppName -ExternalDataAllowed 2 -WorkbookSizeMax 10 | Out-Null
 
                 # Configure unattended accounts, based on:
                 # http://blog.falchionconsulting.com/index.php/2010/10/service-accounts-and-managed-service-accounts-in-sharepoint-2010/
@@ -3941,7 +4221,8 @@ Function Configure-PDFSearchAndIcon
     Write-Host -ForegroundColor White " - Configuring PDF file search, display and handling..."
     $SharePointRoot = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$env:spVer"
     $SourceFileLocations = @("$bits\PDF\","$bits\AdobePDF\","$env:TEMP\")
-    If (ShouldIProvision($xmlinput.Configuration.AdobePDF.iFilter) -eq $true)
+    # Only install/configure iFilter if specified, and we are running SP2010 (as SP2013 includes one)
+    If ((ShouldIProvision($xmlinput.Configuration.AdobePDF.iFilter) -eq $true) -and ($env:spVer -eq "14"))
     {
         $PDFiFilterUrl = "http://download.adobe.com/pub/adobe/acrobat/win/9.x/PDFiFilter64installer.zip"
         Write-Host -ForegroundColor White " - Configuring PDF file iFilter and indexing..."
@@ -4032,7 +4313,7 @@ Function Configure-PDFSearchAndIcon
         }
         ##Write-Host -ForegroundColor White " - Restarting SharePoint Foundation Search Service..."
         ##Restart-Service SPSearch4
-        $spSearchService = "OSearch"+$env:spVer #Substitute the correct SharePoint version into the service name so we can handle SP2013 as well as SP2010
+        $spSearchService = "OSearch"+$env:spVer # Substitute the correct SharePoint version into the service name so we can handle SP2013 as well as SP2010
         If ((Get-Service $spSearchService).Status -eq "Running")
         {
             Write-Host -ForegroundColor White " - Restarting SharePoint Search Service..."
@@ -4040,7 +4321,8 @@ Function Configure-PDFSearchAndIcon
         }
         Write-Host -ForegroundColor White " - Done configuring PDF iFilter and indexing."
     }
-    If ($xmlinput.Configuration.AdobePDF.Icon.Configure -eq $true)
+    # Only configure PDF icon if we are running SP2010 (as SP2013 includes one)
+    If (($xmlinput.Configuration.AdobePDF.Icon.Configure -eq $true) -and ($env:spVer -eq "14"))
     {
         $PDFIconUrl = "http://helpx.adobe.com/content/dam/kb/en/837/cpsid_83709/attachments/AdobePDF.png"
         $DocIconFolderPath = "$SharePointRoot\TEMPLATE\XML"
@@ -4469,8 +4751,10 @@ Function Add-SQLAlias()
     {
          $serverAliasConnection += ",$Port"
     }
-    $NotExist=$true
-    $Client=Get-Item 'HKLM:\SOFTWARE\Microsoft\MSSQLServer\Client'
+    $NotExist = $true
+    $Client = Get-Item 'HKLM:\SOFTWARE\Microsoft\MSSQLServer\Client' -ErrorAction SilentlyContinue
+    # Create the key in case it doesn't yet exist
+    If (!$Client) {$Client = New-Item 'HKLM:\SOFTWARE\Microsoft\MSSQLServer\Client' -Force}
     $Client.GetSubKeyNames() | ForEach-Object -Process { If ( $_ -eq 'ConnectTo') { $NotExist=$false }}
     If ($NotExist)
     {
@@ -5031,7 +5315,7 @@ Function Confirm-LocalSession
 }
 Function Get-SharePointInstall
 {
-    #Crude way of checking if SharePoint is already installed
+    # Crude way of checking if SharePoint is already installed
     If (Test-Path "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$env:spVer\BIN\stsadm.exe")
     {
         return $true

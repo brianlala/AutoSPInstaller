@@ -172,9 +172,9 @@ Function Setup-Services
     CreateSecureStoreServiceApp $xmlinput
     ConfigureFoundationSearch $xmlinput
     ConfigureTracing $xmlinput
+    CreateEnterpriseSearchServiceApp $xmlinput
     # This is still buggy
     ConfigureDistributedCacheService $xmlinput
-    CreateEnterpriseSearchServiceApp $xmlinput
     CreateBusinessDataConnectivityServiceApp $xmlinput
     CreateExcelServiceApp $xmlinput
     CreateAccessServiceApp $xmlinput
@@ -315,7 +315,7 @@ If ($FarmServers -like "$env:COMPUTERNAME*")
     Catch 
     {
         WriteLine
-        Write-Host -ForegroundColor Yellow " - Script aborted!" 
+        Write-Host -ForegroundColor Yellow " - Script halted!" 
         If ($_.FullyQualifiedErrorId -ne $null -and $_.FullyQualifiedErrorId.StartsWith(" - ")) 
         {
             # Error messages starting with " - " are thrown directly from this script
