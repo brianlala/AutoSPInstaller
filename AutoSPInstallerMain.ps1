@@ -1,12 +1,12 @@
 ﻿param 
 (
-    [string]$InputFile = $(throw '- Need parameter input file (e.g. "c:\SP2010\AutoSPInstaller\AutoSPInstallerInput.xml")'),
+    [string]$inputFile = $(throw '- Need parameter input file (e.g. "c:\SP2010\AutoSPInstaller\AutoSPInstallerInput.xml")'),
     [string]$targetServer = "",
-    [string]$RemoteAuthPassword = ""
+    [string]$remoteAuthPassword = ""
 )
 
 # Globally update all instances of "localhost" in the input file to actual local server name
-[xml]$xmlinput = (Get-Content $InputFile) -replace ("localhost", $env:COMPUTERNAME)
+[xml]$xmlinput = (Get-Content $inputFile) -replace ("localhost", $env:COMPUTERNAME)
 
 # ===================================================================================
 #
@@ -41,8 +41,8 @@ $PSConfig = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$env
 $PSConfigUI = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$env:spVer\BIN\psconfigui.exe"
 
 $script:DBPrefix = $xmlinput.Configuration.Farm.Database.DBPrefix
-If (($DBPrefix -ne "") -and ($DBPrefix -ne $null)) {$script:DBPrefix += "_"}
-If ($DBPrefix -like "*localhost*") {$script:DBPrefix = $DBPrefix -replace "localhost","$env:COMPUTERNAME"}
+If (($dbPrefix -ne "") -and ($dbPrefix -ne $null)) {$script:DBPrefix += "_"}
+If ($dbPrefix -like "*localhost*") {$script:DBPrefix = $dbPrefix -replace "localhost","$env:COMPUTERNAME"}
 
 #EndRegion
 
@@ -62,26 +62,26 @@ Function Install-Remote
         Write-Host -ForegroundColor Green "| Automated SP($spYear.$env:spVer) Remote Installs |"
         Write-Host -ForegroundColor Green "| Started on: $env:RemoteStartDate |"
         Write-Host -ForegroundColor Green "-----------------------------------"
-        Enable-CredSSP $RemoteFarmServers
-        ForEach ($server in $RemoteFarmServers)
+        Enable-CredSSP $remoteFarmServers
+        ForEach ($server in $remoteFarmServers)
         {
             If ($xmlinput.Configuration.Install.ParallelInstall -eq $true) # Launch each farm server install simultaneously
             {
                 ##$serverJob = 
-                ##Start-Job -Name "$server" -Credential $Credential -FilePath $MyInvocation.ScriptName -ArgumentList "$InputFile -targetServer $server"
-                ##$Credential = New-Object System.Management.Automation.PsCredential $Credential.UserName,$Credential.Password
+                ##Start-Job -Name "$server" -Credential $credential -FilePath $MyInvocation.ScriptName -ArgumentList "$inputFile -targetServer $server"
+                ##$credential = New-Object System.Management.Automation.PsCredential $credential.UserName,$credential.Password
                 Start-Process -FilePath "$PSHOME\powershell.exe" -ArgumentList "Invoke-Command -ScriptBlock {
                                                                                 . `"$env:dp0\AutoSPInstallerFunctions.ps1`"; `
                                                                                 StartTracing -Server $server; `
                                                                                 Test-ServerConnection -Server $server; `
-                                                                                Enable-RemoteSession -Server $server -Password $(ConvertFrom-SecureString $($Credential.Password)); `
-                                                                                Install-NetFramework -Server $server -Password $(ConvertFrom-SecureString $($Credential.Password)); `
-                                                                                Install-WindowsIdentityFoundation -Server $server -Password $(ConvertFrom-SecureString $($Credential.Password)); `
-                                                                                Start-RemoteInstaller -Server $server -Password $(ConvertFrom-SecureString $($Credential.Password)) -InputFile $InputFile; `
+                                                                                Enable-RemoteSession -Server $server -Password $(ConvertFrom-SecureString $($credential.Password)); `
+                                                                                Install-NetFramework -Server $server -Password $(ConvertFrom-SecureString $($credential.Password)); `
+                                                                                Install-WindowsIdentityFoundation -Server $server -Password $(ConvertFrom-SecureString $($credential.Password)); `
+                                                                                Start-RemoteInstaller -Server $server -Password $(ConvertFrom-SecureString $($credential.Password)) -InputFile $inputFile; `
                                                                                 Pause `"exit`"; `
                                                                                 Stop-Transcript}" -Verb Runas
                 Start-Sleep 10
-                #Start-Process -FilePath "$PSHOME\powershell.exe" -ArgumentList "$($MyInvocation.ScriptName) $InputFile -targetServer $server" -Verb Runas
+                #Start-Process -FilePath "$PSHOME\powershell.exe" -ArgumentList "$($MyInvocation.ScriptName) $inputFile -targetServer $server" -Verb Runas
                 ##[array]$serverJobs += $serverJob 
             }
             Else # Launch each farm server install in sequence, one-at-a-time, or run these steps on the current $targetServer
@@ -92,7 +92,7 @@ Function Install-Remote
                 Enable-RemoteSession -Server $server
                 Install-NetFramework -Server $server         
                 Install-WindowsIdentityFoundation -Server $server
-                Start-RemoteInstaller -Server $server -InputFile $InputFile
+                Start-RemoteInstaller -Server $server -InputFile $inputFile
             }
         }
         $env:EndDate = Get-Date
@@ -106,7 +106,7 @@ Function Install-Remote
     Else
     {
         Write-Host -ForegroundColor Yellow " - There are other servers specified as farm members in:"
-        Write-Host -ForegroundColor Yellow " - $InputFile"
+        Write-Host -ForegroundColor Yellow " - $inputFile"
         Write-Host -ForegroundColor Yellow " - but <RemoteInstall> is not set to `"true`" - nothing else to do."
     }
 }
@@ -115,7 +115,7 @@ Function Install-Remote
 #Region Prepare For Install
 Function PrepForInstall
 {
-    $SPInstalled = (Get-SharePointInstall)
+    $spInstalled = (Get-SharePointInstall)
     ValidateCredentials $xmlinput
     ValidatePassphrase $xmlinput
     CheckConfig
@@ -126,7 +126,7 @@ Function PrepForInstall
 #Region Install SharePoint binaries
 Function Run-Install
 {
-    Write-Host -ForegroundColor White " - Install based on:" `n" - "$InputFile `n" - Environment: "$($xmlinput.Configuration.getAttribute("Environment")) `n" - Version: "$($xmlinput.Configuration.getAttribute("Version"))
+    Write-Host -ForegroundColor White " - Install based on:" `n" - "$inputFile `n" - Environment: "$($xmlinput.Configuration.getAttribute("Environment")) `n" - Version: "$($xmlinput.Configuration.getAttribute("Version"))
     DisableLoopbackCheck $xmlinput
     RemoveIEEnhancedSecurity $xmlinput
     DisableServices $xmlinput
@@ -144,10 +144,10 @@ Function Run-Install
 Function Setup-Farm
 {
     [System.Management.Automation.PsCredential]$farmCredential = GetFarmCredentials $xmlinput
-    [security.securestring]$SecPhrase = GetSecureFarmPassphrase $xmlinput
+    [security.securestring]$secPhrase = GetSecureFarmPassphrase $xmlinput
     ConfigureFarmAdmin $xmlinput
     Load-SharePoint-Powershell
-    CreateOrJoinFarm $xmlinput ([security.securestring]$SecPhrase) ([System.Management.Automation.PsCredential]$farmCredential)
+    CreateOrJoinFarm $xmlinput ([security.securestring]$secPhrase) ([System.Management.Automation.PsCredential]$farmCredential)
     CheckFarmTopology $xmlinput
     ConfigureFarm $xmlinput
     ConfigureDiagnosticLogging $xmlinput
@@ -173,8 +173,6 @@ Function Setup-Services
     ConfigureFoundationSearch $xmlinput
     ConfigureTracing $xmlinput
     CreateEnterpriseSearchServiceApp $xmlinput
-    # This is still buggy
-    ConfigureDistributedCacheService $xmlinput
     CreateBusinessDataConnectivityServiceApp $xmlinput
     CreateExcelServiceApp $xmlinput
     CreateAccessServiceApp $xmlinput
@@ -184,7 +182,14 @@ Function Setup-Services
     CreateExcelOWAServiceApp $xmlinput
     CreatePowerPointServiceApp $xmlinput
     CreateWordViewingServiceApp $xmlinput
-    InstallSMTP $xmlinput
+	If ($env:spVer -eq "15") # These are for SP2013 only
+	{
+		CreateAppManagementServiceApp $xmlinput
+		CreateSubscriptionSettingsServiceApp $xmlinput
+	    # This is still buggy
+	    ConfigureDistributedCacheService $xmlinput
+    }
+	InstallSMTP $xmlinput
     ConfigureOutgoingEmail $xmlinput
     Configure-PDFSearchAndIcon $xmlinput
     InstallForeFront $xmlinput
@@ -196,30 +201,30 @@ Function Setup-Services
 Function Finalize-Install 
 {
     # Perform these steps only if the local server is a SharePoint farm server
-    If ($FarmServers -like "$env:COMPUTERNAME*")
+    If ($farmServers -like "$env:COMPUTERNAME*")
     {
         # Remove Farm Account from local Administrators group to avoid big scary warnings in Central Admin
         # But only if the script actually put it there, and we want to leave it there 
         # (e.g. to work around the issue with native SharePoint backups deprovisioning UPS per http://www.toddklindt.com/blog/Lists/Posts/Post.aspx?ID=275)
-        $FarmAcct = $xmlinput.Configuration.Farm.Account.Username
-        If (!($RunningAsFarmAcct) -and ($xmlinput.Configuration.Farm.Account.getAttribute("AddToLocalAdminsDuringSetup") -eq $true) -and ($xmlinput.Configuration.Farm.Account.LeaveInLocalAdmins -eq $false))
+        $farmAcct = $xmlinput.Configuration.Farm.Account.Username
+        If (!($runningAsFarmAcct) -and ($xmlinput.Configuration.Farm.Account.getAttribute("AddToLocalAdminsDuringSetup") -eq $true) -and ($xmlinput.Configuration.Farm.Account.LeaveInLocalAdmins -eq $false))
         {
             $builtinAdminGroup = Get-AdministratorsGroup
-            Write-Host -ForegroundColor White " - Removing $FarmAcct from local group `"$builtinAdminGroup`"..."
-            $FarmAcctDomain,$FarmAcctUser = $FarmAcct -Split "\\"
+            Write-Host -ForegroundColor White " - Removing $farmAcct from local group `"$builtinAdminGroup`"..."
+            $farmAcctDomain,$farmAcctUser = $farmAcct -Split "\\"
             try
             {
-                ([ADSI]"WinNT://$env:COMPUTERNAME/$builtinAdminGroup,group").Remove("WinNT://$FarmAcctDomain/$FarmAcctUser")
+                ([ADSI]"WinNT://$env:COMPUTERNAME/$builtinAdminGroup,group").Remove("WinNT://$farmAcctDomain/$farmAcctUser")
                 If (-not $?) {throw}
             }
-            catch {Write-Host -ForegroundColor White " - $FarmAcct already removed from `"$builtinAdminGroup.`""}
+            catch {Write-Host -ForegroundColor White " - $farmAcct already removed from `"$builtinAdminGroup.`""}
             # Restart SPTimerV4 so it can now run under non-local Admin privileges and avoid Health Analyzer warning
             Write-Host -ForegroundColor White " - Restarting SharePoint Timer Service..."
             Restart-Service SPTimerV4
         }
         Else
         {
-            Write-Host -ForegroundColor White " - Not changing local Admin membership of $FarmAcct."    
+            Write-Host -ForegroundColor White " - Not changing local Admin membership of $farmAcct."    
         }
         
         Write-Host -ForegroundColor White " - Adding Network Service to local WSS_WPG group (fixes event log warnings)..."
@@ -240,11 +245,12 @@ Function Finalize-Install
 
 #Region MAIN - Check for input file and start the install
 
-If (!([string]::IsNullOrEmpty($targetServer))) {$FarmServers = $targetServer}
-Else {$FarmServers = Get-FarmServers $xmlinput}
-$RemoteFarmServers = $FarmServers | Where-Object {$_ -notlike "$env:COMPUTERNAME"}
-$password = $RemoteAuthPassword
-If ($xmlinput.Configuration.Install.RemoteInstall -eq $true -and !([string]::IsNullOrEmpty($RemoteFarmServers)))
+If (!([string]::IsNullOrEmpty($targetServer))) {$farmServers = $targetServer}
+Else {$farmServers = Get-FarmServers $xmlinput}
+$remoteFarmServers = $farmServers | Where-Object {$_ -notlike "$env:COMPUTERNAME"}
+$password = $remoteAuthPassword
+If ([string]::IsNullOrEmpty($password)) {$password = $xmlinput.Configuration.Install.AutoAdminLogon.Password}
+If (($xmlinput.Configuration.Install.RemoteInstall -eq $true -and !([string]::IsNullOrEmpty($remoteFarmServers))) -or ($xmlinput.Configuration.Install.AutoAdminLogon.Enable -eq $true))
 {
     If (Confirm-LocalSession)
     {
@@ -252,20 +258,24 @@ If ($xmlinput.Configuration.Install.RemoteInstall -eq $true -and !([string]::IsN
         {
             If ($password) # In case this is an automatic re-launch of the local script, re-use the password from the remote auth credential
             {
-                Write-Host -ForegroundColor White " - Re-using previous credentials..."
-                $Credential = New-Object System.Management.Automation.PsCredential $env:USERDOMAIN\$env:USERNAME,$(ConvertTo-SecureString -String $password -AsPlainText -Force -ErrorAction SilentlyContinue)
+                Write-Host -ForegroundColor White " - Using pre-provided credentials..."
+                $credential = New-Object System.Management.Automation.PsCredential $env:USERDOMAIN\$env:USERNAME,$(ConvertTo-SecureString -String $password -AsPlainText -Force -ErrorAction SilentlyContinue)
             }
-            If (!$Credential) # Otherwise prompt for the remote auth credential
+            If (!$credential) # Otherwise prompt for the remote auth or AutoAdminLogon credential
             {
-                Write-Host -ForegroundColor White " - Prompting for remote credentials..."
-                $Credential = $host.ui.PromptForCredential("AutoSPInstaller - Remote Install", "Enter Credentials for Remote Authentication:", "$env:USERDOMAIN\$env:USERNAME", "NetBiosUserName")
+                Write-Host -ForegroundColor White " - Prompting for remote/autologon credentials..."
+                $credential = $host.ui.PromptForCredential("AutoSPInstaller - Remote/Automatic Install", "Enter Credentials for Remote/Automatic Authentication:", "$env:USERDOMAIN\$env:USERNAME", "NetBiosUserName")
             }
-            $CurrentDomain = "LDAP://" + ([ADSI]"").distinguishedName
-            $null,$user = $Credential.Username -split "\\"
-            If (($user -ne $null) -and ($Credential.Password -ne $null)) {$password = ConvertTo-PlainText $Credential.Password}
-            Else {Write-Error " - Credentials are required for remote authentication."; Pause "exit"; Throw}
-            Write-Host -ForegroundColor White " - Checking credentials: `"$($Credential.Username)`"..." -NoNewline
-            $dom = New-Object System.DirectoryServices.DirectoryEntry($CurrentDomain,$user,$password)
+            $currentDomain = "LDAP://" + ([ADSI]"").distinguishedName
+            $null,$user = $credential.Username -split "\\"
+            If (($user -ne $null) -and ($credential.Password -ne $null)) {$password = ConvertTo-PlainText $credential.Password}
+            Else 
+            {
+                If ($xmlinput.Configuration.Install.RemoteInstall -eq $true -and !([string]::IsNullOrEmpty($remoteFarmServers))) {Write-Error " - Credentials are required for remote authentication."; Pause "exit"; Throw}
+                Else {Write-Host -ForegroundColor Yellow " - No password supplied; skipping AutoAdminLogon."; break}
+            }
+            Write-Host -ForegroundColor White " - Checking credentials: `"$($credential.Username)`"..." -NoNewline
+            $dom = New-Object System.DirectoryServices.DirectoryEntry($currentDomain,$user,$password)
             If ($dom.Path -ne $null)
             {
                 Write-Host -BackgroundColor Blue -ForegroundColor Black "Verified."
@@ -275,7 +285,7 @@ If ($xmlinput.Configuration.Install.RemoteInstall -eq $true -and !([string]::IsN
             {
                 Write-Host -BackgroundColor Red -ForegroundColor Black "Invalid - please try again."
                 $password = $null
-                $Credential = $null
+                $credential = $null
             }
         }
     }
@@ -289,14 +299,14 @@ Write-Host -ForegroundColor White "| Started on: $env:StartDate |"
 Write-Host -ForegroundColor White "-----------------------------------"
 
 # In case we are running this installer from a non-SharePoint farm server, only do these steps for farm member servers
-If ($FarmServers -like "$env:COMPUTERNAME*")
+If ($farmServers -like "$env:COMPUTERNAME*")
 {
     Try
     {
         If (Confirm-LocalSession) 
         {
-            $SPInstalled = Get-SharePointInstall
-            Write-Host -ForegroundColor White " - SharePoint $($spYear.$env:spVer) binaries are"($SPInstalled -replace "True","already" -replace "False","not yet") "installed."
+            $spInstalled = Get-SharePointInstall
+            Write-Host -ForegroundColor White " - SharePoint $($spYear.$env:spVer) binaries are"($spInstalled -replace "True","already" -replace "False","not yet") "installed."
         }
         PrepForInstall
         Run-Install
@@ -310,7 +320,7 @@ If ($FarmServers -like "$env:COMPUTERNAME*")
         Setup-Services
         Finalize-Install
         # We only want to Install-Remote if we aren't already *in* a remote session, and if there are actually remote servers to install!
-        If ((Confirm-LocalSession) -and !([string]::IsNullOrEmpty($RemoteFarmServers))) {Install-Remote}
+        If ((Confirm-LocalSession) -and !([string]::IsNullOrEmpty($remoteFarmServers))) {Install-Remote}
     }
     Catch 
     {
@@ -323,12 +333,35 @@ If ($FarmServers -like "$env:COMPUTERNAME*")
             If ((Get-ItemProperty -Path "HKLM:\SOFTWARE\AutoSPInstaller\" -ErrorAction SilentlyContinue).RestartRequired -eq "1")
             {
                 Write-Host -ForegroundColor White " - Setting RunOnce registry entry for AutoSPInstaller..."
-                ##$RunOnceCommandLine,$null = $($MyInvocation.Line) -split " "
                 # Create the RunOnce key in case it doesn't yet exist (as I discovered on on Win2012)
                 New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\" -Name RunOnce -ErrorAction SilentlyContinue | Out-Null
-                New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name AutoSPInstaller -Value "`"$env:dp0\AutoSPInstallerLaunch.bat`" `"$InputFile`"" -Force | Out-Null
-                Write-Host -ForegroundColor White " - The AutoSPInstaller script will resume after the server is restarted."
-                $restartPrompt = Read-Host -Prompt " - Do you want to restart immediately? (y/n)"
+                New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name AutoSPInstaller -Value "`"$env:dp0\AutoSPInstallerLaunch.bat`" `"$inputFile`"" -Force | Out-Null
+                If ($xmlinput.Configuration.Install.AutoAdminLogon.Enable -eq $true)
+                {
+                    If ([string]::IsNullOrEmpty($password)) 
+                    {
+                        $password = $xmlinput.Configuration.Install.AutoAdminLogon.Password
+                        If ([string]::IsNullOrEmpty($password))
+                        {
+                            $password = Read-Host -Prompt " - Please enter the password for $env:USERDOMAIN\$env:USERNAME to enable auto-login"
+                        }
+                    }
+                    If (!([string]::IsNullOrEmpty($password)))
+                    {
+                        Write-Host -ForegroundColor White " - Setting AutoAdminLogon in the registry for $env:USERDOMAIN\$env:USERNAME..."
+                        # Set the AutoAdminLogon values. Adapted from a patch uploaded by Codeplex user Sheppounet (http://www.codeplex.com/site/users/view/Sheppounet)
+                        New-ItemProperty -Path "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\WinLogon" -Name "AutoAdminLogon" -Value 1 -PropertyType "String" -Force | Out-Null
+                        New-ItemProperty -Path "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\WinLogon" -Name "DefaultDomainName" -Value $env:USERDOMAIN -PropertyType "String" -Force | Out-Null
+                        New-ItemProperty -Path "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\WinLogon" -Name "DefaultUserName" -Value $env:USERNAME -PropertyType "String" -Force | Out-Null
+                        New-ItemProperty -Path "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\WinLogon" -Name "DefaultPassword" -Value $password -PropertyType "String" -Force | Out-Null
+                        New-ItemProperty -Path "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\WinLogon" -Name "AutoLogonCount" -Value 1 -PropertyType "Dword" -Force | Out-Null
+                        $restartPrompt = "y"
+                    }
+                    Else {Write-Host -ForegroundColor Yellow " - No password supplied; skipping AutoAdminLogon."}
+                }
+                Else {Write-Host -ForegroundColor White " - AutoAdminLogon is not enabled in $inputFile; set it to `"true`" to enable it."}
+                Write-Host -ForegroundColor White " - The AutoSPInstaller script will resume after the server reboots and $env:USERDOMAIN\$env:USERNAME logs in."
+                If ([string]::IsNullOrEmpty($restartPrompt)) {$restartPrompt = Read-Host -Prompt " - Do you want to restart immediately? (y/n)"}
                 If ($restartPrompt -eq "y")
                 {
                     Start-Process -FilePath "$PSHOME\powershell.exe" -ArgumentList "Write-Host `" - Restarting - `"; Start-Sleep 5; Restart-Computer"
@@ -343,12 +376,12 @@ If ($FarmServers -like "$env:COMPUTERNAME*")
         {
             Write-Host -ForegroundColor Yellow " - A known (annoying) issue occurred loading the SharePoint Powershell snapin."
             Write-Host -ForegroundColor Yellow " - We need to re-launch the script to clear this condition."
-            $ScriptCommandLine = $($MyInvocation.Line)
+            $scriptCommandLine = $($MyInvocation.Line)
             If (Confirm-LocalSession) 
             {
                 Write-Host -ForegroundColor White " - Re-Launching:"
-                Write-Host -ForegroundColor White " - $ScriptCommandLine"
-                Start-Process -WorkingDirectory $PSHOME -FilePath "powershell.exe" -ArgumentList "$ScriptCommandLine -RemoteAuthPassword $password" -Verb RunAs
+                Write-Host -ForegroundColor White " - $scriptCommandLine"
+                Start-Process -WorkingDirectory $PSHOME -FilePath "powershell.exe" -ArgumentList "$scriptCommandLine -RemoteAuthPassword $password" -Verb RunAs
                 Start-Sleep 10
             }
         }
@@ -363,35 +396,35 @@ If ($FarmServers -like "$env:COMPUTERNAME*")
         Write-Host -ForegroundColor White "| Started on: $env:StartDate |"
         Write-Host -ForegroundColor White "| Aborted:    $env:EndDate |"
         Write-Host -ForegroundColor White "-----------------------------------"
-        $Aborted = $true
-        If (!$ScriptCommandLine) {Pause "exit"}
+        $aborted = $true
+        If (!$scriptCommandLine) {Pause "exit"}
     }
     Finally 
     {
         # Only do this stuff if this was a local session and it succeeded, and if there are no remote servers to install;
         # Otherwise these sites may not be available or 'complete' yet
-        If ((Confirm-LocalSession) -and !$Aborted -and [string]::IsNullOrEmpty($RemoteFarmServers))
+        If ((Confirm-LocalSession) -and !$aborted -and [string]::IsNullOrEmpty($remoteFarmServers))
         {
             # Launch Central Admin
             If (ShouldIProvision($xmlinput.Configuration.Farm.CentralAdmin) -eq $true)
             {
-                $CentralAdminPort = $xmlinput.Configuration.Farm.CentralAdmin.CentralAdminPort
+                $centralAdminPort = $xmlinput.Configuration.Farm.CentralAdmin.CentralAdminPort
                 Write-Host -ForegroundColor White " - Launching Central Admin..."
                 Start-Process $PSConfigUI -ArgumentList "-cmd showcentraladmin"
             }
             # Launch any site collections we created, but only if this is a local (non-remote) session and this is a farm server
-            If ($FarmServers -like "$env:COMPUTERNAME*")
+            If ($farmServers -like "$env:COMPUTERNAME*")
             {
                 ForEach ($webApp in $xmlinput.Configuration.WebApplications.WebApplication)
                 {
-                    ForEach ($SiteCollection in $webApp.SiteCollections.SiteCollection)
+                    ForEach ($siteCollection in $webApp.SiteCollections.SiteCollection)
                     {
-                        $SiteURL = $SiteCollection.siteURL
-                        If ($SiteURL -ne $null)
+                        $siteURL = $siteCollection.siteURL
+                        If ($siteURL -ne $null)
                         {
                             Start-Sleep 30 # Wait for the previous site to load before trying to load this site
-                            Write-Host -ForegroundColor White " - Launching $SiteURL..."
-                            Start-Process "$SiteURL" -WindowStyle Minimized
+                            Write-Host -ForegroundColor White " - Launching $siteURL..."
+                            Start-Process "$siteURL" -WindowStyle Minimized
                         }
                     }
                 }
@@ -400,23 +433,29 @@ If ($FarmServers -like "$env:COMPUTERNAME*")
     }
 }
 # If the local server isn't a SharePoint farm server, just attempt remote installs
-Else ##If (!($FarmServers -like "$env:COMPUTERNAME*"))
+Else ##If (!($farmServers -like "$env:COMPUTERNAME*"))
 {
     Install-Remote
     Finalize-Install
 }
-If ((Confirm-LocalSession) -and !$Aborted) # Only do this stuff if this was a local session and it succeeded
+If (!$aborted)
 {
-    $StartDate = $env:StartDate
-    Write-Host -ForegroundColor White "-----------------------------------"
-    Write-Host -ForegroundColor White "| Automated SP$($spYear.$env:spVer) install script |"
-    Write-Host -ForegroundColor White "| Started on: $StartDate |"
-    Write-Host -ForegroundColor White "| Completed:  $env:EndDate |"
-    Write-Host -ForegroundColor White "-----------------------------------"
-    If ($isTracing) {Stop-Transcript; $script:isTracing = $false}
-    Pause "exit"
-    Invoke-Item $LogFile
+	If (Confirm-LocalSession) # Only do this stuff if this was a local session and it succeeded
+	{
+		$startDate = $env:StartDate
+	    Write-Host -ForegroundColor White "-----------------------------------"
+	    Write-Host -ForegroundColor White "| Automated SP$($spYear.$env:spVer) install script |"
+	    Write-Host -ForegroundColor White "| Started on: $startDate |"
+	    Write-Host -ForegroundColor White "| Completed:  $env:EndDate |"
+	    Write-Host -ForegroundColor White "-----------------------------------"
+	    If ($isTracing) {Stop-Transcript; $script:isTracing = $false}
+	    Pause "exit"
+	    Invoke-Item $logFile
+	}
+	# Remove any lingering LogTime values in the registry
+	Remove-ItemProperty -Path "HKLM:\SOFTWARE\AutoSPInstaller\" -Name "LogTime" -ErrorAction SilentlyContinue
 }
+
 #EndRegion
 
 # ===================================================================================

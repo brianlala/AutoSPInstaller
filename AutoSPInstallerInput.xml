@@ -18,7 +18,7 @@
        This allows you to configure an entire multi-server farm with different servers fulfilling different roles
        using a single configuration file.
        e.g. <ExcelServices Provision="Server1 Server2"> would provision excel services only on Server1 and Server2. -->
-<Configuration Environment="Dev" Version="3.0.3">
+<Configuration Environment="Dev" Version="3.1">
     <!-- The Environment attribute above appears at the top of the installation transcript. It does not affect the installation -->
     <!-- The Install section controls what modifications are made to the Windows OS prior to installation and how the SharePoint installation is run -->
     <Install>
@@ -36,6 +36,11 @@
         <RemoteInstall>false</RemoteInstall>
         <!-- ParallelInstall controls whether SharePoint binary file installs are triggered simultaneously on all servers in the farm. Can speed things up considerably (unless of course all your VMs are running on the same host, sharing I/O resources etc.!) -->
         <ParallelInstall>false</ParallelInstall>
+        <!-- AutoAdminLogon tells the script to place values in the registry that allow automatic logon with the install account credentials (only), should the installation proces require reboot(s).
+             In combination with the RunOnce entry, it gives a better unattended experience (as there can be several reboots now with SharePoint 2013).
+             Only the dedicated install account is supported; you can enter its password below. Note that it will be stored in PLAIN TEXT, both here and in the registry so be sure to change it afterwards (or disable the account).
+             Otherwise, you can leave the password blank in order to be prompted at run-time (though it will still be stored in plain text in the registry, at least until the server is rebooted once more after the install. -->
+        <AutoAdminLogon Enable="false" Password="" />
         <Disable>
             <!-- Disables network loopback checks. This prevents the OS blocking access to your server under names other than its actual host name,
                  which SharePoint needs to do for WebDAV requests. -->
@@ -174,13 +179,13 @@
         useBasicAuthentication: false = only accept Kerberos/NTLM claims. true = also accept Basic authentication claims. Has no effect if useClaims is false.
         useOnlineWebPartCatalog: false = disable use of the online webpart gallery on the web application. true (default) enable it. -->
         <WebApplication type="Portal"
-                        name="Portal Home"
-                        applicationPool="PortalHome"
+                        name="Portal"
+                        applicationPool="Portal"
                         applicationPoolAccount="DOMAIN\SP_PortalAppPool"
                         url="http://localhost"
                         port="80"
                         AddURLToLocalIntranetZone="true"
-                        databaseName="PortalHome_Content"
+                        databaseName="PortalContent"
                         useClaims="false"
                         useBasicAuthentication="false"
                         useOnlineWebPartCatalog="false">
@@ -453,6 +458,41 @@
                          DBPort="" />
             </Database>
         </WordAutomationService>
+        <!-- AppManagementService is only for SharePoint 2013. Ensure your DNS is pre-configured to match the AppDomain value, per http://sharepointchick.com/archive/2012/07/29/setting-up-your-app-domain-for-sharepoint-2013.aspx -->
+        <AppManagementService Provision="true"
+                              Name="App Management Service"
+                              ProxyName="App Management Service"
+                              AppDomain="apps.domain.com"
+                              AppSiteSubscriptionName="app">
+            <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
+            <Database>
+                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SPFarm", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
+                <Name>AppManagement</Name>
+                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
+                     If you leave <DBServer> blank, the default DBServer value for the farm is used -->
+                <DBServer></DBServer>
+                <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
+                <DBAlias Create="true"
+                         DBInstance="SERVER\INSTANCE"
+                         DBPort="" />
+            </Database>
+        </AppManagementService>
+        <!-- SubscriptionSettingsService is only for SharePoint 2013, and does not support ProxyName -->
+        <SubscriptionSettingsService Provision="true"
+                              Name="Subscription Settings Service">
+            <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
+            <Database>
+                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SPFarm", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
+                <Name>SubscriptionSettings</Name>
+                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
+                     If you leave <DBServer> blank, the default DBServer value for the farm is used -->
+                <DBServer></DBServer>
+                <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
+                <DBAlias Create="true"
+                         DBInstance="SERVER\INSTANCE"
+                         DBPort="" />
+            </Database>
+        </SubscriptionSettingsService>
     </ServiceApps>
     <!-- The EnterpriseSeviceApps section configures services only available with an Enterprise licence.
          Common Attributes:
