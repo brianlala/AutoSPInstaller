@@ -36,7 +36,8 @@ Else
 $env:spVer,$null = (Get-Item -Path "$env:SPbits\setup.exe").VersionInfo.ProductVersion -split "\."
 If (!$env:spVer) {Throw " - Cannot determine version of SharePoint setup binaries."}
 # Create a hash table with major version to product year mappings
-$spYear = @{"14" = "2010"; "15" = "2013"}
+$spYears = @{"14" = "2010"; "15" = "2013"}
+$spYear = $spYears.$env:spVer
 $PSConfig = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$env:spVer\BIN\psconfig.exe"
 $PSConfigUI = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$env:spVer\BIN\psconfigui.exe"
 
@@ -54,18 +55,18 @@ If ($dbPrefix -like "*localhost*") {$script:DBPrefix = $dbPrefix -replace "local
 #Region Remote Install
 Function Install-Remote
 {
-    If ($xmlinput.Configuration.Install.RemoteInstall -eq $true)
+    If ($xmlinput.Configuration.Install.RemoteInstall.Enable -eq $true)
     {
         StartTracing
         If (!$env:RemoteStartDate) {$env:RemoteStartDate = Get-Date}
         Write-Host -ForegroundColor Green "-----------------------------------"
-        Write-Host -ForegroundColor Green "| Automated SP($spYear.$env:spVer) Remote Installs |"
+        Write-Host -ForegroundColor Green "| Automated SP$spYear Remote Installs |"
         Write-Host -ForegroundColor Green "| Started on: $env:RemoteStartDate |"
         Write-Host -ForegroundColor Green "-----------------------------------"
         Enable-CredSSP $remoteFarmServers
         ForEach ($server in $remoteFarmServers)
         {
-            If ($xmlinput.Configuration.Install.ParallelInstall -eq $true) # Launch each farm server install simultaneously
+            If ($xmlinput.Configuration.Install.RemoteInstall.ParallelInstall -eq $true) # Launch each farm server install simultaneously
             {
                 ##$serverJob = 
                 ##Start-Job -Name "$server" -Credential $credential -FilePath $MyInvocation.ScriptName -ArgumentList "$inputFile -targetServer $server"
@@ -97,7 +98,7 @@ Function Install-Remote
         }
         $env:EndDate = Get-Date
         Write-Host -ForegroundColor Green "-----------------------------------"
-        Write-Host -ForegroundColor Green "| Automated SP$($spYear.$env:spVer) remote installs |"
+        Write-Host -ForegroundColor Green "| Automated SP$spYear remote installs |"
         Write-Host -ForegroundColor Green "| Started on: $env:RemoteStartDate |"
         Write-Host -ForegroundColor Green "| Completed:  $env:EndDate |"
         Write-Host -ForegroundColor Green "-----------------------------------"
@@ -126,9 +127,10 @@ Function PrepForInstall
 #Region Install SharePoint binaries
 Function Run-Install
 {
-    Write-Host -ForegroundColor White " - Install based on:" `n" - "$inputFile `n" - Environment: "$($xmlinput.Configuration.getAttribute("Environment")) `n" - Version: "$($xmlinput.Configuration.getAttribute("Version"))
+    Write-Host -ForegroundColor White " - Install based on: `n  - $inputFile `n  - Environment: $($xmlinput.Configuration.getAttribute(`"Environment`")) `n  - Version: $($xmlinput.Configuration.getAttribute(`"Version`"))"
     DisableLoopbackCheck $xmlinput
     RemoveIEEnhancedSecurity $xmlinput
+    AddSourcePathToLocalIntranetZone
     DisableServices $xmlinput
     DisableCRLCheck $xmlinput
     InstallPrerequisites $xmlinput
@@ -250,7 +252,7 @@ Else {$farmServers = Get-FarmServers $xmlinput}
 $remoteFarmServers = $farmServers | Where-Object {$_ -notlike "$env:COMPUTERNAME"}
 $password = $remoteAuthPassword
 If ([string]::IsNullOrEmpty($password)) {$password = $xmlinput.Configuration.Install.AutoAdminLogon.Password}
-If (($xmlinput.Configuration.Install.RemoteInstall -eq $true -and !([string]::IsNullOrEmpty($remoteFarmServers))) -or ($xmlinput.Configuration.Install.AutoAdminLogon.Enable -eq $true))
+If (($xmlinput.Configuration.Install.RemoteInstall.Enable -eq $true -and !([string]::IsNullOrEmpty($remoteFarmServers))) -or ($xmlinput.Configuration.Install.AutoAdminLogon.Enable -eq $true))
 {
     If (Confirm-LocalSession)
     {
@@ -271,14 +273,14 @@ If (($xmlinput.Configuration.Install.RemoteInstall -eq $true -and !([string]::Is
             If (($user -ne $null) -and ($credential.Password -ne $null)) {$password = ConvertTo-PlainText $credential.Password}
             Else 
             {
-                If ($xmlinput.Configuration.Install.RemoteInstall -eq $true -and !([string]::IsNullOrEmpty($remoteFarmServers))) {Write-Error " - Credentials are required for remote authentication."; Pause "exit"; Throw}
+                If ($xmlinput.Configuration.Install.RemoteInstall.Enable -eq $true -and !([string]::IsNullOrEmpty($remoteFarmServers))) {Write-Error " - Credentials are required for remote authentication."; Pause "exit"; Throw}
                 Else {Write-Host -ForegroundColor Yellow " - No password supplied; skipping AutoAdminLogon."; break}
             }
             Write-Host -ForegroundColor White " - Checking credentials: `"$($credential.Username)`"..." -NoNewline
             $dom = New-Object System.DirectoryServices.DirectoryEntry($currentDomain,$user,$password)
             If ($dom.Path -ne $null)
             {
-                Write-Host -BackgroundColor Blue -ForegroundColor Black "Verified."
+                Write-Host -ForegroundColor Black -BackgroundColor Green "Verified."
                 $credentialVerified = $true
             }
             Else
@@ -294,7 +296,7 @@ If (($xmlinput.Configuration.Install.RemoteInstall -eq $true -and !([string]::Is
 If (Confirm-LocalSession) {StartTracing} # Only start tracing if this is a local session
 If (!$env:StartDate) {$env:StartDate = Get-Date}
 Write-Host -ForegroundColor White "-----------------------------------"
-Write-Host -ForegroundColor White "| Automated SP$($spYear.$env:spVer) install script |"
+Write-Host -ForegroundColor White "| Automated SP$spYear install script |"
 Write-Host -ForegroundColor White "| Started on: $env:StartDate |"
 Write-Host -ForegroundColor White "-----------------------------------"
 
@@ -306,13 +308,13 @@ If ($farmServers -like "$env:COMPUTERNAME*")
         If (Confirm-LocalSession) 
         {
             $spInstalled = Get-SharePointInstall
-            Write-Host -ForegroundColor White " - SharePoint $($spYear.$env:spVer) binaries are"($spInstalled -replace "True","already" -replace "False","not yet") "installed."
+            Write-Host -ForegroundColor White " - SharePoint $spYear binaries are"($spInstalled -replace "True","already" -replace "False","not yet") "installed."
         }
         PrepForInstall
         Run-Install
-        Write-Host -ForegroundColor White " - SharePoint $($spYear.$env:spVer) binary file installation done!"
+        Write-Host -ForegroundColor White " - SharePoint $spYear binary file installation done!"
         
-        If (($xmlinput.Configuration.Install.PauseAfterInstall -eq $true) -or ($xmlinput.Configuration.Install.ParallelInstall -eq $true))
+        If (($xmlinput.Configuration.Install.PauseAfterInstall -eq $true) -or ($xmlinput.Configuration.Install.RemoteInstall.ParallelInstall -eq $true))
         {
             Pause "proceed with farm configuration"
         }
@@ -356,6 +358,8 @@ If ($farmServers -like "$env:COMPUTERNAME*")
                         New-ItemProperty -Path "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\WinLogon" -Name "DefaultPassword" -Value $password -PropertyType "String" -Force | Out-Null
                         New-ItemProperty -Path "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\WinLogon" -Name "AutoLogonCount" -Value 1 -PropertyType "Dword" -Force | Out-Null
                         $restartPrompt = "y"
+                        # Disable UAC so the script can run unobstructed. We will re-enable it as a security precaution when the script re-runs and only disable it again if we get to this point
+                        Set-UserAccountControl 0
                     }
                     Else {Write-Host -ForegroundColor Yellow " - No password supplied; skipping AutoAdminLogon."}
                 }
@@ -392,7 +396,7 @@ If ($farmServers -like "$env:COMPUTERNAME*")
         }
         $env:EndDate = Get-Date
         Write-Host -ForegroundColor White "-----------------------------------"
-        Write-Host -ForegroundColor White "| Automated SP$($spYear.$env:spVer) install script |"
+        Write-Host -ForegroundColor White "| Automated SP$spYear install script |"
         Write-Host -ForegroundColor White "| Started on: $env:StartDate |"
         Write-Host -ForegroundColor White "| Aborted:    $env:EndDate |"
         Write-Host -ForegroundColor White "-----------------------------------"
@@ -444,7 +448,7 @@ If (!$aborted)
 	{
 		$startDate = $env:StartDate
 	    Write-Host -ForegroundColor White "-----------------------------------"
-	    Write-Host -ForegroundColor White "| Automated SP$($spYear.$env:spVer) install script |"
+	    Write-Host -ForegroundColor White "| Automated SP$spYear install script |"
 	    Write-Host -ForegroundColor White "| Started on: $startDate |"
 	    Write-Host -ForegroundColor White "| Completed:  $env:EndDate |"
 	    Write-Host -ForegroundColor White "-----------------------------------"

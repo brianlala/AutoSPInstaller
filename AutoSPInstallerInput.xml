@@ -32,10 +32,11 @@
         <!-- Set <PauseAfterInstall> to true in order to pause the script after the SharePoint binaries are installed.
              Useful for running the binary install simultaneously on multiple servers but stopping short of the farm config (which can cause conflicts if running on multiple servers at once) -->
         <PauseAfterInstall>false</PauseAfterInstall>
-        <!-- Set RemoteInstall to true to attempt a centralized, remote install & config of your entire farm -->
-        <RemoteInstall>false</RemoteInstall>
-        <!-- ParallelInstall controls whether SharePoint binary file installs are triggered simultaneously on all servers in the farm. Can speed things up considerably (unless of course all your VMs are running on the same host, sharing I/O resources etc.!) -->
-        <ParallelInstall>false</ParallelInstall>
+        <!-- Set RemoteInstall Enable="true" to attempt a centralized, remote install & config of your entire farm -->
+        <RemoteInstall Enable="false">
+            <!-- ParallelInstall controls whether SharePoint binary file installs are triggered simultaneously on all servers in the farm during a remote install. Can speed things up considerably (unless of course all your VMs are running on the same host, sharing I/O resources etc.!) -->
+            <ParallelInstall>false</ParallelInstall>
+        </RemoteInstall>
         <!-- AutoAdminLogon tells the script to place values in the registry that allow automatic logon with the install account credentials (only), should the installation proces require reboot(s).
              In combination with the RunOnce entry, it gives a better unattended experience (as there can be several reboots now with SharePoint 2013).
              Only the dedicated install account is supported; you can enter its password below. Note that it will be stored in PLAIN TEXT, both here and in the registry so be sure to change it afterwards (or disable the account).
@@ -462,8 +463,7 @@
         <AppManagementService Provision="true"
                               Name="App Management Service"
                               ProxyName="App Management Service"
-                              AppDomain="apps.domain.com"
-                              AppSiteSubscriptionName="app">
+                              AppDomain="apps.domain.com">
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SPFarm", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
@@ -479,7 +479,8 @@
         </AppManagementService>
         <!-- SubscriptionSettingsService is only for SharePoint 2013, and does not support ProxyName -->
         <SubscriptionSettingsService Provision="true"
-                              Name="Subscription Settings Service">
+                                     Name="Subscription Settings Service"
+                                     AppSiteSubscriptionName="app">
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SPFarm", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->

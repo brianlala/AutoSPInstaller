@@ -65,7 +65,7 @@ Function ValidateCredentials([xml]$xmlinput)
             }
             Else 
             {
-                Write-Host -BackgroundColor Blue -ForegroundColor Black "Verified."
+                Write-Host -ForegroundColor Black -BackgroundColor Green "Verified."
             }
         }
     }
@@ -74,7 +74,21 @@ Function ValidateCredentials([xml]$xmlinput)
 }
 #EndRegion
 
-#Region Remove IE Enhanced Security
+#Region Trust Source Path & Remove IE Enhanced Security
+Function AddSourcePathToLocalIntranetZone
+{
+    # Ensure that if we're running from a UNC path, the host portion is added to the Local Intranet zone so we don't get the "Open File - Security Warning"
+    If ($env:dp0 -like "\\*")
+    {
+        WriteLine
+        $safeHost = ($env:dp0 -split "\\")[2]
+        Write-Host -ForegroundColor White " - Adding `"$safeHost`" to local Intranet security zone..."
+        New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ZoneMap\Domains" -Name $safeHost -ItemType Leaf -Force | Out-Null
+        New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ZoneMap\Domains\$safeHost" -Name "file" -value "1" -PropertyType dword -Force | Out-Null
+        WriteLine
+    }
+}
+
 Function RemoveIEEnhancedSecurity([xml]$xmlinput)
 {
     WriteLine
@@ -267,22 +281,44 @@ Function InstallPrerequisites([xml]$xmlinput)
     WriteLine
     # Remove any lingering registry restart requirement value first
     Remove-ItemProperty -Path "HKLM:\SOFTWARE\AutoSPInstaller\" -Name "RestartRequired" -ErrorAction SilentlyContinue
+    # Check for whether UAC was previously enabled and should therefore be re-enabled after an automatic restart
+	$regKey = Get-Item -Path "HKLM:\SOFTWARE\AutoSPInstaller\" -ErrorAction SilentlyContinue
+	If ($regKey) {$UACWasEnabled = $regkey.GetValue("UACWasEnabled")}
+	If ($UACWasEnabled -eq 1) {Set-UserAccountControl 1}
+    # Now, remove the lingering registry UAC flag
+    Remove-ItemProperty -Path "HKLM:\SOFTWARE\AutoSPInstaller\" -Name "UACWasEnabled" -ErrorAction SilentlyContinue
     # Create a hash table with major version to product year mappings
-    $spYear = @{"14" = "2010"; "15" = "2013"}
-
+    $spYears = @{"14" = "2010"; "15" = "2013"}
+    $spYear = $spYears.$env:spVer
     $spInstalled = Get-SharePointInstall
     If ($spInstalled)
     {
-        Write-Host -ForegroundColor White " - SharePoint $($spYear.$env:spVer) prerequisites appear be already installed - skipping install."
+        Write-Host -ForegroundColor White " - SharePoint $spYear prerequisites appear be already installed - skipping install."
     }
     Else
     {
         Write-Host -ForegroundColor White " - Installing Prerequisite Software:"
-        Try 
+        If (($env:spVer -eq "14") -and ((Gwmi Win32_OperatingSystem).Version -eq "6.1.7601")) # SP2010 on Win2008 R2 SP1
         {
-            # Install prerequisites manually without using PrerequisiteInstaller if we're installing SP2010 on on Windows Server 2012
+            # Due to the issue described in http://support.microsoft.com/kb/2581903 (related to installing the KB976462 hotfix) 
+            # we install the .Net 3.5.1 features prior to attempting the PrerequisiteInstaller on Win2008 R2 SP1
+            Write-Host -ForegroundColor White "  - .Net Framework..."
+            # Get the current progress preference
+            $pref = $ProgressPreference
+            # Hide the progress bar since it tends to not disappear
+            $ProgressPreference = "SilentlyContinue"
+            Import-Module ServerManager
+            If (!(Get-WindowsFeature -Name NET-Framework).Installed) {Add-WindowsFeature -Name NET-Framework | Out-Null}
+            # Restore progress preference
+            $ProgressPreference = $pref
+        }
+        Try
+        {
+			# Install prerequisites manually without using PrerequisiteInstaller if we're installing SP2010 on on Windows Server 2012
             if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*") -and ($env:spVer -eq "14"))
             {
+			    Throw " - SharePoint 2013 is officially unsupported on Windows Server 2012 - see "
+            <# REMOVED AS SP2010 on Windows Server 2012 IS OFFICIALLY UNSUPPORTED
                 if ($xmlinput.Configuration.Install.OfflineInstall -eq $true)
                 {
                     Start-Process -FilePath MsiExec.exe -ArgumentList "/i `"$env:SPbits\PrerequisiteInstallerFiles\sqlncli.msi`" /passive" -Wait
@@ -299,101 +335,11 @@ Function InstallPrerequisites([xml]$xmlinput)
                     Start-Process -FilePath MsiExec.exe -ArgumentList "/i `"$env:SPbits\PrerequisiteInstallerFiles\MSSpeech_SR_en-US_TELE.msi`" /passive" -Wait
                 }
                 else {Write-Warning " - You must specify OfflineInstall=`"true`" to install SP2010 on Windows Server 2012"; pause "exit"; throw}
-            }
+            #>
+			}
+			#>
             else # Install using PrerequisiteInstaller as usual
             {
-                If ((Gwmi Win32_OperatingSystem).Version -eq "6.1.7601") # Win2008 R2 SP1
-                {
-                    If ($env:spVer -eq "14") # SP2010
-                    {
-                        # Due to the issue described in http://support.microsoft.com/kb/2581903 (related to installing the KB976462 hotfix) 
-                        # we install the .Net 3.5.1 features prior to attempting the PrerequisiteInstaller on Win2008 R2 SP1
-                        Write-Host -ForegroundColor White "  - .Net Framework..."
-                        # Get the current progress preference
-                        $pref = $ProgressPreference
-                        # Hide the progress bar since it tends to not disappear
-                        $ProgressPreference = "SilentlyContinue"
-                        Import-Module ServerManager
-                        If (!(Get-WindowsFeature -Name NET-Framework).Installed) {Add-WindowsFeature -Name NET-Framework | Out-Null}
-                        # Restore progress preference
-                        $ProgressPreference = $pref
-                    }
-                    ElseIf ($env:spVer -eq "15") # SP2013
-                    {
-                        Write-Host -ForegroundColor White " - SharePoint 2013 `"missing hotfix`" prerequisites..."
-                        # Install the 3 "missing prerequisites" for SP2013 Preview per http://www.toddklindt.com/blog/Lists/Posts/Post.aspx?ID=349
-                        # Expand hotfix executable to $env:SPbits\PrerequisiteInstallerFiles\
-                        $missingHotfixes = @{"Windows6.1-KB2472264-v3-x64.msu" = "http://hotfixv4.microsoft.com/Windows%207/Windows%20Server2008%20R2%20SP1/sp2/Fix354400/7600/free/427087_intl_x64_zip.exe";
-                                             "Windows6.1-KB2554876-v2-x64.msu" = "http://hotfixv4.microsoft.com/Windows%207/Windows%20Server2008%20R2%20SP1/sp2/Fix368051/7600/free/433385_intl_x64_zip.exe";
-                                             "Windows6.1-KB2708075-x64.msu" = "http://hotfixv4.microsoft.com/Windows%207/Windows%20Server2008%20R2%20SP1/sp2/Fix402568/7600/free/447698_intl_x64_zip.exe"}
-                        $hotfixLocation = $env:SPbits+"\PrerequisiteInstallerFiles"
-                        ForEach ($hotfixPatch in $missingHotfixes.Keys)
-                        {
-                            $hotfixKB = $hotfixPatch.Split('-')[1]
-                            # Check if the hotfix is already installed
-                            Write-Host -ForegroundColor White " - Checking for $hotfixKB..." -NoNewline
-                            If (!(Get-HotFix -Id $hotfixKB -ErrorAction SilentlyContinue))
-                            {
-                                Write-Host -ForegroundColor White "Missing; attempting to install..."
-                                $hotfixUrl = $missingHotfixes.$hotfixPatch
-                                $hotfixFile = $hotfixUrl.Split('/')[-1] 
-                                $hotfixFileZip = $hotfixFile+".zip"
-                                $hotfixZipPath = Join-Path -Path $hotfixLocation -ChildPath $hotfixFileZip
-                                # Check if the .msu file is already present
-                                If (Test-Path "$env:SPbits\PrerequisiteInstallerFiles\$hotfixPatch")
-                                {
-                                    Write-Host -ForegroundColor White " - Hotfix file `"$hotfixPatch`" found."
-                                }
-                                Else # Check if the downloaded package exists with a .zip extension
-                                {
-                                    If (!([string]::IsNullOrEmpty($hotfixFileZip)) -and (Test-Path "$hotfixLocation\$hotfixFileZip"))
-                                    {
-                                        Write-Host -ForegroundColor White " - File $hotfixFile (zip) found."
-                                    }
-                                	Else
-                                    {
-                                        If (Test-Path "$hotfixLocation\$hotfixFile") # Check if the downloaded package exists
-                                    	{
-                                    		Write-Host -ForegroundColor White " - File $hotfixFile found."
-                                    	}
-                                        Else # Go ahead and download the missing package
-                                    	{
-                                            Try
-                                            {
-                                        		# Begin download
-                                                Write-Host -ForegroundColor White " - Hotfix $hotfixPatch not found in $env:SPbits\PrerequisiteInstallerFiles"
-                                                Write-Host -ForegroundColor White " - Attempting to download..." -NoNewline
-                                                Import-Module BitsTransfer | Out-Null
-                                                Start-BitsTransfer -Source $hotfixUrl -Destination "$hotfixLocation\$hotfixFileZip" -DisplayName "Downloading `'$hotfixFile`' to $hotfixLocation" -Priority High -Description "From $hotfixUrl..." -ErrorVariable err
-                                                if ($err) {Write-Host "."; Throw " - Could not download from $hotfixUrl!"}
-                                                Write-Host "Done!"
-                                        	}
-                                            Catch
-                                            {
-                                            	Write-Warning " - An error occurred attempting to download `"$hotfixFile`"."
-                                            	break
-                                            }
-                                        }
-                                        # Give the file a .zip extension so we can work with it like a compressed folder
-                                        Rename-Item -Path "$hotfixLocation\$hotfixFile" -NewName $hotfixFileZip -Force -ErrorAction SilentlyContinue
-                                    }
-                                    Write-Host -ForegroundColor White " - Extracting `"$hotfixPatch`" from `"$hotfixFile`"..." -NoNewline
-                                    $shell = New-Object -ComObject Shell.Application
-                                    $hotfixFileZipNs = $shell.Namespace($hotfixZipPath)
-                                    $hotfixLocationNs = $shell.Namespace($hotfixLocation)
-                                    $hotfixLocationNs.Copyhere($hotfixFileZipNs.items())
-                                    Write-Host -ForegroundColor White "Done."
-                                }
-                                # Install the hotfix
-                                $extractedHotfixPath = Join-Path -Path $hotfixLocation -ChildPath $hotfixPatch
-                                Write-Host -ForegroundColor White " - Installing hotfix $hotfixPatch..." -NoNewline
-                                Start-Process -FilePath "wusa.exe" -ArgumentList "`"$extractedHotfixPath`" /quiet /norestart" -Wait -NoNewWindow
-                                Write-Host -ForegroundColor White "Done."
-                            }
-                            Else {Write-Host -ForegroundColor White "Already installed."}
-                        }
-                    }
-                }
                 If ($xmlinput.Configuration.Install.OfflineInstall -eq $true) # Install all prerequisites from local folder
                 {
                     If ($env:spVer -eq "14") # SP2010
@@ -429,12 +375,12 @@ Function InstallPrerequisites([xml]$xmlinput)
                                                                                              /PowerShell:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.1-KB2506143-x64.msu`" `
                                                                                              /NETFX:`"$env:SPbits\PrerequisiteInstallerFiles\dotNetFx45_Full_x86_x64.exe`" `
                                                                                              /IDFX:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.1-KB974405-x64.msu`" `
+                                                                                             /IDFX11:`"$env:SPbits\PrerequisiteInstallerFiles\MicrosoftIdentityExtensions-64.msi`" `
                                                                                              /Sync:`"$env:SPbits\PrerequisiteInstallerFiles\Synchronization.msi`" `
                                                                                              /AppFabric:`"$env:SPbits\PrerequisiteInstallerFiles\WindowsServerAppFabricSetup_x64.exe`" `
-                                                                                             /IDFX11:`"$env:SPbits\PrerequisiteInstallerFiles\MicrosoftIdentityExtensions-64.msi`" `
+                                                                                             /KB2671763:`"$env:SPbits\PrerequisiteInstallerFiles\AppFabric1.1-RTM-KB2671763-x64-ENU.exe`" `
                                                                                              /MSIPCClient:`"$env:SPbits\PrerequisiteInstallerFiles\setup_msipc_x64.msi`" `
-                                                                                             /WCFDataServices:`"$env:SPbits\PrerequisiteInstallerFiles\WcfDataServices.exe`" `
-                                                                                             /KB2671763:`"$env:SPbits\PrerequisiteInstallerFiles\AppFabric1.1-RTM-KB2671763-x64-ENU.exe`""
+                                                                                             /WCFDataServices:`"$env:SPbits\PrerequisiteInstallerFiles\WcfDataServices.exe`""
                         If (-not $?) {Throw}                                                                                             
                     }
                 }
@@ -448,6 +394,81 @@ Function InstallPrerequisites([xml]$xmlinput)
                 Show-Progress -Process PrerequisiteInstaller -Color Blue -Interval 5
                 $delta,$null = (New-TimeSpan -Start $startTime -End (Get-Date)).ToString() -split "\."
                 Write-Host -ForegroundColor White "  - Prerequisite Installer completed in $delta."
+            }
+            If (($env:spVer -eq "15") -and ((Gwmi Win32_OperatingSystem).Version -eq "6.1.7601")) # SP2013 on Win2008 R2 SP1
+            {
+                # Install the 3 "missing prerequisites" for SP2013 Preview per http://www.toddklindt.com/blog/Lists/Posts/Post.aspx?ID=349
+                Write-Host -ForegroundColor White " - SharePoint 2013 `"missing hotfix`" prerequisites..."
+                # Expand hotfix executable to $env:SPbits\PrerequisiteInstallerFiles\
+                $missingHotfixes = @{"Windows6.1-KB2554876-v2-x64.msu" = "http://hotfixv4.microsoft.com/Windows%207/Windows%20Server2008%20R2%20SP1/sp2/Fix368051/7600/free/433385_intl_x64_zip.exe";
+								     "Windows6.1-KB2708075-x64.msu" = "http://hotfixv4.microsoft.com/Windows%207/Windows%20Server2008%20R2%20SP1/sp2/Fix402568/7600/free/447698_intl_x64_zip.exe";
+                                     "Windows6.1-KB2472264-v3-x64.msu" = "http://hotfixv4.microsoft.com/Windows%207/Windows%20Server2008%20R2%20SP1/sp2/Fix354400/7600/free/427087_intl_x64_zip.exe"}
+                $hotfixLocation = $env:SPbits+"\PrerequisiteInstallerFiles"
+                ForEach ($hotfixPatch in $missingHotfixes.Keys)
+                {
+                    $hotfixKB = $hotfixPatch.Split('-')[1]
+                    # Check if the hotfix is already installed
+                    Write-Host -ForegroundColor White " - Checking for $hotfixKB..." -NoNewline
+                    If (!(Get-HotFix -Id $hotfixKB -ErrorAction SilentlyContinue))
+                    {
+                        Write-Host -ForegroundColor White "Missing; attempting to install..."
+                        $hotfixUrl = $missingHotfixes.$hotfixPatch
+                        $hotfixFile = $hotfixUrl.Split('/')[-1] 
+                        $hotfixFileZip = $hotfixFile+".zip"
+                        $hotfixZipPath = Join-Path -Path $hotfixLocation -ChildPath $hotfixFileZip
+                        # Check if the .msu file is already present
+                        If (Test-Path "$env:SPbits\PrerequisiteInstallerFiles\$hotfixPatch")
+                        {
+                            Write-Host -ForegroundColor White " - Hotfix file `"$hotfixPatch`" found."
+                        }
+                        Else # Check if the downloaded package exists with a .zip extension
+                        {
+                            If (!([string]::IsNullOrEmpty($hotfixFileZip)) -and (Test-Path "$hotfixLocation\$hotfixFileZip"))
+                            {
+                                Write-Host -ForegroundColor White " - File $hotfixFile (zip) found."
+                            }
+                        	Else
+                            {
+                                If (Test-Path "$hotfixLocation\$hotfixFile") # Check if the downloaded package exists
+                            	{
+                            		Write-Host -ForegroundColor White " - File $hotfixFile found."
+                            	}
+                                Else # Go ahead and download the missing package
+                            	{
+                                    Try
+                                    {
+                                		# Begin download
+                                        Write-Host -ForegroundColor White " - Hotfix $hotfixPatch not found in $env:SPbits\PrerequisiteInstallerFiles"
+                                        Write-Host -ForegroundColor White " - Attempting to download..." -NoNewline
+                                        Import-Module BitsTransfer | Out-Null
+                                        Start-BitsTransfer -Source $hotfixUrl -Destination "$hotfixLocation\$hotfixFileZip" -DisplayName "Downloading `'$hotfixFile`' to $hotfixLocation" -Priority Foreground -Description "From $hotfixUrl..." -ErrorVariable err
+                                        if ($err) {Write-Host "."; Throw " - Could not download from $hotfixUrl!"}
+                                        Write-Host "Done!"
+                                	}
+                                    Catch
+                                    {
+                                    	Write-Warning " - An error occurred attempting to download `"$hotfixFile`"."
+                                    	break
+                                    }
+                                }
+                                # Give the file a .zip extension so we can work with it like a compressed folder
+                                Rename-Item -Path "$hotfixLocation\$hotfixFile" -NewName $hotfixFileZip -Force -ErrorAction SilentlyContinue
+                            }
+                            Write-Host -ForegroundColor White " - Extracting `"$hotfixPatch`" from `"$hotfixFile`"..." -NoNewline
+                            $shell = New-Object -ComObject Shell.Application
+                            $hotfixFileZipNs = $shell.Namespace($hotfixZipPath)
+                            $hotfixLocationNs = $shell.Namespace($hotfixLocation)
+                            $hotfixLocationNs.Copyhere($hotfixFileZipNs.items())
+                            Write-Host -ForegroundColor White "Done."
+                        }
+                        # Install the hotfix
+                        $extractedHotfixPath = Join-Path -Path $hotfixLocation -ChildPath $hotfixPatch
+                        Write-Host -ForegroundColor White " - Installing hotfix $hotfixPatch..." -NoNewline
+                        Start-Process -FilePath "wusa.exe" -ArgumentList "`"$extractedHotfixPath`" /quiet /norestart" -Wait -NoNewWindow
+                        Write-Host -ForegroundColor White "Done."
+                    }
+                    Else {Write-Host -ForegroundColor White "Already installed."}
+                }
             }
         }
         Catch 
@@ -525,11 +546,12 @@ Function InstallSharePoint([xml]$xmlinput)
 {
     WriteLine
     # Create a hash table with major version to product year mappings
-    $spYear = @{"14" = "2010"; "15" = "2013"}
+    $spYears = @{"14" = "2010"; "15" = "2013"}
+    $spYear = $spYears.$env:spVer
     $spInstalled = Get-SharePointInstall
     If ($spInstalled)
     {
-        Write-Host -ForegroundColor White " - SharePoint $($spYear.$env:spVer) binaries appear to be already installed - skipping installation."
+        Write-Host -ForegroundColor White " - SharePoint $spYear binaries appear to be already installed - skipping installation."
     }
     Else
     {
@@ -537,12 +559,12 @@ Function InstallSharePoint([xml]$xmlinput)
         $config = $env:dp0 + "\" + $xmlinput.Configuration.Install.ConfigFile
         If (Test-Path "$env:SPbits\setup.exe")
         {
-            Write-Host -ForegroundColor Blue " - Installing SharePoint $($spYear.$env:spVer) binaries..." -NoNewline
+            Write-Host -ForegroundColor Blue " - Installing SharePoint $spYear binaries..." -NoNewline
             $startTime = Get-Date
             Start-Process "$env:SPbits\setup.exe" -ArgumentList "/config `"$config`"" -WindowStyle Minimized
             Show-Progress -Process setup -Color Blue -Interval 5
             $delta,$null = (New-TimeSpan -Start $startTime -End (Get-Date)).ToString() -split "\."
-            Write-Host -ForegroundColor White " - SharePoint $($spYear.$env:spVer) setup completed in $delta."
+            Write-Host -ForegroundColor White " - SharePoint $spYear setup completed in $delta."
             If (-not $?)
             {
                 Throw " - Error $LASTEXITCODE occurred running $env:SPbits\setup.exe"
@@ -2176,8 +2198,8 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
                 If ($portalAppPoolAcct)
                 {
                     # Grant the Portal App Pool account rights to the Profile and Social DBs
-                    $profileDB = $dbPrefix+$userProfile.ProfileDB
-                    $socialDB = $dbPrefix+$userProfile.SocialDB
+                    $profileDB = $dbPrefix+$userProfile.Database.ProfileDB
+                    $socialDB = $dbPrefix+$userProfile.Database.SocialDB
                     Write-Host -ForegroundColor White " - Granting $portalAppPoolAcct rights to $profileDB..."
                     Get-SPDatabase | ? {$_.Name -eq $profileDB} | Add-SPShellAdmin -UserName $portalAppPoolAcct
                     Write-Host -ForegroundColor White " - Granting $portalAppPoolAcct rights to $socialDB..."
@@ -3248,11 +3270,16 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                     Write-Host -ForegroundColor White " - Creating new query topology..."
                     $queryTopology = $searchApp | New-SPEnterpriseSearchQueryTopology -Partitions $appConfig.Partitions
                 } Else {
-                    Write-Host -ForegroundColor White " - A query topology with query components already exists, skipping query topology creation."
+                    Write-Host -ForegroundColor White " - A query topology already exists, skipping query topology creation."
                     If ($queryTopologies.Count -gt 1)
                     {
                         # Try to select the query topology that has components
                         $queryTopology = $queryTopologies | Where-Object {$_.QueryComponents.Count -gt 0} | Select-Object -First 1
+                        if (!$queryTopology)
+                        {
+                            # Just select the first query topology since none appear to have query components
+                            $queryTopology = $queryTopologies | Select-Object -First 1
+                        }
                     }
                     Else 
                     {
@@ -4234,8 +4261,6 @@ Function CreateAppManagementServiceApp ([xml]$xmlinput)
 		# Configure your app domain and location
 		Write-Host -ForegroundColor White " - Setting App Domain `"$($serviceConfig.AppDomain)`"..."
 	    Set-SPAppDomain -AppDomain $serviceConfig.AppDomain
-		Write-Host -ForegroundColor White " - Setting Site Subscription name `"$($serviceConfig.AppSiteSubscriptionName)`"..."
-	    Set-SPAppSiteSubscriptionName -Name $serviceConfig.AppSiteSubscriptionName -Confirm:$false
         WriteLine
     }
 }
@@ -4267,6 +4292,8 @@ Function CreateSubscriptionSettingsServiceApp ([xml]$xmlinput)
 									  -ServiceNewCmdlet "New-SPSubscriptionSettingsServiceApplication" `
                                       -ServiceProxyNewCmdlet "New-SPSubscriptionSettingsServiceApplicationProxy"
 		
+		Write-Host -ForegroundColor White " - Setting Site Subscription name `"$($serviceConfig.AppSiteSubscriptionName)`"..."
+	    Set-SPAppSiteSubscriptionName -Name $serviceConfig.AppSiteSubscriptionName -Confirm:$false
         WriteLine
     }
 }
@@ -4356,7 +4383,7 @@ Function Configure-PDFSearchAndIcon
                     $zipLocation = $env:TEMP
                     $destinationFile = $zipLocation+"\PDFiFilter64installer.zip"
                     Import-Module BitsTransfer | Out-Null
-                    Start-BitsTransfer -Source $pdfIfilterUrl -Destination $destinationFile -DisplayName "Downloading Adobe PDF iFilter..." -Priority High -Description "From $pdfIfilterUrl..." -ErrorVariable err
+                    Start-BitsTransfer -Source $pdfIfilterUrl -Destination $destinationFile -DisplayName "Downloading Adobe PDF iFilter..." -Priority Foreground -Description "From $pdfIfilterUrl..." -ErrorVariable err
                     If ($err) {Write-Warning " - Could not download Adobe PDF iFilter!"; Pause "exit"; break}
                     $sourceFile = $destinationFile
                 }
@@ -4445,9 +4472,13 @@ Function Configure-PDFSearchAndIcon
             If (!($copyIcon))
             {
                 Write-Host -ForegroundColor White " - `"$pdfIcon`" not found; downloading it now..."
-                Import-Module BitsTransfer | Out-Null
-                Start-BitsTransfer -Source $pdfIconUrl -Destination "$sharePointRoot\Template\Images\$pdfIcon" -DisplayName "Downloading PDF Icon..." -Priority High -Description "From $pdfIconUrl..." -ErrorVariable err
-                If ($err) {Write-Warning " - Could not download PDF Icon!"; Pause "exit"; break}
+                If (Confirm-LocalSession)
+                {
+                    Import-Module BitsTransfer | Out-Null
+                    Start-BitsTransfer -Source $pdfIconUrl -Destination "$sharePointRoot\Template\Images\$pdfIcon" -DisplayName "Downloading PDF Icon..." -Priority Foreground -Description "From $pdfIconUrl..." -ErrorVariable err
+                    If ($err) {Write-Warning " - Could not download PDF Icon!"; Pause "exit"; break}
+                }
+                Else {Write-Warning " - The remote use of BITS is not supported. Please pre-download the PDF icon and try again."}
             }
             If (Get-Item $sharePointRoot\Template\Images\$pdfIcon) {Write-Host -ForegroundColor White " - PDF icon copied successfully."}
             Else {Throw}
@@ -4629,7 +4660,7 @@ Function Enable-RemoteSession ($server, $password)
         Write-Host -ForegroundColor White " - PsExec.exe not found; downloading..."
         $psExecUrl = "http://live.sysinternals.com/PsExec.exe"
         Import-Module BitsTransfer | Out-Null
-        Start-BitsTransfer -Source $psExecUrl -Destination $psExec -DisplayName "Downloading Sysinternals PsExec..." -Priority High -Description "From $psExecUrl..." -ErrorVariable err
+        Start-BitsTransfer -Source $psExecUrl -Destination $psExec -DisplayName "Downloading Sysinternals PsExec..." -Priority Foreground -Description "From $psExecUrl..." -ErrorVariable err
         If ($err) {Write-Warning " - Could not download PsExec!"; Pause "exit"; break}
         $sourceFile = $destinationFile
     }
@@ -4647,23 +4678,27 @@ Function Enable-RemoteSession ($server, $password)
 
 Function Install-NetFramework ($server, $password)
 {
-    If ($password) {$credential = New-Object System.Management.Automation.PsCredential $env:USERDOMAIN\$env:USERNAME,$(ConvertTo-SecureString $password)}
+	If ($password) {$credential = New-Object System.Management.Automation.PsCredential $env:USERDOMAIN\$env:USERNAME,$(ConvertTo-SecureString $password)}
     If (!$credential) {$credential = $host.ui.PromptForCredential("AutoSPInstaller - Remote Install", "Re-Enter Credentials for Remote Authentication:", "$env:USERDOMAIN\$env:USERNAME", "NetBiosUserName")}
     If ($session.Name -ne "AutoSPInstallerSession-$server")
     {
         Write-Host -ForegroundColor White " - Starting remote session to $server..."
         $session = New-PSSession -Name "AutoSPInstallerSession-$server" -Authentication Credssp -Credential $credential -ComputerName $server
     }
-    Write-Host -ForegroundColor White " - Pre-installing .Net Framework feature on $server..."
-    Invoke-Command -ScriptBlock {Import-Module ServerManager | Out-Null
-                                # Get the current progress preference
-                                $pref = $ProgressPreference
-                                # Hide the progress bar since it tends to not disappear
-                                $ProgressPreference = "SilentlyContinue"
-                                Import-Module ServerManager
-                                If (!(Get-WindowsFeature -Name NET-Framework).Installed) {Add-WindowsFeature -Name NET-Framework | Out-Null}
-                                # Restore progress preference
-                                $ProgressPreference = $pref} -Session $session
+    $remoteQueryOS = Invoke-Command -ScriptBlock {Get-WmiObject Win32_OperatingSystem} -Session $session
+	If (!($remoteQueryOS.Version.Contains("6.2"))) # Only perform the stuff below if we aren't on Windows 2012
+	{
+	    Write-Host -ForegroundColor White " - Pre-installing .Net Framework feature on $server..."
+	    Invoke-Command -ScriptBlock {Import-Module ServerManager | Out-Null
+	                                # Get the current progress preference
+	                                $pref = $ProgressPreference
+	                                # Hide the progress bar since it tends to not disappear
+	                                $ProgressPreference = "SilentlyContinue"
+	                                Import-Module ServerManager
+	                                If (!(Get-WindowsFeature -Name NET-Framework).Installed) {Add-WindowsFeature -Name NET-Framework | Out-Null}
+	                                # Restore progress preference
+	                                $ProgressPreference = $pref} -Session $session
+	}
 }
 
 Function Install-WindowsIdentityFoundation ($server, $password)
@@ -4679,51 +4714,54 @@ Function Install-WindowsIdentityFoundation ($server, $password)
         Write-Host -ForegroundColor White " - Starting remote session to $server..."
         $session = New-PSSession -Name "AutoSPInstallerSession-$server" -Authentication Credssp -Credential $credential -ComputerName $server
     }
-    Write-Host -ForegroundColor White " - Checking for KB974405 (Windows Identity Foundation)..." -NoNewline
-    $wifHotfixInstalled = Invoke-Command -ScriptBlock {Get-HotFix -Id KB974405 -ErrorAction SilentlyContinue} -Session $session
-    If ($wifHotfixInstalled)
-    {
-        Write-Host -ForegroundColor White "already installed."
-    }
-    Else
-    {
-        Write-Host -ForegroundColor Black -BackgroundColor White "needed."
-        $username = $credential.UserName
-        $password = ConvertTo-PlainText $credential.Password
-        $remoteQueryOS = Invoke-Command -ScriptBlock {Get-WmiObject Win32_OperatingSystem} -Session $session
-        If ($remoteQueryOS.Version.contains("6.1"))
-        {
-            $wifHotfix = "Windows6.1-KB974405-x64.msu"
-        }
-        ElseIf ($remoteQueryOS.Version.contains("6.0"))
-        {
-            $wifHotfix = "Windows6.0-KB974405-x64.msu"
-        }
-        Else {Write-Warning " - Could not detect OS of `"$server`", or unsupported OS."}
-        If (!(Get-Item $env:SPbits\PrerequisiteInstallerFiles\$wifHotfix -ErrorAction SilentlyContinue))
-        {
-            Write-Host -ForegroundColor White " - Windows Identity Foundation KB974405 not found in $env:SPbits\PrerequisiteInstallerFiles"
-            Write-Host -ForegroundColor White " - Attempting to download..."
-            $wifURL = "http://download.microsoft.com/download/D/7/2/D72FD747-69B6-40B7-875B-C2B40A6B2BDD/$wifHotfix"
-            Import-Module BitsTransfer | Out-Null
-            Start-BitsTransfer -Source $wifURL -Destination "$env:SPbits\PrerequisiteInstallerFiles\$wifHotfix" -DisplayName "Downloading `'$wifHotfix`' to $env:SPbits\PrerequisiteInstallerFiles" -Priority High -Description "From $wifURL..." -ErrorVariable err
-            if ($err) {Throw " - Could not download from $wifURL!"; Pause "exit"; break}
-        }
-        $psExec = $env:dp0+"\PsExec.exe"
-        If (!(Get-Item ($psExec) -ErrorAction SilentlyContinue))
-        {
-            Write-Host -ForegroundColor White " - PsExec.exe not found; downloading..."
-            $psExecUrl = "http://live.sysinternals.com/PsExec.exe"
-            Import-Module BitsTransfer | Out-Null
-            Start-BitsTransfer -Source $psExecUrl -Destination $psExec -DisplayName "Downloading Sysinternals PsExec..." -Priority High -Description "From $psExecUrl..." -ErrorVariable err
-            If ($err) {Write-Warning " - Could not download PsExec!"; Pause "exit"; break}
-            $sourceFile = $destinationFile
-        }
-        Write-Host -ForegroundColor White " - Pre-installing Windows Identity Foundation on `"$server`" via PsExec..."
-        Start-Process -FilePath "$psExec" `
-                      -ArgumentList "/acceptEula \\$server -u $username -p $password -h wusa.exe `"$env:SPbits\PrerequisiteInstallerFiles\$wifHotfix`" /quiet /norestart" `
-                      -Wait -NoNewWindow
-    }
+    $remoteQueryOS = Invoke-Command -ScriptBlock {Get-WmiObject Win32_OperatingSystem} -Session $session
+	If (!($remoteQueryOS.Version.Contains("6.2"))) # Only perform the stuff below if we aren't on Windows 2012
+	{
+	    Write-Host -ForegroundColor White " - Checking for KB974405 (Windows Identity Foundation)..." -NoNewline
+	    $wifHotfixInstalled = Invoke-Command -ScriptBlock {Get-HotFix -Id KB974405 -ErrorAction SilentlyContinue} -Session $session
+	    If ($wifHotfixInstalled)
+	    {
+	        Write-Host -ForegroundColor White "already installed."
+	    }
+	    Else
+	    {
+	        Write-Host -ForegroundColor Black -BackgroundColor White "needed."
+	        $username = $credential.UserName
+	        $password = ConvertTo-PlainText $credential.Password
+	        If ($remoteQueryOS.Version.Contains("6.1"))
+	        {
+	            $wifHotfix = "Windows6.1-KB974405-x64.msu"
+	        }
+	        ElseIf ($remoteQueryOS.Version.Contains("6.0"))
+	        {
+	            $wifHotfix = "Windows6.0-KB974405-x64.msu"
+	        }
+	        Else {Write-Warning " - Could not detect OS of `"$server`", or unsupported OS."}
+	        If (!(Get-Item $env:SPbits\PrerequisiteInstallerFiles\$wifHotfix -ErrorAction SilentlyContinue))
+	        {
+	            Write-Host -ForegroundColor White " - Windows Identity Foundation KB974405 not found in $env:SPbits\PrerequisiteInstallerFiles"
+	            Write-Host -ForegroundColor White " - Attempting to download..."
+	            $wifURL = "http://download.microsoft.com/download/D/7/2/D72FD747-69B6-40B7-875B-C2B40A6B2BDD/$wifHotfix"
+	            Import-Module BitsTransfer | Out-Null
+	            Start-BitsTransfer -Source $wifURL -Destination "$env:SPbits\PrerequisiteInstallerFiles\$wifHotfix" -DisplayName "Downloading `'$wifHotfix`' to $env:SPbits\PrerequisiteInstallerFiles" -Priority Foreground -Description "From $wifURL..." -ErrorVariable err
+	            if ($err) {Throw " - Could not download from $wifURL!"; Pause "exit"; break}
+	        }
+	        $psExec = $env:dp0+"\PsExec.exe"
+	        If (!(Get-Item ($psExec) -ErrorAction SilentlyContinue))
+	        {
+	            Write-Host -ForegroundColor White " - PsExec.exe not found; downloading..."
+	            $psExecUrl = "http://live.sysinternals.com/PsExec.exe"
+	            Import-Module BitsTransfer | Out-Null
+	            Start-BitsTransfer -Source $psExecUrl -Destination $psExec -DisplayName "Downloading Sysinternals PsExec..." -Priority Foreground -Description "From $psExecUrl..." -ErrorVariable err
+	            If ($err) {Write-Warning " - Could not download PsExec!"; Pause "exit"; break}
+	            $sourceFile = $destinationFile
+	        }
+	        Write-Host -ForegroundColor White " - Pre-installing Windows Identity Foundation on `"$server`" via PsExec..."
+	        Start-Process -FilePath "$psExec" `
+	                      -ArgumentList "/acceptEula \\$server -u $username -p $password -h wusa.exe `"$env:SPbits\PrerequisiteInstallerFiles\$wifHotfix`" /quiet /norestart" `
+	                      -Wait -NoNewWindow
+	    }
+	}
 }
 
 Function Start-RemoteInstaller ($server, $password, $inputFile)
@@ -4736,13 +4774,15 @@ Function Start-RemoteInstaller ($server, $password, $inputFile)
         $session = New-PSSession -Name "AutoSPInstallerSession-$server" -Authentication Credssp -Credential $credential -ComputerName $server
     }
     # Create a hash table with major version to product year mappings
-    $spYear = @{"14" = "2010"; "15" = "2013"}
-    # Crude way of checking if SharePoint is already installed
-    $spInstalledOnRemote = Invoke-Command -ScriptBlock {Test-Path "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$env:spVer\BIN\stsadm.exe"} -Session $session
-    Write-Host -ForegroundColor Green " - SharePoint $($spYear.$env:spVer) binaries are"($spInstalledOnRemote -replace "True","already" -replace "False","not yet") "installed on $server."
+    $spYears = @{"14" = "2010"; "15" = "2013"}
+    $spYear = $spYears.$env:spVer
     # Set some remote variables that we will need...
     Invoke-Command -ScriptBlock {param ($value) Set-Variable -Name dp0 -Value $value} -ArgumentList $env:dp0 -Session $session
     Invoke-Command -ScriptBlock {param ($value) Set-Variable -Name InputFile -Value $value} -ArgumentList $inputFile -Session $session
+    Invoke-Command -ScriptBlock {param ($value) Set-Variable -Name spVer -Value $value} -ArgumentList $env:spVer -Session $session
+    # Crude way of checking if SharePoint is already installed
+    $spInstalledOnRemote = Invoke-Command -ScriptBlock {Test-Path "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$spVer\BIN\stsadm.exe"} -Session $session
+    Write-Host -ForegroundColor Green " - SharePoint $spYear binaries are"($spInstalledOnRemote -replace "True","already" -replace "False","not yet") "installed on $server."
     Write-Host -ForegroundColor White " - Launching AutoSPInstaller..."
     Invoke-Command -ScriptBlock {& "$dp0\AutoSPInstallerMain.ps1" "$inputFile"} -Session $session
     Write-Host -ForegroundColor White " - Removing session `"$($session.Name)...`""
@@ -4764,7 +4804,7 @@ Function Load-SharePoint-Powershell
         Write-Host -ForegroundColor White " - Loading SharePoint Powershell Snapin"
         # Added the line below to match what the SharePoint.ps1 file implements (normally called via the SharePoint Management Shell Start Menu shortcut)
         If (Confirm-LocalSession) {$Host.Runspace.ThreadOptions = "ReuseThread"}
-        Add-PsSnapin Microsoft.SharePoint.PowerShell -ErrorAction Stop
+        Add-PsSnapin Microsoft.SharePoint.PowerShell -ErrorAction Stop | Out-Null
         WriteLine
     }
 }
@@ -4921,7 +4961,7 @@ Function CheckSQLAccess
                 Write-Host -ForegroundColor White " - Testing access to SQL server/instance/alias:" $sqlServer
                 Write-Host -ForegroundColor White " - Trying to connect to `"$sqlServer`"..." -NoNewline
                 $objSQLConnection.Open() | Out-Null
-                Write-Host -ForegroundColor Black -BackgroundColor Blue "Success"
+                Write-Host -ForegroundColor Black -BackgroundColor Green "Success"
                 $strCmdSvrDetails = "SELECT SERVERPROPERTY('productversion') as Version"
                 $strCmdSvrDetails += ",SERVERPROPERTY('IsClustered') as Clustering"
                 $objSQLCommand.CommandText = $strCmdSvrDetails
@@ -4955,7 +4995,7 @@ Function CheckSQLAccess
                     $objSQLDataReader = $objSQLCommand.ExecuteReader()
                     If ($objSQLDataReader.Read() -and $objSQLDataReader.GetValue(0) -eq 1)
                     {
-                        Write-Host -BackgroundColor Blue -ForegroundColor Black "Pass"
+                        Write-Host -ForegroundColor Black -BackgroundColor Green "Pass"
                     }
                     ElseIf($objSQLDataReader.GetValue(0) -eq 0) 
                     {
@@ -5092,7 +5132,7 @@ Function InstallSMTP
         Write-Host -ForegroundColor White " - Installing SMTP Server feature..."
         $queryOS = Gwmi Win32_OperatingSystem
         $queryOS = $queryOS.Version
-        If ($queryOS.contains("6.0")) # Win2008
+        If ($queryOS.Contains("6.0")) # Win2008
         {
             Start-Process -FilePath servermanagercmd.exe -ArgumentList "-install smtp-server" -Wait -NoNewWindow
         }
@@ -5212,7 +5252,7 @@ Function AddToHOSTS
     # Write the AAMs to the hosts file, unless they already exist.
     ForEach ($hostname in $hosts)
     {
-        If ($file.contains($hostname))
+        If ($file.Contains($hostname))
         {Write-Host -ForegroundColor White " - HOSTS file entry for `"$hostname`" already exists - skipping."} 
         Else
         {
@@ -5313,7 +5353,7 @@ Function ImportWebAdministration
     $queryOS = $queryOS.Version 
     Try
     {
-        If ($queryOS.contains("6.0")) # Win2008
+        If ($queryOS.Contains("6.0")) # Win2008
         {
             If (!(Get-PSSnapin WebAdministration -ErrorAction SilentlyContinue))
             {    
@@ -5431,5 +5471,30 @@ Function Show-Progress ($process, $color, $interval)
         Start-Sleep $interval
     }
     Write-Host -ForegroundColor $color "Done."
+}
+
+# ====================================================================================
+# Func: Set-UserAccountControl
+# Desc: Enables or disables User Account Control (UAC), using a 1 or a 0 (respectively) passed as a parameter
+# From: Brian Lalancette, 2012
+# ====================================================================================
+Function Set-UserAccountControl ($flag)
+{
+    $regUAC = (Get-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\policies\system").GetValue("EnableLUA")
+    if ($flag -eq $regUAC)
+    {
+        Write-Host -ForegroundColor White " - User Account Control is already" $($regUAC -replace "1","enabled." -replace "0","disabled.")
+    }
+    else
+    {
+        if ($regUAC -eq 1)
+        {
+            New-Item -Path "HKLM:\SOFTWARE\AutoSPInstaller\" -ErrorAction SilentlyContinue | Out-Null
+			$regKey = Get-Item -Path "HKLM:\SOFTWARE\AutoSPInstaller\"
+            $regKey | New-ItemProperty -Name "UACWasEnabled" -PropertyType String -Value "1" -Force | Out-Null
+        }
+        Write-Host -ForegroundColor White " - $($flag -replace "1","Re-enabling" -replace "0","Disabling") User Account Control (effective upon restart)..."
+        Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\policies\system" -Name EnableLUA -Value $flag
+    }
 }
 #EndRegion
