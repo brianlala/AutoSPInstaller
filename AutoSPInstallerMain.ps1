@@ -405,9 +405,9 @@ If ($farmServers -like "$env:COMPUTERNAME*")
     }
     Finally 
     {
-        # Only do this stuff if this was a local session and it succeeded, and if there are no remote servers to install;
+        # Only do this stuff if this was a local session and it succeeded, and if we aren't attempting a remote install;
         # Otherwise these sites may not be available or 'complete' yet
-        If ((Confirm-LocalSession) -and !$aborted -and [string]::IsNullOrEmpty($remoteFarmServers))
+        If ((Confirm-LocalSession) -and !$aborted -and !($xmlinput.Configuration.Install.RemoteInstall.Enable -eq $true))
         {
             # Launch Central Admin
             If (ShouldIProvision($xmlinput.Configuration.Farm.CentralAdmin) -eq $true)

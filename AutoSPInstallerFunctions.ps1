@@ -317,7 +317,7 @@ Function InstallPrerequisites([xml]$xmlinput)
 			# Install prerequisites manually without using PrerequisiteInstaller if we're installing SP2010 on on Windows Server 2012
             if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*") -and ($env:spVer -eq "14"))
             {
-			    Throw " - SharePoint 2013 is officially unsupported on Windows Server 2012 - see "
+			    Throw " - SharePoint 2010 is officially unsupported on Windows Server 2012 - see "
             <# REMOVED AS SP2010 on Windows Server 2012 IS OFFICIALLY UNSUPPORTED
                 if ($xmlinput.Configuration.Install.OfflineInstall -eq $true)
                 {
@@ -578,8 +578,9 @@ Function InstallSharePoint([xml]$xmlinput)
             }
 
             # Get error(s) from log
-            $setupLastError = $setupLog | select-string -SimpleMatch -Pattern "Error:" | Select-Object -Last 1 #| ? {$_.Line  -notlike "*Startup task*"}
-            If ($setupLastError)
+            $setupLastError = $setupLog | Select-String -SimpleMatch -Pattern "Error:" | Select-Object -Last 1
+            $setupSuccess = $setupLog | Select-String -SimpleMatch -Pattern "Successfully installed package: oserver"
+            If ($setupLastError -and !$setupSuccess)
             {
                 Write-Warning $setupLastError.Line
                 Invoke-Item $env:TEMP\$setupLog
@@ -2023,7 +2024,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
         $mySitePort = $mySiteWebApp.port
         $mySiteDBServer = $mySiteWebApp.Database.DBServer
         # If we haven't specified a DB Server then just use the default used by the Farm
-        If ([string]::IsNullOrEmpty($dbServer))
+        If ([string]::IsNullOrEmpty($mySiteDBServer))
         {
             $mySiteDBServer = $xmlinput.Configuration.Farm.Database.DBServer
         }
@@ -2613,7 +2614,8 @@ Function ConfigureDiagnosticLogging([xml]$xmlinput)
         Write-Host -ForegroundColor White "  - LogLocation: $ULSLogDir"
         Write-Host -ForegroundColor White "  - LogCutInterval: $ULSLogCutInterval"
         Set-SPDiagnosticConfig -DaysToKeepLogs $ULSLogRetention -LogMaxDiskSpaceUsageEnabled:$ULSLogMaxDiskSpaceUsageEnabled -LogDiskSpaceUsageGB $ULSLogDiskSpace -LogLocation $ULSLogDir -LogCutInterval $ULSLogCutInterval
-        If ($ULSLogDir -ne $oldULSLogDir)
+        # Only move log files if the old & new locations are different, and if the old location actually had a value
+        If (($ULSLogDir -ne $oldULSLogDir) -and (!([string]::IsNullOrEmpty($oldULSLogDir))))
         {
             Write-Host -ForegroundColor White " - Moving any contents in old location $oldULSLogDir to $ULSLogDir..."
             ForEach ($item in $(Get-ChildItem $oldULSLogDir) | Where-Object {$_.Name -like "*.log"}) 
@@ -2668,7 +2670,8 @@ Function ConfigureUsageLogging([xml]$xmlinput)
             # Set-SPUsageService's LoggingEnabled is 0 for disabled, and 1 for enabled
             $loggingEnabled = 1
             Set-SPUsageService -LoggingEnabled $loggingEnabled -UsageLogLocation "$usageLogDir" -UsageLogMaxSpaceGB $usageLogMaxSpaceGB -UsageLogCutTime $usageLogCutTime | Out-Null
-            If ($usageLogDir -ne $oldUsageLogDir)
+            # Only move log files if the old & new locations are different, and if the old location actually had a value
+            If (($usageLogDir -ne $oldUsageLogDir) -and (!([string]::IsNullOrEmpty($oldUsageLogDir))))
             {
                 Write-Host -ForegroundColor White " - Moving any contents in old location $oldUsageLogDir to $usageLogDir..."
                 ForEach ($item in $(Get-ChildItem $oldUsageLogDir) | Where-Object {$_.Name -like "*.usage"}) 
