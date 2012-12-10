@@ -18,7 +18,7 @@
        This allows you to configure an entire multi-server farm with different servers fulfilling different roles
        using a single configuration file.
        e.g. <ExcelServices Provision="Server1 Server2"> would provision excel services only on Server1 and Server2. -->
-<Configuration Environment="Dev" Version="3.2">
+<Configuration Environment="Dev" Version="3.3">
     <!-- The Environment attribute above appears at the top of the installation transcript. It does not affect the installation -->
     <!-- The Install section controls what modifications are made to the Windows OS prior to installation and how the SharePoint installation is run -->
     <Install>
@@ -360,6 +360,8 @@
                     <Proxy Name="Search Service Application" Partitioned="false">
                         <ProxyGroup Name="Default" />
                     </Proxy>
+                    <!-- SearchCenterUrl is for SharePoint 2013 only and is used to set the global search center URL per http://autospinstaller.codeplex.com/workitem/18944 -->
+                    <SearchCenterUrl></SearchCenterUrl>
                 </EnterpriseSearchServiceApplication>
             </EnterpriseSearchServiceApplications>
         </EnterpriseSearchService>
