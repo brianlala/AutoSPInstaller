@@ -45,6 +45,8 @@ $script:DBPrefix = $xmlinput.Configuration.Farm.Database.DBPrefix
 If (($dbPrefix -ne "") -and ($dbPrefix -ne $null)) {$script:DBPrefix += "_"}
 If ($dbPrefix -like "*localhost*") {$script:DBPrefix = $dbPrefix -replace "localhost","$env:COMPUTERNAME"}
 
+Write-Host -ForegroundColor White " - Setting power management plan to `"High Performance`"..."
+Start-Process -FilePath "$env:SystemRoot\system32\powercfg.exe" -ArgumentList "/s 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c" -NoNewWindow
 #EndRegion
 
 #Region External Functions

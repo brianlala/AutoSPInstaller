@@ -267,7 +267,6 @@ Function DisableServices([xml]$xmlinput)
         Write-Host -ForegroundColor White " - Finished disabling services."
         WriteLine
     }
-    
 }
 #EndRegion
 
@@ -395,76 +394,101 @@ Function InstallPrerequisites([xml]$xmlinput)
                 $delta,$null = (New-TimeSpan -Start $startTime -End (Get-Date)).ToString() -split "\."
                 Write-Host -ForegroundColor White "  - Prerequisite Installer completed in $delta."
             }
-            If (($env:spVer -eq "15") -and ((Gwmi Win32_OperatingSystem).Version -eq "6.1.7601")) # SP2013 on Win2008 R2 SP1
+            If ($env:spVer -eq "15") # SP2013
             {
-                # Install the 3 "missing prerequisites" for SP2013 Preview per http://www.toddklindt.com/blog/Lists/Posts/Post.aspx?ID=349
+                # Install the "missing prerequisites" for SP2013 per http://www.toddklindt.com/blog/Lists/Posts/Post.aspx?ID=349
                 Write-Host -ForegroundColor White " - SharePoint 2013 `"missing hotfix`" prerequisites..."
                 # Expand hotfix executable to $env:SPbits\PrerequisiteInstallerFiles\
-                $missingHotfixes = @{"Windows6.1-KB2554876-v2-x64.msu" = "http://hotfixv4.microsoft.com/Windows%207/Windows%20Server2008%20R2%20SP1/sp2/Fix368051/7600/free/433385_intl_x64_zip.exe";
-								     "Windows6.1-KB2708075-x64.msu" = "http://hotfixv4.microsoft.com/Windows%207/Windows%20Server2008%20R2%20SP1/sp2/Fix402568/7600/free/447698_intl_x64_zip.exe";
-                                     "Windows6.1-KB2472264-v3-x64.msu" = "http://hotfixv4.microsoft.com/Windows%207/Windows%20Server2008%20R2%20SP1/sp2/Fix354400/7600/free/427087_intl_x64_zip.exe"}
+                if ((Gwmi Win32_OperatingSystem).Version -eq "6.1.7601") # Win2008 R2 SP1
+                {
+                    $missingHotfixes = @{"Windows6.1-KB2554876-v2-x64.msu" = "http://hotfixv4.microsoft.com/Windows%207/Windows%20Server2008%20R2%20SP1/sp2/Fix368051/7600/free/433385_intl_x64_zip.exe";
+					    			     "Windows6.1-KB2708075-x64.msu" = "http://hotfixv4.microsoft.com/Windows%207/Windows%20Server2008%20R2%20SP1/sp2/Fix402568/7600/free/447698_intl_x64_zip.exe";
+                                         "Windows6.1-KB2472264-v3-x64.msu" = "http://hotfixv4.microsoft.com/Windows%207/Windows%20Server2008%20R2%20SP1/sp2/Fix354400/7600/free/427087_intl_x64_zip.exe";
+                                         "Windows6.1-KB2567680-x64.msu" = "http://download.microsoft.com/download/C/D/A/CDAF5DD8-3B9A-4F8D-A48F-BEFE53C5B249/Windows6.1-KB2567680-x64.msu";
+                                         "NDP45-KB2759112-x64.exe" = "http://download.microsoft.com/download/5/6/3/5631B753-A009-48AF-826C-2D2C29B94172/NDP45-KB2759112-x64.exe"}
+                }
+                elseif ((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*") # Win2012
+                {
+                    $missingHotfixes = @{"Windows8-RT-KB2765317-x64.msu" = "http://download.microsoft.com/download/0/2/E/02E9E569-5462-48EB-AF57-8DCCF852E6F4/Windows8-RT-KB2765317-x64.msu"}
+                }
                 $hotfixLocation = $env:SPbits+"\PrerequisiteInstallerFiles"
                 ForEach ($hotfixPatch in $missingHotfixes.Keys)
                 {
-                    $hotfixKB = $hotfixPatch.Split('-')[1]
+                    $hotfixKB = $hotfixPatch.Split('-') | Where-Object {$_ -like "KB*"}
                     # Check if the hotfix is already installed
-                    Write-Host -ForegroundColor White " - Checking for $hotfixKB..." -NoNewline
+                    Write-Host -ForegroundColor White "  - Checking for $hotfixKB..." -NoNewline
                     If (!(Get-HotFix -Id $hotfixKB -ErrorAction SilentlyContinue))
                     {
                         Write-Host -ForegroundColor White "Missing; attempting to install..."
                         $hotfixUrl = $missingHotfixes.$hotfixPatch
-                        $hotfixFile = $hotfixUrl.Split('/')[-1] 
+                        $hotfixFile = $hotfixUrl.Split('/')[-1]
                         $hotfixFileZip = $hotfixFile+".zip"
                         $hotfixZipPath = Join-Path -Path $hotfixLocation -ChildPath $hotfixFileZip
-                        # Check if the .msu file is already present
+                        # Check if the .msu/.exe file is already present
                         If (Test-Path "$env:SPbits\PrerequisiteInstallerFiles\$hotfixPatch")
                         {
-                            Write-Host -ForegroundColor White " - Hotfix file `"$hotfixPatch`" found."
+                            Write-Host -ForegroundColor White "  - Hotfix file `"$hotfixPatch`" found."
                         }
-                        Else # Check if the downloaded package exists with a .zip extension
+                        Else
                         {
+                            # Check if the downloaded package exists with a .zip extension
                             If (!([string]::IsNullOrEmpty($hotfixFileZip)) -and (Test-Path "$hotfixLocation\$hotfixFileZip"))
                             {
-                                Write-Host -ForegroundColor White " - File $hotfixFile (zip) found."
+                                Write-Host -ForegroundColor White "  - File $hotfixFile (zip) found."
                             }
                         	Else
                             {
-                                If (Test-Path "$hotfixLocation\$hotfixFile") # Check if the downloaded package exists
+                                # Check if the downloaded package exists
+                                If (Test-Path "$hotfixLocation\$hotfixFile")
                             	{
-                            		Write-Host -ForegroundColor White " - File $hotfixFile found."
+                            		Write-Host -ForegroundColor White "  - File $hotfixFile found."
                             	}
                                 Else # Go ahead and download the missing package
                             	{
                                     Try
                                     {
                                 		# Begin download
-                                        Write-Host -ForegroundColor White " - Hotfix $hotfixPatch not found in $env:SPbits\PrerequisiteInstallerFiles"
-                                        Write-Host -ForegroundColor White " - Attempting to download..." -NoNewline
+                                        Write-Host -ForegroundColor White "  - Hotfix $hotfixPatch not found in $env:SPbits\PrerequisiteInstallerFiles"
+                                        Write-Host -ForegroundColor White "  - Attempting to download..." -NoNewline
                                         Import-Module BitsTransfer | Out-Null
-                                        Start-BitsTransfer -Source $hotfixUrl -Destination "$hotfixLocation\$hotfixFileZip" -DisplayName "Downloading `'$hotfixFile`' to $hotfixLocation" -Priority Foreground -Description "From $hotfixUrl..." -ErrorVariable err
-                                        if ($err) {Write-Host "."; Throw " - Could not download from $hotfixUrl!"}
-                                        Write-Host "Done!"
+                                        Start-BitsTransfer -Source $hotfixUrl -Destination "$hotfixLocation\$hotfixFile" -DisplayName "Downloading `'$hotfixFile`' to $hotfixLocation" -Priority Foreground -Description "From $hotfixUrl..." -ErrorVariable err
+                                        if ($err) {Write-Host "."; Throw "  - Could not download from $hotfixUrl!"}
+                                        Write-Host -ForegroundColor White "Done!"
                                 	}
                                     Catch
                                     {
-                                    	Write-Warning " - An error occurred attempting to download `"$hotfixFile`"."
+                                    	Write-Warning "  - An error occurred attempting to download `"$hotfixFile`"."
                                     	break
                                     }
                                 }
-                                # Give the file a .zip extension so we can work with it like a compressed folder
-                                Rename-Item -Path "$hotfixLocation\$hotfixFile" -NewName $hotfixFileZip -Force -ErrorAction SilentlyContinue
+                                if ($hotfixFile -like "*zip.exe") # The hotfix is probably a self-extracting exe
+                                {
+                                    # Give the file a .zip extension so we can work with it like a compressed folder
+                                    Write-Host -ForegroundColor White "  - Renaming $hotfixFile to $hotfixFileZip..."
+                                    Rename-Item -Path "$hotfixLocation\$hotfixFile" -NewName $hotfixFileZip -Force -ErrorAction SilentlyContinue
+                                }
                             }
-                            Write-Host -ForegroundColor White " - Extracting `"$hotfixPatch`" from `"$hotfixFile`"..." -NoNewline
-                            $shell = New-Object -ComObject Shell.Application
-                            $hotfixFileZipNs = $shell.Namespace($hotfixZipPath)
-                            $hotfixLocationNs = $shell.Namespace($hotfixLocation)
-                            $hotfixLocationNs.Copyhere($hotfixFileZipNs.items())
-                            Write-Host -ForegroundColor White "Done."
+                            If (Test-Path "$hotfixLocation\$hotfixFileZip") # The zipped hotfix exists, ands needs to be extracted
+                            {
+                                Write-Host -ForegroundColor White "  - Extracting `"$hotfixPatch`" from `"$hotfixFile`"..." -NoNewline
+                                $shell = New-Object -ComObject Shell.Application
+                                $hotfixFileZipNs = $shell.Namespace($hotfixZipPath)
+                                $hotfixLocationNs = $shell.Namespace($hotfixLocation)
+                                $hotfixLocationNs.Copyhere($hotfixFileZipNs.items())
+                                Write-Host -ForegroundColor White "Done."
+                            }
                         }
                         # Install the hotfix
                         $extractedHotfixPath = Join-Path -Path $hotfixLocation -ChildPath $hotfixPatch
-                        Write-Host -ForegroundColor White " - Installing hotfix $hotfixPatch..." -NoNewline
-                        Start-Process -FilePath "wusa.exe" -ArgumentList "`"$extractedHotfixPath`" /quiet /norestart" -Wait -NoNewWindow
+                        Write-Host -ForegroundColor White "  - Installing hotfix $hotfixPatch..." -NoNewline
+                        if ($hotfixPatch -like "*.msu") # Treat as a Windows Update patch
+                        {
+                            Start-Process -FilePath "wusa.exe" -ArgumentList "`"$extractedHotfixPath`" /quiet /norestart" -Wait -NoNewWindow
+                        }
+                        else # Treat as an executable (.exe) patch
+                        {
+                            Start-Process -FilePath "$extractedHotfixPath" -ArgumentList "/passive /norestart" -Wait -NoNewWindow
+                        }
                         Write-Host -ForegroundColor White "Done."
                     }
                     Else {Write-Host -ForegroundColor White "Already installed."}
@@ -928,14 +952,19 @@ Function UpdateProcessIdentity ($serviceToUpdate)
     $spservice = Get-spserviceaccountxml $xmlinput
     # Managed Account
     $managedAccountGen = Get-SPManagedAccount | Where-Object {$_.UserName -eq $($spservice.username)}
-    If ($managedAccountGen -eq $null) { Throw " - Managed Account $($spservice.username) not found" }
-    Write-Host -ForegroundColor White " - Updating $($serviceToUpdate.TypeName) to run as $($managedAccountGen.UserName)..."
-    # Set the Process Identity to our general App Pool Account; otherwise it's set by default to the Farm Account and gives warnings in the Health Analyzer
-    $serviceToUpdate.Service.ProcessIdentity.CurrentIdentityType = "SpecificUser"
-    $serviceToUpdate.Service.ProcessIdentity.ManagedAccount = $managedAccountGen
-    $serviceToUpdate.Service.ProcessIdentity.Update()
-    $serviceToUpdate.Service.ProcessIdentity.Deploy()
-    $serviceToUpdate.Update()
+    if ($managedAccountGen -eq $null) { Throw " - Managed Account $($spservice.username) not found" }
+    if ($serviceToUpdate.Service) {$serviceToUpdate = $serviceToUpdate.Service}
+    if ($serviceToUpdate.ProcessIdentity.Username -ne $managedAccountGen.UserName)
+    {
+        Write-Host -ForegroundColor White " - Updating $($serviceToUpdate.TypeName) to run as $($managedAccountGen.UserName)..."
+        # Set the Process Identity to our general App Pool Account; otherwise it's set by default to the Farm Account and gives warnings in the Health Analyzer
+        $serviceToUpdate.ProcessIdentity.CurrentIdentityType = "SpecificUser"
+        $serviceToUpdate.ProcessIdentity.ManagedAccount = $managedAccountGen
+        $serviceToUpdate.ProcessIdentity.Update()
+        $serviceToUpdate.ProcessIdentity.Deploy()
+        Write-Host -ForegroundColor White " - Done."
+    }
+    else {Write-Host -ForegroundColor White " - $($serviceToUpdate.TypeName) is already configured to run as $($managedAccountGen.UserName)."}
 }
 #EndRegion
 
@@ -1484,7 +1513,8 @@ Function StartSandboxedCodeService
             Try
             {
                 Write-Host -ForegroundColor White " - Starting Microsoft SharePoint Foundation Sandboxed Code Service..."
-                UpdateProcessIdentity ($sandboxedCodeService)
+                UpdateProcessIdentity $sandboxedCodeService
+                $sandboxedCodeService.Update()
                 $sandboxedCodeService.Provision()
                 If (-not $?) {Throw " - Failed to start Sandboxed Code Service"}
             }
@@ -1840,7 +1870,7 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
         $LCID = $siteCollection.LCID
         $siteCollectionLocale = $siteCollection.Locale
         $siteCollectionTime24 = $siteCollection.Time24
-        $getSPSiteCollection = Get-SPSite | Where-Object {$_.Url -eq $siteURL}
+        $getSPSiteCollection = Get-SPSite -Limit ALL | Where-Object {$_.Url -eq $siteURL}
         If (($getSPSiteCollection -eq $null) -and ($siteURL -ne $null))
         {
             Write-Host -ForegroundColor White " - Creating Site Collection `"$siteURL`"..."
@@ -2099,7 +2129,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
                     $newMySitesDB = New-SPContentDatabase -DatabaseServer $mySiteDBServer -Name $mySiteDB -WebApplication "$mySiteURL`:$mySitePort"
                     If (-not $?) { Throw " - Failed to create My Sites content DB" }
                 }
-                If (!(Get-SPSite | Where-Object {(($_.Url -like "$mySiteURL*") -and ($_.Port -eq "$mySitePort"))}))
+                If (!(Get-SPSite -Limit ALL | Where-Object {(($_.Url -like "$mySiteURL*") -and ($_.Port -eq "$mySitePort"))}))
                 {
                     Write-Host -ForegroundColor White " - Creating My Sites site collection $mySiteURL`:$mySitePort..."
                     # Verify that the Language we're trying to create the site in is currently installed on the server
@@ -2245,7 +2275,8 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
                         Write-Host -ForegroundColor White " - Deleting existing sync credentials timer job..."
                         $UPSCredentialsJob.Delete()
                     }
-                    UpdateProcessIdentity ($profileSyncService)
+                    UpdateProcessIdentity $profileSyncService
+                    $profileSyncService.Update()
                     Write-Host -ForegroundColor White " - Waiting for User Profile Synchronization Service..." -NoNewline
                     # Provision the User Profile Sync Service
                     $profileServiceApp.SetSynchronizationMachine($env:COMPUTERNAME, $profileSyncService.Id, $farmAcct, (ConvertTo-PlainText $farmAcctPWD))
@@ -2733,7 +2764,8 @@ Function CreateWebAnalyticsApp([xml]$xmlinput)
             $analyticsDataProcessingInstances = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.WebAnalytics.Administration.WebAnalyticsServiceInstance"}
             $analyticsDataProcessingInstance = $analyticsDataProcessingInstances | ? {$_.Server.Address -eq $env:COMPUTERNAME}
             If (-not $?) { Throw " - Failed to find Analytics Data Processing Service instance" }
-            UpdateProcessIdentity ($analyticsDataProcessingInstance)
+            UpdateProcessIdentity $analyticsDataProcessingInstance
+            $analyticsDataProcessingInstance.Update()
             Write-Host -ForegroundColor White " - Starting local Analytics Data Processing Service instance..."
             $analyticsDataProcessingInstance.Provision()
             If ($getWebAnalyticsServiceApplication -eq $null)
@@ -2996,6 +3028,8 @@ Function ConfigureFoundationSearch ([xml]$xmlinput)
         {
             $foundationSearchService = (Get-SPFarm).Services | where {$_.Name -eq "SPSearch4"}
             $spservice = Get-spserviceaccountxml $xmlinput
+            UpdateProcessIdentity $foundationSearchService
+            <#
             $managedAccountGen = Get-SPManagedAccount | Where-Object {$_.UserName -eq $($spservice.username)}
             Write-Host -ForegroundColor White " - Applying service account $($spservice.username) to service SPSearch4..."
             $foundationSearchService.ProcessIdentity.CurrentIdentityType = "SpecificUser"
@@ -3004,6 +3038,7 @@ Function ConfigureFoundationSearch ([xml]$xmlinput)
             $foundationSearchService.ProcessIdentity.Deploy()
             $foundationSearchService.Update()
             Write-Host -ForegroundColor White " - Done."
+            #>
         }
         Catch
         {
@@ -3053,18 +3088,25 @@ Function ConfigureTracing ([xml]$xmlinput)
         {
             Write-Host -ForegroundColor White " - $($spservice.username) is already a member of Performance Log Users."
         }
-        $managedAccountGen = Get-SPManagedAccount | Where-Object {$_.UserName -eq $($spservice.username)}
         Try
         {
-            Write-Host -ForegroundColor White " - Updating service account..."
-            $spTraceV4.ProcessIdentity.CurrentIdentityType = "SpecificUser"
-            $spTraceV4.ProcessIdentity.ManagedAccount = $managedAccountGen
-            $spTraceV4.ProcessIdentity.Update()
-            $spTraceV4.ProcessIdentity.Deploy()
-            $spTraceV4.Update()
-            Write-Host -ForegroundColor White " - Restarting service SPTraceV4..."
-            Restart-Service -Name "SPTraceV4"
-            Write-Host -ForegroundColor White " - Done."
+            UpdateProcessIdentity $spTraceV4
+            <#
+            $managedAccountGen = Get-SPManagedAccount | Where-Object {$_.UserName -eq $($spservice.username)}
+            if ($spTraceV4.ProcessIdentity.Username -ne $managedAccountGen.UserName)
+            {
+                Write-Host -ForegroundColor White " - Updating $($spTraceV4.TypeName) to run as $($managedAccountGen.UserName)..."
+                $spTraceV4.ProcessIdentity.CurrentIdentityType = "SpecificUser"
+                $spTraceV4.ProcessIdentity.ManagedAccount = $managedAccountGen
+                $spTraceV4.ProcessIdentity.Update()
+                $spTraceV4.ProcessIdentity.Deploy()
+                $spTraceV4.Update()
+                Write-Host -ForegroundColor White " - Restarting service $($spTraceV4.TypeName)..."
+                Restart-Service -Name "SPTraceV4"
+                Write-Host -ForegroundColor White " - Done."
+            }
+            else {Write-Host -ForegroundColor White " - $($spTraceV4.TypeName) is already configured to run as $($managedAccountGen.UserName)."}
+            #>
         }
         Catch
         {
@@ -3095,6 +3137,8 @@ Function ConfigureDistributedCacheService ([xml]$xmlinput)
         $managedAccountGen = Get-SPManagedAccount | Where-Object {$_.UserName -eq $($spservice.username)}
         Try
         {
+            UpdateProcessIdentity $distributedCachingSvc
+            <#
             Write-Host -ForegroundColor White " - Updating service account..."
             # From http://technet.microsoft.com/en-us/library/jj219613(v=office.15).aspx#changesvcacct
             $distributedCachingSvc.ProcessIdentity.CurrentIdentityType = "SpecificUser"
@@ -3102,6 +3146,7 @@ Function ConfigureDistributedCacheService ([xml]$xmlinput)
             $distributedCachingSvc.ProcessIdentity.Update()
             $distributedCachingSvc.ProcessIdentity.Deploy()
             Write-Host -ForegroundColor White " - Done."
+            #>
         }
         Catch
         {
@@ -3526,17 +3571,22 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 
                 #To clone the active topology
                 $clone = $searchApp.ActiveTopology.Clone()
-
+                $activateTopology = $false
                 Write-Host -ForegroundColor White " - Checking administration component..." -NoNewline
-                Write-Host -ForegroundColor White "Creating..." -NoNewline
-                New-SPEnterpriseSearchAdminComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
-                If ($?) {Write-Host -ForegroundColor White "Done."}
+                If (!($searchApp.ActiveTopology.GetComponents() | Where-Object {$_.Name -like "AdminComponent*"}))
+                {
+                    Write-Host -ForegroundColor White "Creating..." -NoNewline
+                    New-SPEnterpriseSearchAdminComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
+                    $activateTopology = $true
+                    If ($?) {Write-Host -ForegroundColor White "Done."}
+                }
                 Else {Write-Host -ForegroundColor White "Already exists."}
                 Write-Host -ForegroundColor White " - Checking content processing component..." -NoNewline
                 If (!($searchApp.ActiveTopology.GetComponents() | Where-Object {$_.Name -like "ContentProcessingComponent*"}))
                 {
                     Write-Host -ForegroundColor White "Creating..." -NoNewline
                     New-SPEnterpriseSearchContentProcessingComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
+                    $activateTopology = $true
                     If ($?) {Write-Host -ForegroundColor White "Done."}
                 }
                 Else {Write-Host -ForegroundColor White "Already exists."}
@@ -3545,6 +3595,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 {
                     Write-Host -ForegroundColor White "Creating..." -NoNewline
                     New-SPEnterpriseSearchAnalyticsProcessingComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
+                    $activateTopology = $true
                     If ($?) {Write-Host -ForegroundColor White "Done."}
                 }
                 Else {Write-Host -ForegroundColor White "Already exists."}
@@ -3553,6 +3604,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 {
                     Write-Host -ForegroundColor White "Creating..." -NoNewline
                     New-SPEnterpriseSearchCrawlComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
+                    $activateTopology = $true
                     If ($?) {Write-Host -ForegroundColor White "Done."}
                 }
                 Else {Write-Host -ForegroundColor White "Already exists."}
@@ -3561,6 +3613,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 {
                     Write-Host -ForegroundColor White "Creating..." -NoNewline
                     New-SPEnterpriseSearchIndexComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
+                    $activateTopology = $true
                     If ($?) {Write-Host -ForegroundColor White "Done."}
                 }
                 Else {Write-Host -ForegroundColor White "Already exists."}
@@ -3569,16 +3622,20 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 {
                     Write-Host -ForegroundColor White "Creating..." -NoNewline
                     New-SPEnterpriseSearchQueryProcessingComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
+                    $activateTopology = $true
                     If ($?) {Write-Host -ForegroundColor White "Done."}
                 }
                 Else {Write-Host -ForegroundColor White "Already exists."}
                 
                 $searchApp | Get-SPEnterpriseSearchAdministrationComponent | Set-SPEnterpriseSearchAdministrationComponent -SearchServiceInstance $searchSvc
                 
-                Write-Host -ForegroundColor White " - Activating Search Topology..." -NoNewline
-                $clone.Activate()
-                If ($?) {Write-Host -ForegroundColor White "Done."}
-
+                if ($activateTopology)
+                {
+                    Write-Host -ForegroundColor White " - Activating Search Topology..." -NoNewline
+                    $clone.Activate()
+                    If ($?) {Write-Host -ForegroundColor White "Done."}
+                }
+                else {$clone.Delete()}
                 Write-Host -ForegroundColor White " - Checking search service application proxy..." -NoNewline
                 If (!(Get-SPEnterpriseSearchServiceApplicationProxy -Identity $appConfig.Proxy.Name -ErrorAction SilentlyContinue))
                 {
@@ -3592,6 +3649,42 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 AddResourcesLink "Search Administration" ("searchadministration.aspx?appid=" +  $searchApp.Id)
 
                 Write-Host -ForegroundColor White " - Search Service Application successfully provisioned."
+
+                function SetSearchCenterUrl ($searchCenterURL, $searchApp)
+                {
+                    Start-Sleep 10 # Wait for stuff to catch up so we don't get a concurrency error
+                    $searchApp.SearchCenterUrl = $searchCenterURL
+                    $searchApp.Update()
+                }
+
+                If (!([string]::IsNullOrEmpty($appConfig.SearchCenterUrl)))
+                {
+                    # Set the SP2013 Search Center URL per http://blogs.technet.com/b/speschka/archive/2012/10/29/how-to-configure-the-global-search-center-url-for-sharepoint-2013-using-powershell.aspx
+                    Write-Host -ForegroundColor White " - Setting the Global Search Center URL to $($appConfig.SearchCenterURL)..."
+                    while ($done -ne $true)
+                    {
+                        try
+                        {
+                            $searchApp = Get-SPEnterpriseSearchServiceApplication -Identity $appConfig.Name
+                            SetSearchCenterUrl $appConfig.SearchCenterURL $searchApp
+                            if ($?)
+                            {
+                                $done = $true
+                                Write-Host -ForegroundColor White " - Done."
+                            }
+                        }
+                        catch
+                        {
+                            Write-Output $_
+                            if ($_ -like "*update conflict*")
+                            {
+                                Write-Host -ForegroundColor Yellow "  - An update conflict occurred, retrying..."
+                            }
+                            else {Write-Output $_; $done = $true}
+                        }
+                    }
+                }
+                Else {Write-Host -ForegroundColor Yellow " - SearchCenterUrl was not specified, skipping."}
                 WriteLine
             }
         }
@@ -4947,9 +5040,10 @@ Function CheckSQLAccess
     $currentUser = "$env:USERDOMAIN\$env:USERNAME"
     $serverRolesToCheck = "dbcreator","securityadmin"
     # If we are provisioning PerformancePoint but aren't running SharePoint 2010 Service Pack 1 yet, we need sysadmin in order to run the RenameDatabase function
+    # We also evidently need sysadmin in order to configure MaxDOP on the SQL instance if we are installing SharePoint 2013
     If (($xmlinput.Configuration.EnterpriseServiceApps.PerformancePointService) -and (ShouldIProvision ($xmlinput.Configuration.EnterpriseServiceApps.PerformancePointService) -eq $true) -and (!(CheckForSP1)))  
     {
-        $serverRolesToCheck = "dbcreator","securityadmin","sysadmin"    
+        $serverRolesToCheck += "sysadmin"    
     }
 
     ForEach ($sqlServer in ($dbServers | Select-Object -Unique))
