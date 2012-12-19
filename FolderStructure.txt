@@ -11,16 +11,18 @@
 \SP\AutoSPInstaller\Hotfixes\Windows6.1-KB976462-v2-x64.msu
 \SP\AutoSPInstaller\Hotfixes\Windows6.1-KB976462-x64.msu
 
-\SP\LanguagePacks\xx-xx\ (optional)
-\SP\LanguagePacks\xx-xx\Updates\ (extract Language Pack Service Pack / Cumulative Updates here) (optional)
-OR
-\SP\LanguagePacks\<ServerLanguagePack_XX-XX.exe>
+\SP\201x (SharePoint 2010 or 2013 binary files - e.g. \2010\ or \2013\ - or both, in different folders)
 
-\SP\SharePoint\
-\SP\SharePoint\PrerequisiteInstallerFiles\
-\SP\OfficeWebApps\ (optional)
-\SP\PDF\ (optional)
-\SP\PDF\icpdf.gif (optional)
-\SP\PDF\PDFiFilter64installer.zip (optional)
-\SP\PDF\PDFiFilter64installer.msi (optional)
-\SP\ForeFront\ (optional)
+\SP\201x\LanguagePacks\xx-xx\ (optional)
+\SP\201x\LanguagePacks\xx-xx\Updates\ (extract Language Pack Service Pack / Cumulative Updates here) (optional)
+OR
+\SP\201x\LanguagePacks\<ServerLanguagePack_XX-XX.exe>
+
+\SP\201x\SharePoint\
+\SP\201x\SharePoint\PrerequisiteInstallerFiles\
+\SP\2010\OfficeWebApps\ (optional, only required/supported with SP2010)
+\SP\2010\PDF\ (optional, only required/supported with SP2010)
+\SP\2010\PDF\icpdf.gif (optional, only required/supported with SP2010)
+\SP\2010\PDF\PDFiFilter64installer.zip (optional, only required/supported with SP2010)
+\SP\2010\PDF\PDFiFilter64installer.msi (optional, only required/supported with SP2010)
+\SP\201x\ForeFront\ (optional)

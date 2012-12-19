@@ -316,27 +316,8 @@ Function InstallPrerequisites([xml]$xmlinput)
 			# Install prerequisites manually without using PrerequisiteInstaller if we're installing SP2010 on on Windows Server 2012
             if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*") -and ($env:spVer -eq "14"))
             {
-			    Throw " - SharePoint 2010 is officially unsupported on Windows Server 2012 - see "
-            <# REMOVED AS SP2010 on Windows Server 2012 IS OFFICIALLY UNSUPPORTED
-                if ($xmlinput.Configuration.Install.OfflineInstall -eq $true)
-                {
-                    Start-Process -FilePath MsiExec.exe -ArgumentList "/i `"$env:SPbits\PrerequisiteInstallerFiles\sqlncli.msi`" /passive" -Wait
-                    Start-Process -FilePath "$env:SPbits\PrerequisiteInstallerFiles\MSChart.exe" -ArgumentList "/passive" -Wait
-                    Import-Module ServerManager | Out-Null
-                    $ProgressPreference = "SilentlyContinue"
-                    If (!(Get-WindowsFeature -Name NET-Framework-Features).Installed) {Add-WindowsFeature -Name NET-Framework-Features | Out-Null}
-                    If (!(Get-WindowsFeature -Name Windows-Identity-Foundation).Installed) {Add-WindowsFeature Windows-Identity-Foundation | Out-Null}
-                    Start-Process -FilePath MsiExec.exe -ArgumentList "/i `"$env:SPbits\PrerequisiteInstallerFiles\Synchronization.msi`" /passive" -Wait
-                    Start-Process -FilePath MsiExec.exe -ArgumentList "/i `"$env:SPbits\PrerequisiteInstallerFiles\FilterPack\FilterPack.msi`" /passive" -Wait
-                    Start-Process -FilePath MsiExec.exe -ArgumentList "/i `"$env:SPbits\PrerequisiteInstallerFiles\SQLSERVER2008_ASADOMD10.msi`" /passive" -Wait
-                    Start-Process -FilePath MsiExec.exe -ArgumentList "/i `"$env:SPbits\PrerequisiteInstallerFiles\rsSharePoint.msi`" /passive" -Wait
-                    Start-Process -FilePath MsiExec.exe -ArgumentList "/i `"$env:SPbits\PrerequisiteInstallerFiles\SpeechPlatformRuntime.msi`" /passive" -Wait
-                    Start-Process -FilePath MsiExec.exe -ArgumentList "/i `"$env:SPbits\PrerequisiteInstallerFiles\MSSpeech_SR_en-US_TELE.msi`" /passive" -Wait
-                }
-                else {Write-Warning " - You must specify OfflineInstall=`"true`" to install SP2010 on Windows Server 2012"; pause "exit"; throw}
-            #>
+			    Throw " - SharePoint 2010 is officially unsupported on Windows Server 2012 - see http://support.microsoft.com/kb/2724471"
 			}
-			#>
             else # Install using PrerequisiteInstaller as usual
             {
                 If ($xmlinput.Configuration.Install.OfflineInstall -eq $true) # Install all prerequisites from local folder
@@ -654,18 +635,20 @@ Function InstallOfficeWebApps([xml]$xmlinput)
         }
         Else
         {
+            $spYears = @{"14" = "2010"; "15" = "2013"}
+            $spYear = $spYears.$env:spVer
             # Install Office Web Apps Binaries
             $config = $env:dp0 + "\" + $xmlinput.Configuration.OfficeWebApps.ConfigFile
-            If (Test-Path "$bits\OfficeWebApps\setup.exe")
+            If (Test-Path "$bits\$spYear\OfficeWebApps\setup.exe")
             {
                 Write-Host -ForegroundColor Blue " - Installing Office Web Apps binaries..." -NoNewline
                 $startTime = Get-Date
-                Start-Process "$bits\OfficeWebApps\setup.exe" -ArgumentList "/config `"$config`"" -WindowStyle Minimized
+                Start-Process "$bits\$spYear\OfficeWebApps\setup.exe" -ArgumentList "/config `"$config`"" -WindowStyle Minimized
                 Show-Progress -Process setup -Color Blue -Interval 5
                 $delta,$null = (New-TimeSpan -Start $startTime -End (Get-Date)).ToString() -split "\."
                 Write-Host -ForegroundColor White " - Office Web Apps setup completed in $delta."
                 If (-not $?) {
-                    Throw " - Error $LASTEXITCODE occurred running $bits\OfficeWebApps\setup.exe"                   
+                    Throw " - Error $LASTEXITCODE occurred running $bits\$spYear\OfficeWebApps\setup.exe"                   
                 }
                 # Parsing most recent Office Web Apps Setup log for errors or restart requirements, since $LASTEXITCODE doesn't seem to work...
                 $setupLog = get-childitem $env:TEMP | ? {$_.Name -like "Wac Server Setup*"} | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
@@ -701,7 +684,7 @@ Function InstallOfficeWebApps([xml]$xmlinput)
             }
             Else
             {
-                Throw " - Install path $bits\OfficeWebApps not found!!"
+                Throw " - Install path $bits\$spYear\OfficeWebApps not found!!"
             }
         }
         WriteLine
@@ -715,23 +698,6 @@ Function ConfigureOfficeWebApps([xml]$xmlinput)
     If ($xmlinput.Configuration.OfficeWebApps.Install -eq $true)
     {
         Writeline
-        <#Start-Process -FilePath $PSConfig -ArgumentList "-cmd upgrade -inplace b2b -wait -force -cmd installcheck -noinstallcheck" -NoNewWindow -Wait -ErrorAction SilentlyContinue | Out-Null
-        $PSConfigLog = get-childitem "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$env:spVer\LOGS" | ? {$_.Name -like "PSCDiagnostics*"} | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
-        If ($PSConfigLog -eq $null) 
-        {
-            Throw " - Could not find PSConfig log file!"
-        }
-        Else 
-        {
-            # Get error(s) from log
-            ##$PSConfigLastError = $PSConfigLog | select-string -SimpleMatch -CaseSensitive -Pattern "ERR" | Select-Object -Last 1
-            If ($PSConfigLastError)
-            {
-                Write-Warning $PSConfigLastError.Line
-                Write-Host -ForegroundColor White " - An error occurred configuring Office Web Apps, trying again..."
-                ConfigureOfficeWebApps $xmlinput
-            }
-        }#>
         Try
         {
             Write-Host -ForegroundColor White " - Configuring Office Web Apps..."
@@ -771,10 +737,12 @@ Function ConfigureOfficeWebApps([xml]$xmlinput)
 Function InstallLanguagePacks([xml]$xmlinput)
 {
     WriteLine
+    $spYears = @{"14" = "2010"; "15" = "2013"}
+    $spYear = $spYears.$env:spVer
     #Get installed languages from registry (HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Office Server\$env:spVer.0\InstalledLanguages)
     $installedOfficeServerLanguages = (Get-Item "HKLM:\Software\Microsoft\Office Server\$env:spVer.0\InstalledLanguages").GetValueNames() | ? {$_ -ne ""}   # Look for extracted language packs
-    $extractedLanguagePacks = (Get-ChildItem "$bits\LanguagePacks" -Name -Include "??-??" -ErrorAction SilentlyContinue)
-    $serverLanguagePacks = (Get-ChildItem "$bits\LanguagePacks" -Name -Include ServerLanguagePack_*.exe -ErrorAction SilentlyContinue)
+    $extractedLanguagePacks = (Get-ChildItem "$bits\$spYear\LanguagePacks" -Name -Include "??-??" -ErrorAction SilentlyContinue)
+    $serverLanguagePacks = (Get-ChildItem "$bits\$spYear\LanguagePacks" -Name -Include ServerLanguagePack_*.exe -ErrorAction SilentlyContinue)
     If ($extractedLanguagePacks)
     {
         Write-Host -ForegroundColor White " - Installing SharePoint Language Packs:"
@@ -784,7 +752,7 @@ Function InstallLanguagePacks([xml]$xmlinput)
             If (!$language)
             {
                 Write-Host -ForegroundColor Blue " - Installing extracted language pack $languagePackFolder..." -NoNewline
-                Start-Process -WorkingDirectory "$bits\LanguagePacks\$languagePackFolder\" -FilePath "setup.exe" -ArgumentList "/config $bits\LanguagePacks\$languagePackFolder\Files\SetupSilent\config.xml"
+                Start-Process -WorkingDirectory "$bits\$spYear\LanguagePacks\$languagePackFolder\" -FilePath "setup.exe" -ArgumentList "/config $bits\$spYear\LanguagePacks\$languagePackFolder\Files\SetupSilent\config.xml"
                 Show-Progress -Process setup -Color Blue -Interval 5
             }
         }
@@ -794,10 +762,6 @@ Function InstallLanguagePacks([xml]$xmlinput)
     ElseIf ($serverLanguagePacks)
     {
         Write-Host -ForegroundColor White " - Installing SharePoint Language Packs:"
-    <#
-        #Another way to get installed languages, thanks to Anders Rask (@AndersRask)!
-        ##$installedOfficeServerLanguages = [Microsoft.SharePoint.SPRegionalSettings]::GlobalInstalledLanguages
-    #>
         ForEach ($languagePack in $serverLanguagePacks)
         {
             # Slightly convoluted check to see if language pack is already installed, based on name of language pack file.
@@ -806,20 +770,20 @@ Function InstallLanguagePacks([xml]$xmlinput)
             If (!$language)
             {
                 Write-Host -ForegroundColor Blue " - Installing $languagePack..." -NoNewline
-                Start-Process -FilePath "$bits\LanguagePacks\$languagePack" -ArgumentList "/quiet /norestart"
+                Start-Process -FilePath "$bits\$spYear\LanguagePacks\$languagePack" -ArgumentList "/quiet /norestart"
                 Show-Progress -Process $($languagePack -replace ".exe", "") -Color Blue -Interval 5
                 $language = (($languagePack -replace "ServerLanguagePack_","") -replace ".exe","")
                 # Install Foundation Language Pack SP1, then Server Language Pack SP1, if found
-                If (Get-ChildItem "$bits\LanguagePacks" -Name -Include spflanguagepack2010sp1-kb2460059-x64-fullfile-$language.exe -ErrorAction SilentlyContinue)
+                If (Get-ChildItem "$bits\$spYear\LanguagePacks" -Name -Include spflanguagepack2010sp1-kb2460059-x64-fullfile-$language.exe -ErrorAction SilentlyContinue)
                 {
                     Write-Host -ForegroundColor Blue " - Installing Foundation language pack SP1 for $language..." -NoNewline
-                    Start-Process -WorkingDirectory "$bits\LanguagePacks\" -FilePath "spflanguagepack2010sp1-kb2460059-x64-fullfile-$language.exe" -ArgumentList "/quiet /norestart"
+                    Start-Process -WorkingDirectory "$bits\$spYear\LanguagePacks\" -FilePath "spflanguagepack2010sp1-kb2460059-x64-fullfile-$language.exe" -ArgumentList "/quiet /norestart"
                     Show-Progress -Process spflanguagepack2010sp1-kb2460059-x64-fullfile-$language -Color Blue -Interval 5
                     # Install Server Language Pack SP1, if found
-                    If (Get-ChildItem "$bits\LanguagePacks" -Name -Include serverlanguagepack2010sp1-kb2460056-x64-fullfile-$language.exe -ErrorAction SilentlyContinue)
+                    If (Get-ChildItem "$bits\$spYear\LanguagePacks" -Name -Include serverlanguagepack2010sp1-kb2460056-x64-fullfile-$language.exe -ErrorAction SilentlyContinue)
                     {
                         Write-Host -ForegroundColor Blue " - Installing Server language pack SP1 for $language..." -NoNewline
-                        Start-Process -WorkingDirectory "$bits\LanguagePacks\" -FilePath "serverlanguagepack2010sp1-kb2460056-x64-fullfile-$language.exe" -ArgumentList "/quiet /norestart"
+                        Start-Process -WorkingDirectory "$bits\$spYear\LanguagePacks\" -FilePath "serverlanguagepack2010sp1-kb2460056-x64-fullfile-$language.exe" -ArgumentList "/quiet /norestart"
                         Show-Progress -Process serverlanguagepack2010sp1-kb2460056-x64-fullfile-$language -Color Blue -Interval 5
                     }
                     Else
@@ -839,7 +803,7 @@ Function InstallLanguagePacks([xml]$xmlinput)
     }
     Else 
     {
-        Write-Host -ForegroundColor White " - No language packs found in $bits\LanguagePacks, skipping."
+        Write-Host -ForegroundColor White " - No language packs found in $bits\$spYear\LanguagePacks, skipping."
     }
 
     # Get and note installed languages
@@ -3029,16 +2993,6 @@ Function ConfigureFoundationSearch ([xml]$xmlinput)
             $foundationSearchService = (Get-SPFarm).Services | where {$_.Name -eq "SPSearch4"}
             $spservice = Get-spserviceaccountxml $xmlinput
             UpdateProcessIdentity $foundationSearchService
-            <#
-            $managedAccountGen = Get-SPManagedAccount | Where-Object {$_.UserName -eq $($spservice.username)}
-            Write-Host -ForegroundColor White " - Applying service account $($spservice.username) to service SPSearch4..."
-            $foundationSearchService.ProcessIdentity.CurrentIdentityType = "SpecificUser"
-            $foundationSearchService.ProcessIdentity.ManagedAccount = $managedAccountGen
-            $foundationSearchService.ProcessIdentity.Update()
-            $foundationSearchService.ProcessIdentity.Deploy()
-            $foundationSearchService.Update()
-            Write-Host -ForegroundColor White " - Done."
-            #>
         }
         Catch
         {
@@ -3091,22 +3045,6 @@ Function ConfigureTracing ([xml]$xmlinput)
         Try
         {
             UpdateProcessIdentity $spTraceV4
-            <#
-            $managedAccountGen = Get-SPManagedAccount | Where-Object {$_.UserName -eq $($spservice.username)}
-            if ($spTraceV4.ProcessIdentity.Username -ne $managedAccountGen.UserName)
-            {
-                Write-Host -ForegroundColor White " - Updating $($spTraceV4.TypeName) to run as $($managedAccountGen.UserName)..."
-                $spTraceV4.ProcessIdentity.CurrentIdentityType = "SpecificUser"
-                $spTraceV4.ProcessIdentity.ManagedAccount = $managedAccountGen
-                $spTraceV4.ProcessIdentity.Update()
-                $spTraceV4.ProcessIdentity.Deploy()
-                $spTraceV4.Update()
-                Write-Host -ForegroundColor White " - Restarting service $($spTraceV4.TypeName)..."
-                Restart-Service -Name "SPTraceV4"
-                Write-Host -ForegroundColor White " - Done."
-            }
-            else {Write-Host -ForegroundColor White " - $($spTraceV4.TypeName) is already configured to run as $($managedAccountGen.UserName)."}
-            #>
         }
         Catch
         {
@@ -3138,20 +3076,10 @@ Function ConfigureDistributedCacheService ([xml]$xmlinput)
         Try
         {
             UpdateProcessIdentity $distributedCachingSvc
-            <#
-            Write-Host -ForegroundColor White " - Updating service account..."
-            # From http://technet.microsoft.com/en-us/library/jj219613(v=office.15).aspx#changesvcacct
-            $distributedCachingSvc.ProcessIdentity.CurrentIdentityType = "SpecificUser"
-            $distributedCachingSvc.ProcessIdentity.ManagedAccount = $managedAccountGen
-            $distributedCachingSvc.ProcessIdentity.Update()
-            $distributedCachingSvc.ProcessIdentity.Deploy()
-            Write-Host -ForegroundColor White " - Done."
-            #>
         }
         Catch
         {
             Write-Output $_
-            ##Throw " - An error occurred updating the service account for service AppFabricCachingService."
             Write-Warning " - An error occurred updating the service account for service AppFabricCachingService."
         }
         WriteLine
@@ -4444,7 +4372,7 @@ Function Configure-PDFSearchAndIcon
     WriteLine
     Write-Host -ForegroundColor White " - Configuring PDF file search, display and handling..."
     $sharePointRoot = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$env:spVer"
-    $sourceFileLocations = @("$bits\PDF\","$bits\AdobePDF\","$env:TEMP\")
+    $sourceFileLocations = @("$bits\$spYear\PDF\","$bits\PDF\","$bits\AdobePDF\","$env:TEMP\")
     # Only install/configure iFilter if specified, and we are running SP2010 (as SP2013 includes one)
     If ((ShouldIProvision($xmlinput.Configuration.AdobePDF.iFilter) -eq $true) -and ($env:spVer -eq "14"))
     {
@@ -4535,8 +4463,6 @@ Function Configure-PDFSearchAndIcon
             $registryItem = New-Item -Path Registry::"HKLM\SOFTWARE\Microsoft\Office Server\$env:spVer.0\Search\Setup\ContentIndexCommon\Filters\Extension\.pdf"
             $registryItem | New-ItemProperty -Name "(default)" -PropertyType String -Value "{E8978DA6-047F-4E3D-9C78-CDBE46041603}" | Out-Null
         }
-        ##Write-Host -ForegroundColor White " - Restarting SharePoint Foundation Search Service..."
-        ##Restart-Service SPSearch4
         $spSearchService = "OSearch"+$env:spVer # Substitute the correct SharePoint version into the service name so we can handle SP2013 as well as SP2010
         If ((Get-Service $spSearchService).Status -eq "Running")
         {
@@ -4648,23 +4574,23 @@ Function InstallForeFront
         {
             # Install ForeFront
             $config = $env:dp0 + "\" + $xmlinput.Configuration.ForeFront.ConfigFile
-            If (Test-Path "$bits\Forefront\setup.exe")
+            If (Test-Path "$bits\$spYear\Forefront\setup.exe")
             {
                 Write-Host -ForegroundColor White " - Installing ForeFront binaries..."
                 Try
                 {
-                    Start-Process "$bits\Forefront\setup.exe" -ArgumentList "/a `"$config`" /p" -Wait
+                    Start-Process "$bits\$spYear\Forefront\setup.exe" -ArgumentList "/a `"$config`" /p" -Wait
                     If (-not $?) {Throw}
                     Write-Host -ForegroundColor White " - Done installing ForeFront."
                 }
                 Catch 
                 {
-                    Throw " - Error $LASTEXITCODE occurred running $bits\ForeFront\setup.exe"
+                    Throw " - Error $LASTEXITCODE occurred running $bits\$spYear\ForeFront\setup.exe"
                 }
             }
             Else 
             {
-                Throw " - ForeFront installer not found in $bits\ForeFront folder"
+                Throw " - ForeFront installer not found in $bits\$spYear\ForeFront folder"
             }
         }
         WriteLine
@@ -4923,7 +4849,7 @@ Function ConvertTo-PlainText( [security.securestring]$secure )
 # ===================================================================================
 Function Pause($action)
 {
-    #From http://www.microsoft.com/technet/scriptcenter/resources/pstips/jan08/pstip0118.mspx
+    # From http://www.microsoft.com/technet/scriptcenter/resources/pstips/jan08/pstip0118.mspx
     Write-Host "Press any key to $action..."
     $null = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 }
@@ -4997,7 +4923,7 @@ Function Add-SQLAlias()
     {
         $data = New-Item 'HKLM:\SOFTWARE\Microsoft\MSSQLServer\Client\ConnectTo'
     }
-    #Add Alias
+    # Add Alias
     $data = New-ItemProperty HKLM:\SOFTWARE\Microsoft\MSSQLServer\Client\ConnectTo -Name $aliasName -Value $serverAliasConnection -PropertyType "String" -Force -ErrorAction SilentlyContinue
 }
 
@@ -5016,7 +4942,7 @@ Function CheckSQLAccess
     {
         $dbServer = (GetFromNode $node "DBServer")
         If ($node.DatabaseServer) {$dbServer = GetFromNode $node "DatabaseServer"}
-        #If the DBServer has been specified, and we've asked to set up an alias, create one
+        # If the DBServer has been specified, and we've asked to set up an alias, create one
         If (!([string]::IsNullOrEmpty($dbServer)) -and ($node.DBAlias.Create -eq $true))
         {
             $dbInstance = GetFromNode $node.DBAlias "DBInstance"
@@ -5289,8 +5215,8 @@ Function CheckForSP1
             Return $true
         }
     }
-    #SharePoint probably isn't installed yet, so try to see if we have slipstreamed SP1 in the \Updates folder at least...
-    ElseIf (Get-Item "$bits\SharePoint\Updates\oserversp1-x-none.msp" -ErrorAction SilentlyContinue)
+    # SharePoint probably isn't installed yet, so try to see if we have slipstreamed SP1 in the \Updates folder at least...
+    ElseIf (Get-Item "$env:SPbits\Updates\oserversp1-x-none.msp" -ErrorAction SilentlyContinue)
     {
         Return $true
     }
@@ -5307,10 +5233,6 @@ Function CheckForSP1
 Function CheckIfUpgradeNeeded
 {
     $setupType = (Get-Item -Path "HKLM:\SOFTWARE\Microsoft\Shared Tools\Web Server Extensions\$env:spVer.0\WSS\").GetValue("SetupType")
-    <#If (((Get-SPServer $env:COMPUTERNAME).NeedsUpgrade -eq $true) -or `
-        ((Get-SPServer $env:COMPUTERNAME).NeedsUpgradeIncludeChildren -eq $true) -or `
-        ((Get-SPFarm).NeedsUpgrade -eq $true) -or `
-        ((Get-SPFarm).NeedsUpgradeIncludeChildren -eq $true))#>
     If ($setupType -ne "CLEAN_INSTALL") # For example, if the value is "B2B_UPGRADE"
     {
         Return $true

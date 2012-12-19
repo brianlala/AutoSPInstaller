@@ -18,10 +18,12 @@
        This allows you to configure an entire multi-server farm with different servers fulfilling different roles
        using a single configuration file.
        e.g. <ExcelServices Provision="Server1 Server2"> would provision excel services only on Server1 and Server2. -->
-<Configuration Environment="Dev" Version="3.3">
-    <!-- The Environment attribute above appears at the top of the installation transcript. It does not affect the installation -->
-    <!-- The Install section controls what modifications are made to the Windows OS prior to installation and how the SharePoint installation is run -->
-    <Install>
+<!-- The Environment attribute below appears at the top of the installation transcript. It does not affect the installation -->
+<Configuration Environment="Dev" Version="3.4">
+    <!-- The Install section controls what modifications are made to the Windows OS prior to installation and how the SharePoint installation is run.
+         You can also explicitly state the SPVersion of SharePoint being installed, (in case you have binaries for both SP2010/SP2013 in your folder structure).
+         Allowed values are "2010" or "2013". If you omit this, the script will attempt to determine the version anyhow, and default to 2013 if both sets of install files are present. -->
+    <Install SPVersion="2013">
         <!-- ConfigFile is the name of the file containing the unattended install settings for SharePoint's setup.exe
              You must put your product key in this file -->
         <ConfigFile>config.xml</ConfigFile>

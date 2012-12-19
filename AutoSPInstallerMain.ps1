@@ -20,14 +20,24 @@ $Host.UI.RawUI.WindowTitle = " -- AutoSPInstaller -- $env:COMPUTERNAME --"
 $0 = $myInvocation.MyCommand.Definition
 $env:dp0 = [System.IO.Path]::GetDirectoryName($0)
 $bits = Get-Item $env:dp0 | Split-Path -Parent
-# Check if SharePoint binaries are in the \SharePoint subfolder as per new folder structure
-If (Test-Path -Path "$bits\SharePoint\setup.exe")
+# Check if SharePoint binaries are in the \SP20xx\SharePoint subfolder as per new folder structure
+# Look for SP2013
+If ($xmlinput.Configuration.Install.SPVersion -eq "2013")
+{
+    if (Test-Path -Path "$bits\2013\SharePoint\setup.exe")
+    {
+        $env:SPbits = $bits+"\2013\SharePoint"
+    }
+    else {Write-Host -ForegroundColor Yellow " - SP2013 was specified in $($inputfile.replace($bits,'')),`n - but $bits\2013\SharePoint\setup.exe was not found. Looking for SP2010..."}
+}
+# If 2013 bits aren't found, look for SP2010 bits or use the value specified in $xmlinput
+ElseIf ((Test-Path -Path "$bits\2010\SharePoint\setup.exe") -or ($xmlinput.Configuration.Install.SPVersion -eq "2010"))
+{
+    $env:SPbits = $bits+"\2010\SharePoint"
+}
+Elseif (Test-Path -Path "$bits\SharePoint\setup.exe") # Use old path convention
 {
     $env:SPbits = $bits+"\SharePoint"
-}
-Elseif (Test-Path -Path "$bits\setup.exe") # Use old path convention
-{
-    $env:SPbits = $bits
 }
 Else
 {
