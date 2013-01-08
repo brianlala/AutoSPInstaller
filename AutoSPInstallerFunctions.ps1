@@ -406,7 +406,7 @@ Function InstallPrerequisites([xml]$xmlinput)
                         $hotfixFileZip = $hotfixFile+".zip"
                         $hotfixZipPath = Join-Path -Path $hotfixLocation -ChildPath $hotfixFileZip
                         # Check if the .msu/.exe file is already present
-                        If (Test-Path "$env:SPbits\PrerequisiteInstallerFiles\$hotfixPatch")
+                        If (Test-Path "$hotfixLocation\$hotfixPatch")
                         {
                             Write-Host -ForegroundColor White "  - Hotfix file `"$hotfixPatch`" found."
                         }
@@ -617,14 +617,14 @@ Function InstallSharePoint([xml]$xmlinput)
 }
 #EndRegion
 
-#Region Install Office Web Apps
+#Region Install Office Web Apps 2010
 # ===================================================================================
-# Func: InstallOfficeWebApps
+# Func: InstallOfficeWebApps2010
 # Desc: Installs the OWA binaries in unattended mode
 # From: Ported over by user http://www.codeplex.com/site/users/view/cygoh originally from the InstallSharePoint function, fixed up by brianlala
 # Originally posted on: http://autospinstaller.codeplex.com/discussions/233530
 # ===================================================================================
-Function InstallOfficeWebApps([xml]$xmlinput)
+Function InstallOfficeWebApps2010([xml]$xmlinput)
 {
     If ($xmlinput.Configuration.OfficeWebApps.Install -eq $true)
     {
@@ -692,7 +692,7 @@ Function InstallOfficeWebApps([xml]$xmlinput)
 }
 #EndRegion
 
-#Region Configure Office Web Apps
+#Region Configure Office Web Apps 2010
 Function ConfigureOfficeWebApps([xml]$xmlinput)
 {
     If ($xmlinput.Configuration.OfficeWebApps.Install -eq $true)
@@ -1746,6 +1746,9 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
     $appPool = $webApp.applicationPool
     $database = $dbPrefix+$webApp.databaseName
     $dbServer = $webApp.Database.DBServer
+    # Check for an existing App Pool
+    $existingWebApp = Get-SPWebApplication |? { ($_.ApplicationPool).Name -eq $appPool }
+    $appPoolExists = ($existingWebApp -ne $null)
     # If we haven't specified a DB Server then just use the default used by the Farm
     If ([string]::IsNullOrEmpty($dbServer))
     {
@@ -1781,7 +1784,14 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
             {           
                 $authProvider = New-SPAuthenticationProvider -UseWindowsIntegratedAuthentication
             }  
+            if ($appPoolExists)
+            {
+                New-SPWebApplication -Name $webAppName -ApplicationPool $appPool -DatabaseServer $dbServer -DatabaseName $database -HostHeader $hostHeader -Url $url -Port $port -SecureSocketsLayer:$useSSL -AuthenticationProvider $authProvider @pathSwitch | Out-Null
+            }
+            else
+            {
             New-SPWebApplication -Name $webAppName -ApplicationPoolAccount $account -ApplicationPool $appPool -DatabaseServer $dbServer -DatabaseName $database -HostHeader $hostHeader -Url $url -Port $port -SecureSocketsLayer:$useSSL -AuthenticationProvider $authProvider @pathSwitch | Out-Null
+            }
             If (-not $?) { Throw " - Failed to create web application" }
 
             If ((Gwmi Win32_OperatingSystem).Version -like "6.0*") # If we are running Win2008 (non-R2), we may need the claims hotfix
@@ -1794,7 +1804,14 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
         Else
         {
             # Create the web app using Classic mode authentication
-            New-SPWebApplication -Name $webAppName -ApplicationPoolAccount $account -ApplicationPool $appPool -DatabaseServer $dbServer -DatabaseName $database -HostHeader $hostHeader -Url $url -Port $port -SecureSocketsLayer:$useSSL @pathSwitch | Out-Null
+            if ($appPoolExists)
+            {
+                New-SPWebApplication -Name $webAppName -ApplicationPool $appPool -DatabaseServer $dbServer -DatabaseName $database -HostHeader $hostHeader -Url $url -Port $port -SecureSocketsLayer:$useSSL @pathSwitch | Out-Null
+            }
+            else
+            {
+                New-SPWebApplication -Name $webAppName -ApplicationPoolAccount $account -ApplicationPool $appPool -DatabaseServer $dbServer -DatabaseName $database -HostHeader $hostHeader -Url $url -Port $port -SecureSocketsLayer:$useSSL @pathSwitch | Out-Null
+            }
             If (-not $?) { Throw " - Failed to create web application" }
         }
         SetupManagedPaths $webApp
@@ -2768,7 +2785,7 @@ Function CreateSecureStoreServiceApp
             }
             $secureStoreServiceAppName = $xmlinput.Configuration.ServiceApps.SecureStoreService.Name
             $secureStoreServiceAppProxyName = $xmlinput.Configuration.ServiceApps.SecureStoreService.ProxyName
-            If ($secureStoreServiceAppName -eq $null) {$secureStoreServiceAppName = "State Service Application"}
+            If ($secureStoreServiceAppName -eq $null) {$secureStoreServiceAppName = "Secure Store Service"}
             If ($secureStoreServiceAppProxyName -eq $null) {$secureStoreServiceAppProxyName = $secureStoreServiceAppName}
             $dbServer = $xmlinput.Configuration.ServiceApps.SecureStoreService.Database.DBServer
             # If we haven't specified a DB Server then just use the default used by the Farm
@@ -2815,16 +2832,16 @@ Function CreateSecureStoreServiceApp
             $secureStore = Get-SPServiceApplicationProxy | Where {$_.GetType().Equals([Microsoft.Office.SecureStoreService.Server.SecureStoreServiceApplicationProxy])}
             Start-Sleep 5
             Write-Host -ForegroundColor White " - Creating the Master Key..."
-            Update-SPSecureStoreMasterKey -ServiceApplicationProxy $secureStore.Id -Passphrase "$farmPassPhrase"
+            Update-SPSecureStoreMasterKey -ServiceApplicationProxy $secureStore.Id -Passphrase $farmPassphrase
             Start-Sleep 5
             Write-Host -ForegroundColor White " - Creating the Application Key..."
-            Update-SPSecureStoreApplicationServerKey -ServiceApplicationProxy $secureStore.Id -Passphrase "$farmPassPhrase" -ErrorAction SilentlyContinue
+            Update-SPSecureStoreApplicationServerKey -ServiceApplicationProxy $secureStore.Id -Passphrase $farmPassphrase -ErrorAction SilentlyContinue
             Start-Sleep 5
             If (!$?)
             {
                 # Try again...
                 Write-Host -ForegroundColor White " - Creating the Application Key (2nd attempt)..."
-                Update-SPSecureStoreApplicationServerKey -ServiceApplicationProxy $secureStore.Id -Passphrase "$farmPassPhrase"
+                Update-SPSecureStoreApplicationServerKey -ServiceApplicationProxy $secureStore.Id -Passphrase $farmPassphrase
             }
         }
         Catch
@@ -4128,7 +4145,7 @@ Function CreatePerformancePointServiceApp ([xml]$xmlinput)
 #EndRegion
 
 #Region Create Access 2010 Service
-Function CreateAccessServiceApp ([xml]$xmlinput)
+Function CreateAccess2010ServiceApp ([xml]$xmlinput)
 {
     $serviceConfig = $xmlinput.Configuration.EnterpriseServiceApps.AccessService
     If (ShouldIProvision($serviceConfig) -eq $true)
@@ -4423,7 +4440,7 @@ Function Configure-PDFSearchAndIcon
         Try
         {
             Write-Host -ForegroundColor White " - Installing Adobe PDF iFilter..."
-            Start-Process -FilePath "msiexec.exe" -ArgumentList "/i $iFilterInstaller /passive /norestart" -NoNewWindow -Wait
+            Start-Process -FilePath "msiexec.exe" -ArgumentList "/i `"$iFilterInstaller`" /passive /norestart" -NoNewWindow -Wait
         }
         Catch {$_}
         If ((Get-PsSnapin |?{$_.Name -eq "Microsoft.SharePoint.PowerShell"})-eq $null)
@@ -4858,6 +4875,13 @@ Function Pause($action)
 # Func: ShouldIProvision
 # Desc: Returns TRUE if the item whose configuration node is passed in should be provisioned.
 #       on this machine.
+#       This function supports wildcard computernames.   Computernames specified in the
+#       AutoSpInstallerInput.xml may contain either a single * character
+#	    to do a wildcard match or may contain one or more # characters to match an integer.
+#       Using wildcard computer names is not compatible with remote installation.
+#
+#	Examples:   WFE* would match computers named WFE-foo, WFEbar, etc.
+#				WFE## would match WFE01, WFE02, but not WFE1
 # ===================================================================================
 Function ShouldIProvision([System.Xml.XmlNode] $node)
 {
@@ -4867,14 +4891,13 @@ Function ShouldIProvision([System.Xml.XmlNode] $node)
     ElseIf ($node.GetAttribute("Start")) {$v = $node.GetAttribute("Start").Replace(","," ")}
     ElseIf ($node.GetAttribute("Install")) {$v = $node.GetAttribute("Install").Replace(","," ")}
     If ($v -eq $true) { Return $true; }
-    $v = " " + $v.ToUpper() + " ";
-    If ($v.IndexOf(" " + $env:COMPUTERNAME.ToUpper() + " ") -ge 0) { Return $true; }
-    Return $false;
+    Return MatchComputerName $v  $env:COMPUTERNAME
 }
 
 # ====================================================================================
 # Func: Add-SQLAlias
 # Desc: Creates a local SQL alias (like using cliconfg.exe) so the real SQL server/name doesn't get hard-coded in SharePoint
+#       if local database server is being used, then use Shared Memory protocol
 # From: Bill Brockbank, SharePoint MVP (billb@navantis.com)
 # ====================================================================================
 
@@ -4909,7 +4932,14 @@ Function Add-SQLAlias()
         [String]$port = ""
     )
 
-    $serverAliasConnection="DBMSSOCN,$SQLInstance"
+	If (($SQLInstance -eq $env:COMPUTERNAME) -or ($SQLInstance.StartsWith($env:ComputerName +"\"))) {
+		$protocol = "dbmslpcn"
+	}
+	else {
+		$protocol = "DBMSSOCN"
+	}
+	
+    $serverAliasConnection="$protocol,$SQLInstance"
     If ($port -ne "")
     {
          $serverAliasConnection += ",$port"
@@ -5516,4 +5546,40 @@ Function Set-UserAccountControl ($flag)
         Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\policies\system" -Name EnableLUA -Value $flag
     }
 }
+
+# ===================================================================================
+# Func: MatchComputerName
+# Desc: Returns TRUE if the $computerName specified matches one of the items in $computersList.
+#		Supports wildcard matching (# for a a number, * for any non whitepace character)
+# ===================================================================================
+Function MatchComputerName($computersList, $computerName)
+{
+	$v = " " + ($computersList.ToUpper()).Replace(",", " ") + " ";
+    If ($v.IndexOf(" " + $computerName.ToUpper() + " ") -ge 0) { Return $true; }
+    If (($v.Contains("*") -or $v.Contains("#")) -eq $true) {
+        # wildcard processing
+        foreach ($item in -split $v) {
+            $item = $item -replace "#", "[\d]"
+            $item = $item -replace "\*", "[\S]*"
+            if ($computerName -match $item) {return $true;}
+        } 
+    }
+}
+
+# ===================================================================================
+# Func: PauseIfAttended
+# Desc: Pauses execution and waits for user acknowledgement with a $message unless
+#        $unattended is $true, in which case it displays the $message and continues with
+#        execution.
+# ===================================================================================
+Function PauseIfAttended([string]$message, [bool]$unattended=$false)
+{
+    if ($unattended) {
+        Write-Host $message
+        }
+    else {
+        Pause $message
+        }
+}
+
 #EndRegion

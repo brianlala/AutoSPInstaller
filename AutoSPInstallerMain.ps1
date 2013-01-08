@@ -2,7 +2,8 @@
 (
     [string]$inputFile = $(throw '- Need parameter input file (e.g. "c:\SP2010\AutoSPInstaller\AutoSPInstallerInput.xml")'),
     [string]$targetServer = "",
-    [string]$remoteAuthPassword = ""
+    [string]$remoteAuthPassword = "",
+    [switch]$unattended
 )
 
 # Globally update all instances of "localhost" in the input file to actual local server name
@@ -91,7 +92,7 @@ Function Install-Remote
                                                                                 Install-NetFramework -Server $server -Password $(ConvertFrom-SecureString $($credential.Password)); `
                                                                                 Install-WindowsIdentityFoundation -Server $server -Password $(ConvertFrom-SecureString $($credential.Password)); `
                                                                                 Start-RemoteInstaller -Server $server -Password $(ConvertFrom-SecureString $($credential.Password)) -InputFile $inputFile; `
-                                                                                Pause `"exit`"; `
+                                                                                PauseIfAttended `"exit`" $unattended; `
                                                                                 Stop-Transcript}" -Verb Runas
                 Start-Sleep 10
                 #Start-Process -FilePath "$PSHOME\powershell.exe" -ArgumentList "$($MyInvocation.ScriptName) $inputFile -targetServer $server" -Verb Runas
@@ -148,7 +149,7 @@ Function Run-Install
     InstallPrerequisites $xmlinput
     ConfigureIISLogging $xmlinput
     InstallSharePoint $xmlinput
-    InstallOfficeWebApps $xmlinput
+    InstallOfficeWebApps2010 $xmlinput
     InstallLanguagePacks $xmlinput
     FixTaxonomyPickerBug
 }
@@ -189,7 +190,7 @@ Function Setup-Services
     CreateEnterpriseSearchServiceApp $xmlinput
     CreateBusinessDataConnectivityServiceApp $xmlinput
     CreateExcelServiceApp $xmlinput
-    CreateAccessServiceApp $xmlinput
+    CreateAccess2010ServiceApp $xmlinput
     CreateVisioServiceApp $xmlinput
     CreatePerformancePointServiceApp $xmlinput
     CreateWordAutomationServiceApp $xmlinput
@@ -215,7 +216,7 @@ Function Setup-Services
 Function Finalize-Install 
 {
     # Perform these steps only if the local server is a SharePoint farm server
-    If ($farmServers -like "$env:COMPUTERNAME*")
+    If (MatchComputerName $farmServers $env:COMPUTERNAME)
     {
         # Remove Farm Account from local Administrators group to avoid big scary warnings in Central Admin
         # But only if the script actually put it there, and we want to leave it there 
@@ -261,7 +262,7 @@ Function Finalize-Install
 
 If (!([string]::IsNullOrEmpty($targetServer))) {$farmServers = $targetServer}
 Else {$farmServers = Get-FarmServers $xmlinput}
-$remoteFarmServers = $farmServers | Where-Object {$_ -notlike "$env:COMPUTERNAME"}
+$remoteFarmServers = $farmServers | Where-Object {-not (MatchComputerName $_ $env:COMPUTERNAME)}
 $password = $remoteAuthPassword
 If ([string]::IsNullOrEmpty($password)) {$password = $xmlinput.Configuration.Install.AutoAdminLogon.Password}
 If (($xmlinput.Configuration.Install.RemoteInstall.Enable -eq $true -and !([string]::IsNullOrEmpty($remoteFarmServers))) -or ($xmlinput.Configuration.Install.AutoAdminLogon.Enable -eq $true))
@@ -285,7 +286,7 @@ If (($xmlinput.Configuration.Install.RemoteInstall.Enable -eq $true -and !([stri
             If (($user -ne $null) -and ($credential.Password -ne $null)) {$password = ConvertTo-PlainText $credential.Password}
             Else 
             {
-                If ($xmlinput.Configuration.Install.RemoteInstall.Enable -eq $true -and !([string]::IsNullOrEmpty($remoteFarmServers))) {Write-Error " - Credentials are required for remote authentication."; Pause "exit"; Throw}
+                If ($xmlinput.Configuration.Install.RemoteInstall.Enable -eq $true -and !([string]::IsNullOrEmpty($remoteFarmServers))) {Write-Error " - Credentials are required for remote authentication."; PauseIfAttended "exit" $unattended; Throw}
                 Else {Write-Host -ForegroundColor Yellow " - No password supplied; skipping AutoAdminLogon."; break}
             }
             Write-Host -ForegroundColor White " - Checking credentials: `"$($credential.Username)`"..." -NoNewline
@@ -313,7 +314,7 @@ Write-Host -ForegroundColor White "| Started on: $env:StartDate |"
 Write-Host -ForegroundColor White "-----------------------------------"
 
 # In case we are running this installer from a non-SharePoint farm server, only do these steps for farm member servers
-If ($farmServers -like "$env:COMPUTERNAME*")
+If (MatchComputerName $farmServers $env:COMPUTERNAME)
 {
     Try
     {
@@ -328,7 +329,7 @@ If ($farmServers -like "$env:COMPUTERNAME*")
         
         If (($xmlinput.Configuration.Install.PauseAfterInstall -eq $true) -or ($xmlinput.Configuration.Install.RemoteInstall.ParallelInstall -eq $true))
         {
-            Pause "proceed with farm configuration"
+            PauseIfAttended "proceed with farm configuration" $unattended
         }
         Setup-Farm
         Setup-Services
@@ -385,7 +386,7 @@ If ($farmServers -like "$env:COMPUTERNAME*")
                 }
                 Else {Write-Host -ForegroundColor Yellow " - Please restart your computer to continue AutoSPInstaller."}
             }
-            if (!$restarting) {Pause "exit"}
+            if (!$restarting) {PauseIfAttended "exit" $unattended}
         }
         # Lately, loading the snapin throws an error: "System.TypeInitializationException: The type initializer for 'Microsoft.SharePoint.Utilities.SPUtility' threw an exception. ---> System.IO.FileNotFoundException:"...
         ElseIf ($_.Exception.Message -like "*Microsoft.SharePoint.Utilities.SPUtility*")
@@ -413,7 +414,7 @@ If ($farmServers -like "$env:COMPUTERNAME*")
         Write-Host -ForegroundColor White "| Aborted:    $env:EndDate |"
         Write-Host -ForegroundColor White "-----------------------------------"
         $aborted = $true
-        If (!$scriptCommandLine) {Pause "exit"}
+        If (!$scriptCommandLine) {PauseIfAttended "exit" $unattended}
     }
     Finally 
     {
@@ -429,7 +430,7 @@ If ($farmServers -like "$env:COMPUTERNAME*")
                 Start-Process $PSConfigUI -ArgumentList "-cmd showcentraladmin"
             }
             # Launch any site collections we created, but only if this is a local (non-remote) session and this is a farm server
-            If ($farmServers -like "$env:COMPUTERNAME*")
+            If (MatchComputerName $farmServers $env:COMPUTERNAME)
             {
                 ForEach ($webApp in $xmlinput.Configuration.WebApplications.WebApplication)
                 {
@@ -465,8 +466,8 @@ If (!$aborted)
 	    Write-Host -ForegroundColor White "| Completed:  $env:EndDate |"
 	    Write-Host -ForegroundColor White "-----------------------------------"
 	    If ($isTracing) {Stop-Transcript; $script:isTracing = $false}
-	    Pause "exit"
-	    Invoke-Item $logFile
+	    PauseIfAttended "exit" $unattended
+	    If (-not $unattended) { Invoke-Item $logFile }
 	}
 	# Remove any lingering LogTime values in the registry
 	Remove-ItemProperty -Path "HKLM:\SOFTWARE\AutoSPInstaller\" -Name "LogTime" -ErrorAction SilentlyContinue
