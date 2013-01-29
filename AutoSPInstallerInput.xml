@@ -19,17 +19,21 @@
        using a single configuration file.
        e.g. <ExcelServices Provision="Server1 Server2"> would provision excel services only on Server1 and Server2. -->
 <!-- The Environment attribute below appears at the top of the installation transcript. It does not affect the installation -->
-<Configuration Environment="Dev" Version="3.4">
+<Configuration Environment="Dev" Version="3.5">
     <!-- The Install section controls what modifications are made to the Windows OS prior to installation and how the SharePoint installation is run.
          You can also explicitly state the SPVersion of SharePoint being installed, (in case you have binaries for both SP2010/SP2013 in your folder structure).
          Allowed values are "2010" or "2013". If you omit this, the script will attempt to determine the version anyhow, and default to 2013 if both sets of install files are present. -->
     <Install SPVersion="2013">
-        <!-- ConfigFile is the name of the file containing the unattended install settings for SharePoint's setup.exe
-             You must put your product key in this file -->
+        <!-- The following few elements are parameters for the file containing the unattended install settings for SharePoint's setup.exe. Normally this is called config.xml.
+             AutoSPInstaller can now create this file if it doesn't already exist (based on the ConfigFile name), and use the values below for PIDKey and SKU. -->
         <ConfigFile>config.xml</ConfigFile>
+        <!-- If you are referencing an existing config.xml file, enter the your product key in that file. Otherwise, enter your product key as PIDKey below. -->
+        <PIDKey></PIDKey>
+        <!-- SKU can be either Standard or Enterprise. You are responsible for ensuring the PIDKey matches the SKU selected, the script won't/can't validate this. -->
+        <SKU>Enterprise</SKU>
         <!-- If true, the SharePoint prerequisite installer will install from the \SharePoint\PrerequisiteInstallerFiles folder.
              If false, the prerequisites will be downloaded during install. In order to use true you must obviously download all the prerequisites in advance.
-             You can use a script like http://autospinstaller.codeplex.com/releases/view/44442 to quickly accomplish this -->
+             You can use a script like http://autospsourcebuilder.codeplex.com to quickly accomplish this -->
         <OfflineInstall>false</OfflineInstall>
         <!-- Set <PauseAfterInstall> to true in order to pause the script after the SharePoint binaries are installed.
              Useful for running the binary install simultaneously on multiple servers but stopping short of the farm config (which can cause conflicts if running on multiple servers at once) -->
@@ -539,10 +543,11 @@
             </Database>
         </PerformancePointService>
     </EnterpriseServiceApps>
-    <!-- The OfficeWebApps section controls the installation of Office Web Apps. Setting Install="true" requires the office web apps installation files to be present.
-         Note: OfficeWebApps Install can only be "true" or "false" - server names are not supported here because it's all or nothing for OWA in a farm -->
+    <!-- The OfficeWebApps section controls the installation of Office Web Apps 2010. Setting Install="true" requires the office web apps installation files to be present.
+         Note: OfficeWebApps Install can only be "true" or "false" - server names are not supported here because it's all or nothing for OWA in a 2010 farm -->
     <OfficeWebApps Install="false"
-                   ConfigFile="config-OWA.xml">
+                   ConfigFile="config-OWA-2010.xml"
+                   PIDKeyOWA="7MXKC-26TBD-D6GJ6-GCGCK-4C9TF">
         <ExcelService Provision="false"
                       Name="Excel Web App"
                       ProxyName="Excel Web App"

@@ -92,7 +92,7 @@ Function Install-Remote
                                                                                 Install-NetFramework -Server $server -Password $(ConvertFrom-SecureString $($credential.Password)); `
                                                                                 Install-WindowsIdentityFoundation -Server $server -Password $(ConvertFrom-SecureString $($credential.Password)); `
                                                                                 Start-RemoteInstaller -Server $server -Password $(ConvertFrom-SecureString $($credential.Password)) -InputFile $inputFile; `
-                                                                                PauseIfAttended `"exit`" $unattended; `
+                                                                                Pause `"exit`"; `
                                                                                 Stop-Transcript}" -Verb Runas
                 Start-Sleep 10
                 #Start-Process -FilePath "$PSHOME\powershell.exe" -ArgumentList "$($MyInvocation.ScriptName) $inputFile -targetServer $server" -Verb Runas
@@ -129,10 +129,11 @@ Function Install-Remote
 #Region Prepare For Install
 Function PrepForInstall
 {
+    CheckInput
     $spInstalled = (Get-SharePointInstall)
     ValidateCredentials $xmlinput
     ValidatePassphrase $xmlinput
-    CheckConfig
+    CheckConfigFiles $xmlinput
     CheckSQLAccess
 }
 #EndRegion
@@ -194,14 +195,16 @@ Function Setup-Services
     CreateVisioServiceApp $xmlinput
     CreatePerformancePointServiceApp $xmlinput
     CreateWordAutomationServiceApp $xmlinput
-    CreateExcelOWAServiceApp $xmlinput
-    CreatePowerPointServiceApp $xmlinput
-    CreateWordViewingServiceApp $xmlinput
-	If ($env:spVer -eq "15") # These are for SP2013 only
+    if ($env:spVer -eq "14") # These are for SP2010 / Office Web Apps 2010 only
+    {
+        CreateExcelOWAServiceApp $xmlinput
+        CreatePowerPointOWAServiceApp $xmlinput
+        CreateWordViewingOWAServiceApp $xmlinput
+    }
+    if ($env:spVer -eq "15") # These are for SP2013 only
 	{
 		CreateAppManagementServiceApp $xmlinput
 		CreateSubscriptionSettingsServiceApp $xmlinput
-	    # This is still buggy
 	    ConfigureDistributedCacheService $xmlinput
     }
 	InstallSMTP $xmlinput
@@ -286,7 +289,7 @@ If (($xmlinput.Configuration.Install.RemoteInstall.Enable -eq $true -and !([stri
             If (($user -ne $null) -and ($credential.Password -ne $null)) {$password = ConvertTo-PlainText $credential.Password}
             Else 
             {
-                If ($xmlinput.Configuration.Install.RemoteInstall.Enable -eq $true -and !([string]::IsNullOrEmpty($remoteFarmServers))) {Write-Error " - Credentials are required for remote authentication."; PauseIfAttended "exit" $unattended; Throw}
+                If ($xmlinput.Configuration.Install.RemoteInstall.Enable -eq $true -and !([string]::IsNullOrEmpty($remoteFarmServers))) {Write-Error " - Credentials are required for remote authentication."; Pause "exit"; Throw}
                 Else {Write-Host -ForegroundColor Yellow " - No password supplied; skipping AutoAdminLogon."; break}
             }
             Write-Host -ForegroundColor White " - Checking credentials: `"$($credential.Username)`"..." -NoNewline
@@ -329,7 +332,7 @@ If (MatchComputerName $farmServers $env:COMPUTERNAME)
         
         If (($xmlinput.Configuration.Install.PauseAfterInstall -eq $true) -or ($xmlinput.Configuration.Install.RemoteInstall.ParallelInstall -eq $true))
         {
-            PauseIfAttended "proceed with farm configuration" $unattended
+            Pause "proceed with farm configuration"
         }
         Setup-Farm
         Setup-Services
@@ -386,7 +389,7 @@ If (MatchComputerName $farmServers $env:COMPUTERNAME)
                 }
                 Else {Write-Host -ForegroundColor Yellow " - Please restart your computer to continue AutoSPInstaller."}
             }
-            if (!$restarting) {PauseIfAttended "exit" $unattended}
+            if (!$restarting) {Pause "exit"}
         }
         # Lately, loading the snapin throws an error: "System.TypeInitializationException: The type initializer for 'Microsoft.SharePoint.Utilities.SPUtility' threw an exception. ---> System.IO.FileNotFoundException:"...
         ElseIf ($_.Exception.Message -like "*Microsoft.SharePoint.Utilities.SPUtility*")
@@ -414,7 +417,7 @@ If (MatchComputerName $farmServers $env:COMPUTERNAME)
         Write-Host -ForegroundColor White "| Aborted:    $env:EndDate |"
         Write-Host -ForegroundColor White "-----------------------------------"
         $aborted = $true
-        If (!$scriptCommandLine) {PauseIfAttended "exit" $unattended}
+        If (!$scriptCommandLine) {Pause "exit"}
     }
     Finally 
     {
@@ -466,7 +469,7 @@ If (!$aborted)
 	    Write-Host -ForegroundColor White "| Completed:  $env:EndDate |"
 	    Write-Host -ForegroundColor White "-----------------------------------"
 	    If ($isTracing) {Stop-Transcript; $script:isTracing = $false}
-	    PauseIfAttended "exit" $unattended
+	    Pause "exit"
 	    If (-not $unattended) { Invoke-Item $logFile }
 	}
 	# Remove any lingering LogTime values in the registry
