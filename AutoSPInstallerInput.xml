@@ -547,7 +547,7 @@
          Note: OfficeWebApps Install can only be "true" or "false" - server names are not supported here because it's all or nothing for OWA in a 2010 farm -->
     <OfficeWebApps Install="false"
                    ConfigFile="config-OWA-2010.xml"
-                   PIDKeyOWA="7MXKC-26TBD-D6GJ6-GCGCK-4C9TF">
+                   PIDKeyOWA="">
         <ExcelService Provision="false"
                       Name="Excel Web App"
                       ProxyName="Excel Web App"
