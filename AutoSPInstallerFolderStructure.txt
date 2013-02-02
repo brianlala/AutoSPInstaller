@@ -4,7 +4,6 @@
 \SP\AutoSPInstaller\AutoSPInstallerFunctions.ps1
 \SP\AutoSPInstaller\AutoSPInstallerFunctionsCustom.ps1
 \SP\AutoSPInstaller\AutoSPInstallerConfigureRemoteTarget.ps1
-\SP\AutoSPInstaller\config.xml
 \SP\AutoSPInstaller\README.rtf
 \SP\AutoSPInstaller\Hotfixes\
 \SP\AutoSPInstaller\Hotfixes\Windows6.0-KB971831-x64.msu

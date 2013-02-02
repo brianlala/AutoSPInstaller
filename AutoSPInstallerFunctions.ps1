@@ -5761,7 +5761,7 @@ Function Set-UserAccountControl ($flag)
 # ===================================================================================
 Function MatchComputerName($computersList, $computerName)
 {
-	If ($computersList -icontains $computerName) { Return $true; }
+	If ($computersList -like "*$computerName*") { Return $true; }
     foreach ($v in $computersList) {
       If ($v.Contains("*") -or $v.Contains("#")) {
             # wildcard processing
