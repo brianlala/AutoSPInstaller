@@ -19,7 +19,7 @@
        using a single configuration file.
        e.g. <ExcelServices Provision="Server1 Server2"> would provision excel services only on Server1 and Server2. -->
 <!-- The Environment attribute below appears at the top of the installation transcript. It does not affect the installation -->
-<Configuration Environment="Dev" Version="3.5">
+<Configuration Environment="Dev" Version="3.7">
     <!-- The Install section controls what modifications are made to the Windows OS prior to installation and how the SharePoint installation is run.
          You can also explicitly state the SPVersion of SharePoint being installed, (in case you have binaries for both SP2010/SP2013 in your folder structure).
          Allowed values are "2010" or "2013". If you omit this, the script will attempt to determine the version anyhow, and default to 2013 if both sets of install files are present. -->
@@ -348,13 +348,13 @@
                                                     ContentAccessAccount="DOMAIN\SP_SearchContent"
                                                     ContentAccessAccountPassword="">
                     <ApplicationPool Name="SharePoint Search Application Pool" Account="DOMAIN\SP_SearchService" Password="" />
-                    <CrawlServers>
+                    <CrawlComponent>
                         <Server Name="localhost" />
-                    </CrawlServers>
-                    <QueryServers>
+                    </CrawlComponent>
+                    <QueryComponent>
                         <Server Name="localhost" />
-                    </QueryServers>
-                    <!-- You should specify all the servers you listed in QueryServers in the SearchQueryAndSiteSettingsServers node below as well -->
+                    </QueryComponent>
+                    <!-- You should specify all the servers you listed in QueryComponent in the SearchQueryAndSiteSettingsServers node below as well -->
                     <SearchQueryAndSiteSettingsServers>
                         <Server Name="localhost" />
                     </SearchQueryAndSiteSettingsServers>
@@ -363,6 +363,18 @@
                         <Server Name="localhost" />
                         <ApplicationPool Name="SharePoint Search Application Pool" Account="DOMAIN\SP_SearchService" />
                     </AdminComponent>
+                    <!-- IndexComponent is only required for SP2013 -->
+                    <IndexComponent>
+                        <Server Name="localhost" />
+                    </IndexComponent>
+                    <!-- ContentProcessingComponent is only required for SP2013 -->
+                    <ContentProcessingComponent>
+                        <Server Name="localhost" />
+                    </ContentProcessingComponent>
+                    <!-- AnalyticsProcessingComponent is only required for SP2013 -->
+                    <AnalyticsProcessingComponent>
+                        <Server Name="localhost" />
+                    </AnalyticsProcessingComponent>
                     <Proxy Name="Search Service Application" Partitioned="false">
                         <ProxyGroup Name="Default" />
                     </Proxy>
@@ -502,6 +514,33 @@
                          DBPort="" />
             </Database>
         </SubscriptionSettingsService>
+        <!-- WorkManagementService is only for SharePoint 2013 -->
+        <WorkManagementService Provision="true"
+                               Name="Work Management Service Application"
+                               ProxyName="Work Management Service Application">
+        </WorkManagementService>
+        <!-- MachineTranslationService is only for SharePoint 2013 -->
+        <MachineTranslationService Provision="true"
+                               Name="Machine Translation Service"
+                               ProxyName="Machine Translation Service">
+            <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
+            <Database>
+                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SPFarm", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
+                <Name>TranslationService</Name>
+                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
+                     If you leave <DBServer> blank, the default DBServer value for the farm is used -->
+                <DBServer></DBServer>
+                <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
+                <DBAlias Create="true"
+                         DBInstance="SERVER\INSTANCE"
+                         DBPort="" />
+            </Database>
+        </MachineTranslationService>
+        <!-- PowerPointConversionService is only for SharePoint 2013 -->
+        <PowerPointConversionService Provision="true"
+                           Name="PowerPoint Conversion Service Application"
+                           ProxyName="PowerPoint Conversion Service Application">
+        </PowerPointConversionService>
     </ServiceApps>
     <!-- The EnterpriseSeviceApps section configures services only available with an Enterprise licence.
          Common Attributes:
@@ -519,10 +558,28 @@
                       UnattendedIDUser="DOMAIN\SP_VisioUser"
                       UnattendedIDPassword="">
         </VisioService>
+        <!-- AccessService is the version found in SP2010, or the version called 'Access 2010 Service' in SharePoint 2013. In SharePoint 2013 you can actually provision both. -->
         <AccessService Provision="false"
-                       Name="Access Services"
-                       ProxyName="Access Services">
+                       Name="Access 2010 Service"
+                       ProxyName="Access 2010 Service">
         </AccessService>
+        <!-- AccessServices is the new 2013 version, and is therefore only applicable to SharePoint 2013 -->
+        <AccessServices Provision="false"
+                        Name="Access Services"
+                        ProxyName="Access Services">
+            <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
+            <Database>
+                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SPFarm", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
+                <Name>AccessServices</Name>
+                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
+                     If you leave <DBServer> blank, the default DBServer value for the farm is used -->
+                <DBServer></DBServer>
+                <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
+                <DBAlias Create="false"
+                         DBInstance="SERVER\INSTANCE"
+                         DBPort="" />
+            </Database>
+        </AccessServices>
         <!-- If you choose to provision Performance Point Services, the user running the script must be in the sysadmin role of the SQL server whilst the script runs. This can be revoked afterwards. -->
         <PerformancePointService Provision="false"
                       Name="PerformancePoint Service"

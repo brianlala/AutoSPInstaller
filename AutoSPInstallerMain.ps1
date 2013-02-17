@@ -1,6 +1,6 @@
 ﻿param 
 (
-    [string]$inputFile = $(throw '- Need parameter input file (e.g. "c:\SP2010\AutoSPInstaller\AutoSPInstallerInput.xml")'),
+    [string]$inputFile = $(throw '- Need parameter input file (e.g. "c:\SP\AutoSPInstaller\AutoSPInstallerInput.xml")'),
     [string]$targetServer = "",
     [string]$remoteAuthPassword = "",
     [switch]$unattended
@@ -56,6 +56,24 @@ $script:DBPrefix = $xmlinput.Configuration.Farm.Database.DBPrefix
 If (($dbPrefix -ne "") -and ($dbPrefix -ne $null)) {$script:DBPrefix += "_"}
 If ($dbPrefix -like "*localhost*") {$script:DBPrefix = $dbPrefix -replace "localhost","$env:COMPUTERNAME"}
 
+
+if ($xmlinput.Configuration.Install.RemoteInstall.Enable -eq $true)
+{
+    if ((Get-ItemProperty -Path "HKLM:\SOFTWARE\AutoSPInstaller\" -ErrorAction SilentlyContinue).CancelRemoteInstall -eq "1")
+    {
+        Write-Host -ForegroundColor White " - Disabling RemoteInstall, since we are resuming after a restart..."
+        $enableRemoteInstall = $false
+    }
+    else
+    {
+        $enableRemoteInstall = $true
+    }
+}
+else
+{
+    $enableRemoteInstall = $false
+}
+
 Write-Host -ForegroundColor White " - Setting power management plan to `"High Performance`"..."
 Start-Process -FilePath "$env:SystemRoot\system32\powercfg.exe" -ArgumentList "/s 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c" -NoNewWindow
 #EndRegion
@@ -68,7 +86,7 @@ Start-Process -FilePath "$env:SystemRoot\system32\powercfg.exe" -ArgumentList "/
 #Region Remote Install
 Function Install-Remote
 {
-    If ($xmlinput.Configuration.Install.RemoteInstall.Enable -eq $true)
+    If ($enableRemoteInstall)
     {
         StartTracing
         If (!$env:RemoteStartDate) {$env:RemoteStartDate = Get-Date}
@@ -205,6 +223,10 @@ Function Setup-Services
 	{
 		CreateAppManagementServiceApp $xmlinput
 		CreateSubscriptionSettingsServiceApp $xmlinput
+        CreateWorkManagementServiceApp $xmlinput
+        CreateMachineTranslationServiceApp $xmlinput
+        CreateAccessServicesApp $xmlinput
+        CreatePowerPointConversionServiceApp $xmlinput
 	    ConfigureDistributedCacheService $xmlinput
     }
 	InstallSMTP $xmlinput
@@ -268,7 +290,7 @@ Else {$farmServers = Get-FarmServers $xmlinput}
 $remoteFarmServers = $farmServers | Where-Object {-not (MatchComputerName $_ $env:COMPUTERNAME)}
 $password = $remoteAuthPassword
 If ([string]::IsNullOrEmpty($password)) {$password = $xmlinput.Configuration.Install.AutoAdminLogon.Password}
-If (($xmlinput.Configuration.Install.RemoteInstall.Enable -eq $true -and !([string]::IsNullOrEmpty($remoteFarmServers))) -or ($xmlinput.Configuration.Install.AutoAdminLogon.Enable -eq $true))
+If (($enableRemoteInstall -and !([string]::IsNullOrEmpty($remoteFarmServers))) -or ($xmlinput.Configuration.Install.AutoAdminLogon.Enable -eq $true))
 {
     If (Confirm-LocalSession)
     {
@@ -289,7 +311,7 @@ If (($xmlinput.Configuration.Install.RemoteInstall.Enable -eq $true -and !([stri
             If (($user -ne $null) -and ($credential.Password -ne $null)) {$password = ConvertTo-PlainText $credential.Password}
             Else 
             {
-                If ($xmlinput.Configuration.Install.RemoteInstall.Enable -eq $true -and !([string]::IsNullOrEmpty($remoteFarmServers))) {Write-Error " - Credentials are required for remote authentication."; Pause "exit"; Throw}
+                If ($enableRemoteInstall -and !([string]::IsNullOrEmpty($remoteFarmServers))) {Write-Error " - Credentials are required for remote authentication."; Pause "exit"; Throw}
                 Else {Write-Host -ForegroundColor Yellow " - No password supplied; skipping AutoAdminLogon."; break}
             }
             Write-Host -ForegroundColor White " - Checking credentials: `"$($credential.Username)`"..." -NoNewline
@@ -381,10 +403,12 @@ If (MatchComputerName $farmServers $env:COMPUTERNAME)
                 }
                 Else {Write-Host -ForegroundColor White " - AutoAdminLogon is not enabled in $inputFile; set it to `"true`" to enable it."}
                 Write-Host -ForegroundColor White " - The AutoSPInstaller script will resume after the server reboots and $env:USERDOMAIN\$env:USERNAME logs in."
-                If ([string]::IsNullOrEmpty($restartPrompt)) {$restartPrompt = Read-Host -Prompt " - Do you want to restart immediately? (y/n)"}
+                if ((Confirm-LocalSession) -and ([string]::IsNullOrEmpty($restartPrompt))) {$restartPrompt = Read-Host -Prompt " - Do you want to restart immediately? (y/n)"}
                 If ($restartPrompt -eq "y")
                 {
-                    Start-Process -FilePath "$PSHOME\powershell.exe" -ArgumentList "Write-Host `" - Restarting - `"; Start-Sleep 5; Restart-Computer"
+                    if (!(Confirm-LocalSession)) {Write-Host " - Restarting - "; Start-Sleep 5; Restart-Computer}
+                    # If this is a non-remote session, launch Restart-Computer from another PS window/process
+                    else {Start-Process -FilePath "$PSHOME\powershell.exe" -ArgumentList "Write-Host `" - Restarting - `"; Start-Sleep 5; Restart-Computer"}
                     $restarting = $true
                 }
                 Else {Write-Host -ForegroundColor Yellow " - Please restart your computer to continue AutoSPInstaller."}
@@ -417,13 +441,13 @@ If (MatchComputerName $farmServers $env:COMPUTERNAME)
         Write-Host -ForegroundColor White "| Aborted:    $env:EndDate |"
         Write-Host -ForegroundColor White "-----------------------------------"
         $aborted = $true
-        If (!$scriptCommandLine) {Pause "exit"}
+        If (!$scriptCommandLine -and (!(Confirm-LocalSession))) {Pause "exit"}
     }
     Finally 
     {
         # Only do this stuff if this was a local session and it succeeded, and if we aren't attempting a remote install;
         # Otherwise these sites may not be available or 'complete' yet
-        If ((Confirm-LocalSession) -and !$aborted -and !($xmlinput.Configuration.Install.RemoteInstall.Enable -eq $true))
+        If ((Confirm-LocalSession) -and !$aborted -and !($enableRemoteInstall))
         {
             # Launch Central Admin
             If (ShouldIProvision($xmlinput.Configuration.Farm.CentralAdmin) -eq $true)
