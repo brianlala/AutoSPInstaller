@@ -19,7 +19,7 @@
        using a single configuration file.
        e.g. <ExcelServices Provision="Server1 Server2"> would provision excel services only on Server1 and Server2. -->
 <!-- The Environment attribute below appears at the top of the installation transcript. It does not affect the installation -->
-<Configuration Environment="Dev" Version="3.7">
+<Configuration Environment="Dev" Version="3.85">
     <!-- The Install section controls what modifications are made to the Windows OS prior to installation and how the SharePoint installation is run.
          You can also explicitly state the SPVersion of SharePoint being installed, (in case you have binaries for both SP2010/SP2013 in your folder structure).
          Allowed values are "2010" or "2013". If you omit this, the script will attempt to determine the version anyhow, and default to 2013 if both sets of install files are present. -->
@@ -75,7 +75,7 @@
         </Account>
         <!-- Which server(s) to provision CentralAdmin on. Specify "true" or a list of servers -->
         <CentralAdmin Provision="true">
-            <Database>AdminContent</Database>
+            <Database>Content_Admin</Database>
             <Port>2010</Port>
             <UseSSL>false</UseSSL>
         </CentralAdmin>
@@ -191,9 +191,10 @@
                         applicationPoolAccount="DOMAIN\SP_PortalAppPool"
                         url="http://localhost"
                         port="80"
+                        UseHostHeader="false"
                         AddURLToLocalIntranetZone="true"
-                        databaseName="PortalContent"
-                        useClaims="false"
+                        databaseName="Content_Portal"
+                        useClaims="true"
                         useBasicAuthentication="false"
                         useOnlineWebPartCatalog="false">
             <!-- You can now specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
@@ -223,9 +224,10 @@
                         If omitted, the default locale of the LCID is used.
                 Time24: If true, times are displayed using a 24 hour clock. If false, AM/PM is used. If omitted, the default for the LCID is applied. -->
                 <SiteCollection siteUrl="http://localhost"
-                                owner="DOMAIN\SP_PortalAppPool"
-                                name="Portal Home"
-                                description="Portal Home Site"
+                                HostNamedSiteCollection="false"
+                                Owner="DOMAIN\SP_PortalAppPool"
+                                Name="Portal Home"
+                                Description="Portal Home Site"
                                 SearchUrl="http://localhost/search"
                                 CustomTemplate="false"
                                 Template="SPSPORTAL#0"
@@ -241,9 +243,10 @@
                         applicationPoolAccount="DOMAIN\SP_ProfilesAppPool"
                         url="http://localhost"
                         port="8080"
+                        UseHostHeader="true"                        
                         AddURLToLocalIntranetZone="true"
-                        databaseName="MySites_Content"
-                        useClaims="false"
+                        databaseName="Content_MySites"
+                        useClaims="true"
                         useBasicAuthentication="false"
                         useOnlineWebPartCatalog="false">
             <!-- You can now specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
@@ -261,9 +264,10 @@
             </ManagedPaths>
             <SiteCollections>
                 <SiteCollection siteUrl="http://localhost:8080"
-                                owner="DOMAIN\SP_ProfilesAppPool"
-                                name="My Site Host"
-                                description="My Site Host"
+                                HostNamedSiteCollection="false"
+                                Owner="DOMAIN\SP_ProfilesAppPool"
+                                Name="My Site Host"
+                                Description="My Site Host"
                                 SearchUrl="http://localhost/search"
                                 CustomTemplate="false"
                                 Template="SPSMSITEHOST#0"
@@ -285,7 +289,7 @@
                                    ProxyName="Managed Metadata Service">
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
-                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SPFarm", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
+                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <Name>MetaData</Name>
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
@@ -312,7 +316,7 @@
                                SyncConnectionAccountPassword="" >
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
-                <!-- <*DB> below designates the suffix portion of the database name. For example if your DBPrefix (above) was "SPFarm", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
+                <!-- <*DB> below designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <ProfileDB>Profile</ProfileDB>
                 <SyncDB>Sync</SyncDB>
                 <SocialDB>Social</SocialDB>
@@ -325,6 +329,7 @@
                          DBPort="" />
             </Database>
         </UserProfileServiceApp>
+        <!-- Note the change below for CustomIndexLocation; you only need to specify a path here if you would like to specify a non-default path for the search index (e.g. D:\SearchIndex) otherwise the default value will be applied: "$env:ProgramFiles\Microsoft Office Servers\$env:spVer.0\Data\Office Server\Applications" (where $env:spVer is either 14 or 15) -->
         <EnterpriseSearchService Provision="true"
                                  ContactEmail=""
                                  ConnectionTimeout="60"
@@ -332,7 +337,7 @@
                                  ProxyType="Default"
                                  IgnoreSSLWarnings="false"
                                  InternetIdentity="Mozilla/4.0 (compatible; MSIE 4.01; Windows NT; MS Search 6.0 Robot)"
-                                 IndexLocation="C:\Program Files\Microsoft Office Servers\14.0\Data\Office Server\Applications"
+                                 CustomIndexLocation=""
                                  PerformanceLevel="PartlyReduced"
                                  Account="DOMAIN\SP_SearchService"
                                  Password=""
@@ -358,7 +363,7 @@
                     <SearchQueryAndSiteSettingsServers>
                         <Server Name="localhost" />
                     </SearchQueryAndSiteSettingsServers>
-                    <!-- You can only run the AdminComponent on one server per Search Service App, so only list one server here -->
+                    <!-- You can only run the AdminComponent on one server per Search Service App in a SP2010 farm, so only list one server here unless you are installing SharePoint 2013 and need multiple Admin components. -->
                     <AdminComponent>
                         <Server Name="localhost" />
                         <ApplicationPool Name="SharePoint Search Application Pool" Account="DOMAIN\SP_SearchService" />
@@ -388,7 +393,7 @@
                       ProxyName="State Service">
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
-                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SPFarm", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
+                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <Name>StateService</Name>
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
@@ -404,7 +409,7 @@
                              Name="Web Analytics Service Application">
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
-                <!-- <*DB> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SPFarm", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
+                <!-- <*DB> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <ReportingDB>WebAnalyticsReporting</ReportingDB>
                 <StagingDB>WebAnalyticsStaging</StagingDB>
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
@@ -420,7 +425,7 @@
                         Name="Usage and Health Data Collection">
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
-                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SPFarm", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
+                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <Name>UsageAndHealth</Name>
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
@@ -436,7 +441,7 @@
                             ProxyName="Secure Store Service">
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
-                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SPFarm", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
+                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <Name>SecureStore</Name>
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
@@ -452,7 +457,7 @@
                                   ProxyName="Business Data Connectivity Service">
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
-                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SPFarm", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
+                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <Name>BusinessDataCatalog</Name>
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
@@ -468,7 +473,7 @@
                                ProxyName="Word Automation Services">
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
-                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SPFarm", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
+                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <Name>WordAutomation</Name>
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
@@ -486,7 +491,7 @@
                               AppDomain="apps.domain.com">
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
-                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SPFarm", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
+                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <Name>AppManagement</Name>
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
@@ -503,7 +508,7 @@
                                      AppSiteSubscriptionName="app">
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
-                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SPFarm", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
+                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <Name>SubscriptionSettings</Name>
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
@@ -525,7 +530,7 @@
                                ProxyName="Machine Translation Service">
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
-                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SPFarm", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
+                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <Name>TranslationService</Name>
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
@@ -569,7 +574,7 @@
                         ProxyName="Access Services">
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
-                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SPFarm", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
+                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <Name>AccessServices</Name>
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
@@ -588,7 +593,7 @@
                       UnattendedIDPassword="">
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
-                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SPFarm", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
+                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <Name>PerformancePoint</Name>
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->

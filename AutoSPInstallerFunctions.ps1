@@ -522,7 +522,8 @@ Function InstallPrerequisites([xml]$xmlinput)
                                 Import-Module ServerManager
                                 if (!(Get-WindowsFeature -Name NET-Framework-Core).Installed)
                                 {
-                                    Install-WindowsFeature NET-Framework-Core –Source "$env:SPbits\PrerequisiteInstallerFiles\sxs" | Out-Null
+                                    Start-Process -FilePath DISM.exe -ArgumentList "/Online /Enable-Feature /FeatureName:NetFx3 /All /LimitAccess /Source:`"$env:SPbits\PrerequisiteInstallerFiles\sxs`"" -NoNewWindow -Wait
+                                    ##Install-WindowsFeature NET-Framework-Core –Source "$env:SPbits\PrerequisiteInstallerFiles\sxs" | Out-Null
                                     Write-Host -ForegroundColor White "Done."
                                 }
                                 else {Write-Host -ForegroundColor White "Already installed."}
@@ -1353,6 +1354,19 @@ Function ConfigureFarm([xml]$xmlinput)
         Start-Service SPTimerV4
         If (!$?) {Throw " - Could not start Timer service!"}
     }
+    #Region Stop Default Web Site
+    # Added to avoid conflicts with web apps that do not use a host header
+    # Thanks to Paul Stork per http://autospinstaller.codeplex.com/workitem/19318 for confirming the Stop-Website cmdlet
+    $defaultWebsite = Get-Website | Where-Object {$_.Name -eq "Default Web Site" -or $_.ID -eq 1 -or $_.physicalPath -eq "%SystemDrive%\inetpub\wwwroot"} # Try different ways of identifying the Default Web Site, in case it has a different name (e.g. localized installs)
+    Write-Host -ForegroundColor White " - Checking $($defaultWebsite.Name)..." -NoNewline
+    if ($defaultWebsite.State -ne "Stopped")
+    {
+        Write-Host -ForegroundColor White "Stopping..." -NoNewline
+        $defaultWebsite | Stop-Website
+        if ($?) {Write-Host -ForegroundColor White "Done."}
+    }
+    else {Write-Host -ForegroundColor White "Already stopped."}
+    #EndRegion
     Write-Host -ForegroundColor White " - Done initial farm/server config."
     WriteLine
 }
@@ -1895,7 +1909,15 @@ Function AssignCert([xml]$xmlinput)
         {
             $cert | New-Item IIS:\SslBindings\0.0.0.0!$SSLPort -ErrorAction SilentlyContinue | Out-Null
         }
-        Set-ItemProperty IIS:\Sites\$SSLSiteName -Name bindings -Value @{protocol="https";bindingInformation="*:$($SSLPort):$($SSLHostHeader)"}
+        # Check if we have specified no host header
+        if (!([string]::IsNullOrEmpty($webApp.UseHostHeader)) -and $webApp.UseHostHeader -eq $false)
+        {
+            Set-ItemProperty IIS:\Sites\$SSLSiteName -Name bindings -Value @{protocol="https";bindingInformation="*:$($SSLPort):*"}
+        }
+        else # Set the binding to the host header
+        {
+            Set-ItemProperty IIS:\Sites\$SSLSiteName -Name bindings -Value @{protocol="https";bindingInformation="*:$($SSLPort):$($SSLHostHeader)"}
+        }
         ## Set-WebBinding -Name $SSLSiteName -BindingInformation ":$($SSLPort):" -PropertyName Port -Value $SSLPort -PropertyName Protocol -Value https 
         Write-Host -ForegroundColor White " - Certificate has been assigned to site `"https://$SSLHostHeader`:$SSLPort`""
     }
@@ -1940,7 +1962,7 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
     $database = $dbPrefix+$webApp.databaseName
     $dbServer = $webApp.Database.DBServer
     # Check for an existing App Pool
-    $existingWebApp = Get-SPWebApplication |? { ($_.ApplicationPool).Name -eq $appPool }
+    $existingWebApp = Get-SPWebApplication | Where-Object { ($_.ApplicationPool).Name -eq $appPool }
     $appPoolExists = ($existingWebApp -ne $null)
     # If we haven't specified a DB Server then just use the default used by the Farm
     If ([string]::IsNullOrEmpty($dbServer))
@@ -1961,55 +1983,49 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
     {
         $pathSwitch = @{Path = "$iisWebDir\wss\VirtualDirectories\$webAppName-$port"}
     }
-
+    # Only set $hostHeaderSwitch to blank if the UseHostHeader value exists has explicitly been set to false
+    if (!([string]::IsNullOrEmpty($webApp.UseHostHeader)) -and $webApp.UseHostHeader -eq $false)
+    {
+        $hostHeaderSwitch = ""
+    }
+    else {$hostHeaderSwitch = @{HostHeader = $hostHeader}}
+    if (!([string]::IsNullOrEmpty($webApp.useClaims)) -and $webApp.useClaims -eq $false)
+    {
+        # Create the web app using Classic mode authentication
+        $authProviderSwitch = ""
+    }
+    else # Configure new web app to use Claims-based authentication
+    {
+        If ($($webApp.useBasicAuthentication) -eq $true)
+        {
+            $authProvider = New-SPAuthenticationProvider -UseWindowsIntegratedAuthentication -UseBasicAuthentication
+        }
+        Else
+        {           
+            $authProvider = New-SPAuthenticationProvider -UseWindowsIntegratedAuthentication
+        }  
+        $authProviderSwitch = @{AuthenticationProvider = $authProvider}
+        If ((Gwmi Win32_OperatingSystem).Version -like "6.0*") # If we are running Win2008 (non-R2), we may need the claims hotfix
+        {
+            [bool]$claimsHotfixRequired = $true
+            Write-Host -ForegroundColor Yellow " - Web Applications using Claims authentication require an update"
+            Write-Host -ForegroundColor Yellow " - Apply the http://go.microsoft.com/fwlink/?LinkID=184705 update after setup."
+        }
+    }
+    if ($appPoolExists)
+    {
+        $appPoolAccountSwitch = ""
+    }
+    else {$appPoolAccountSwitch = @{ApplicationPoolAccount = $account}}
     $getSPWebApplication = Get-SPWebApplication | Where-Object {$_.DisplayName -eq $webAppName}
     If ($getSPWebApplication -eq $null)
     {
         Write-Host -ForegroundColor White " - Creating Web App `"$webAppName`""
-        If ($($webApp.useClaims) -eq $true)
-        {
-            # Configure new web app to use Claims-based authentication
-            If ($($webApp.useBasicAuthentication) -eq $true)
-            {
-                $authProvider = New-SPAuthenticationProvider -UseWindowsIntegratedAuthentication -UseBasicAuthentication
-            }
-            Else
-            {           
-                $authProvider = New-SPAuthenticationProvider -UseWindowsIntegratedAuthentication
-            }  
-            if ($appPoolExists)
-            {
-                New-SPWebApplication -Name $webAppName -ApplicationPool $appPool -DatabaseServer $dbServer -DatabaseName $database -HostHeader $hostHeader -Url $url -Port $port -SecureSocketsLayer:$useSSL -AuthenticationProvider $authProvider @pathSwitch | Out-Null
-            }
-            else
-            {
-            New-SPWebApplication -Name $webAppName -ApplicationPoolAccount $account -ApplicationPool $appPool -DatabaseServer $dbServer -DatabaseName $database -HostHeader $hostHeader -Url $url -Port $port -SecureSocketsLayer:$useSSL -AuthenticationProvider $authProvider @pathSwitch | Out-Null
-            }
-            If (-not $?) { Throw " - Failed to create web application" }
-
-            If ((Gwmi Win32_OperatingSystem).Version -like "6.0*") # If we are running Win2008 (non-R2), we may need the claims hotfix
-            {
-                [bool]$claimsHotfixRequired = $true
-                Write-Host -ForegroundColor Yellow " - Web Applications using Claims authentication require an update"
-                Write-Host -ForegroundColor Yellow " - Apply the http://go.microsoft.com/fwlink/?LinkID=184705 update after setup."
-            }
-        }
-        Else
-        {
-            # Create the web app using Classic mode authentication
-            if ($appPoolExists)
-            {
-                New-SPWebApplication -Name $webAppName -ApplicationPool $appPool -DatabaseServer $dbServer -DatabaseName $database -HostHeader $hostHeader -Url $url -Port $port -SecureSocketsLayer:$useSSL @pathSwitch | Out-Null
-            }
-            else
-            {
-                New-SPWebApplication -Name $webAppName -ApplicationPoolAccount $account -ApplicationPool $appPool -DatabaseServer $dbServer -DatabaseName $database -HostHeader $hostHeader -Url $url -Port $port -SecureSocketsLayer:$useSSL @pathSwitch | Out-Null
-            }
-            If (-not $?) { Throw " - Failed to create web application" }
-        }
-        SetupManagedPaths $webApp
+        New-SPWebApplication -Name $webAppName @appPoolAccountSwitch -ApplicationPool $appPool -DatabaseServer $dbServer -DatabaseName $database @hostHeaderSwitch -Url $url -Port $port -SecureSocketsLayer:$useSSL @authProviderSwitch @pathSwitch | Out-Null
+        If (-not $?) { Throw " - Failed to create web application" }
     }   
     Else {Write-Host -ForegroundColor White " - Web app `"$webAppName`" already provisioned."}
+    SetupManagedPaths $webApp
     If ($useSSL)
     {
         $SSLHostHeader = $hostHeader
@@ -2045,6 +2061,17 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
         $siteCollectionLocale = $siteCollection.Locale
         $siteCollectionTime24 = $siteCollection.Time24
         $getSPSiteCollection = Get-SPSite -Limit ALL | Where-Object {$_.Url -eq $siteURL}
+        # If a template has been pre-specified, use it when creating the Portal site collection; otherwise, leave it blank so we can select one when the portal first loads
+        If (($template -ne $null) -and ($template -ne ""))
+        {
+            $templateSwitch = @{Template = $template}
+        }
+        else {$templateSwitch = ""}
+        if ($siteCollection.HostNamedSiteCollection -eq $true)
+        {
+            $hostHeaderWebAppSwitch = @{HostHeaderWebApplication = $($webApp.url)+":"+$($webApp.port)}
+        }
+        else {$hostHeaderWebAppSwitch = ""}
         If (($getSPSiteCollection -eq $null) -and ($siteURL -ne $null))
         {
             Write-Host -ForegroundColor White " - Creating Site Collection `"$siteURL`"..."
@@ -2057,14 +2084,7 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
             }
             Else
             {
-                # If a template has been pre-specified, use it when creating the Portal site collection; otherwise, leave it blank so we can select one when the portal first loads
-                If (($template -ne $null) -and ($template -ne "")) {
-                    $site = New-SPSite -Url $siteURL -OwnerAlias $ownerAlias -SecondaryOwnerAlias $env:USERDOMAIN\$env:USERNAME -ContentDatabase $database -Description $siteCollectionName -Name $siteCollectionName -Language $LCID -Template $template -ErrorAction Stop
-                }
-                Else 
-                {
-                    $site = New-SPSite -Url $siteURL -OwnerAlias $ownerAlias -SecondaryOwnerAlias $env:USERDOMAIN\$env:USERNAME -ContentDatabase $database -Description $siteCollectionName -Name $siteCollectionName -Language $LCID  -ErrorAction Stop
-                }
+                $site = New-SPSite -Url $siteURL -OwnerAlias $ownerAlias -SecondaryOwnerAlias $env:USERDOMAIN\$env:USERNAME -ContentDatabase $database -Description $siteCollectionName -Name $siteCollectionName -Language $LCID @templateSwitch @hostHeaderWebAppSwitch -ErrorAction Stop
 
                 # Add the Portal Site Connection to the web app, unless of course the current web app *is* the portal
                 # Inspired by http://www.toddklindt.com/blog/Lists/Posts/Post.aspx?ID=264
@@ -2087,6 +2107,12 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
                     $site.RootWeb.RegionalSettings.Time24 = $([System.Convert]::ToBoolean($siteCollectionTime24))
                 }
                 $site.RootWeb.Update()
+                if ($siteCollection.HostNamedSiteCollection -eq $true -and $xmlinput.Configuration.WebApplications.AddURLsToHOSTS)
+                {
+                    # Add the hostname of this host header-based site collection to the local HOSTS so it's immediately resolvable locally
+                    $hostname,$null = $siteURL -replace "http://","" -replace "https://","" -split ":"
+                    AddToHosts $hostname
+                }
             }
         }
         Else {Write-Host -ForegroundColor White " - Skipping creation of site `"$siteCollectionName`" - already provisioned."}
@@ -2243,6 +2269,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
         $mySiteLCID = $mySiteWebApp.SiteCollections.SiteCollection.LCID
         $userProfileServiceName = $userProfile.Name
         $userProfileServiceProxyName = $userProfile.ProxyName
+        $spservice = Get-spserviceaccountxml $xmlinput
         If($userProfileServiceName -eq $null) {$userProfileServiceName = "User Profile Service Application"}
         If($userProfileServiceProxyName -eq $null) {$userProfileServiceProxyName = $userProfileServiceName}
         If (!$farmCredential) {[System.Management.Automation.PsCredential]$farmCredential = GetFarmCredentials $xmlinput}
@@ -2253,7 +2280,13 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
         If (!([string]::IsNullOrEmpty($iisWebDir)))
         {
             $pathSwitch = @{Path = "$iisWebDir\wss\VirtualDirectories\$webAppName-$port"}
-        }        
+        }
+        # Only set $hostHeaderSwitch to blank if the UseHostHeader value exists has explicitly been set to false
+        if (!([string]::IsNullOrEmpty($webApp.UseHostHeader)) -and $webApp.UseHostHeader -eq $false)
+        {
+            $hostHeaderSwitch = ""
+        }
+        else {$hostHeaderSwitch = @{HostHeader = $hostHeader}}
 
         If (ShouldIProvision($userProfile) -eq $true) 
         {
@@ -2289,7 +2322,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
                 If ($getSPWebApplication -eq $null)
                 {
                     Write-Host -ForegroundColor White " - Creating Web App `"$mySiteName`"..."
-                    New-SPWebApplication -Name $mySiteName -ApplicationPoolAccount $mySiteAppPoolAcct -ApplicationPool $mySiteAppPool -DatabaseServer $mySiteDBServer -DatabaseName $mySiteDB -HostHeader $mySiteHostHeader -Url $mySiteURL -Port $mySitePort -SecureSocketsLayer:$mySiteUseSSL @pathSwitch | Out-Null
+                    New-SPWebApplication -Name $mySiteName -ApplicationPoolAccount $mySiteAppPoolAcct -ApplicationPool $mySiteAppPool -DatabaseServer $mySiteDBServer -DatabaseName $mySiteDB @hostHeaderSwitch -Url $mySiteURL -Port $mySitePort -SecureSocketsLayer:$mySiteUseSSL @pathSwitch | Out-Null
                 }
                 Else
                 {
@@ -2379,15 +2412,17 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
                 # Create a variable that contains the permissions for the service application
                 $profileServiceAppPermissions = Get-SPServiceApplicationSecurity $serviceAppIDToSecure
 
-                # Create variables that contains the claims principals for current (Setup) user, MySite App Pool, Portal App Pool and Content Access accounts
+                # Create variables that contains the claims principals for current (Setup) user, genral service account, MySite App Pool, Portal App Pool and Content Access accounts
                 $currentUserAcctPrincipal = New-SPClaimsPrincipal -Identity $env:USERDOMAIN\$env:USERNAME -IdentityType WindowsSamAccountName
+                $spServiceAcctPrincipal = New-SPClaimsPrincipal -Identity $($spservice.username) -IdentityType WindowsSamAccountName
                 If ($mySiteAppPoolAcct) {$mySiteAppPoolAcctPrincipal = New-SPClaimsPrincipal -Identity $mySiteAppPoolAcct -IdentityType WindowsSamAccountName}
                 If ($portalAppPoolAcct) {$portalAppPoolAcctPrincipal = New-SPClaimsPrincipal -Identity $portalAppPoolAcct -IdentityType WindowsSamAccountName}
                 If ($contentAccessAcct) {$contentAccessAcctPrincipal = New-SPClaimsPrincipal -Identity $contentAccessAcct -IdentityType WindowsSamAccountName}
 
-                # Give 'Full Control' permissions to the current (Setup) user, MySite App Pool and Portal App Pool account claims principals
+                # Give 'Full Control' permissions to the current (Setup) user, general service account, MySite App Pool, Portal App Pool account and content access account claims principals
                 Grant-SPObjectSecurity $profileServiceAppSecurity -Principal $currentUserAcctPrincipal -Rights "Full Control"
                 Grant-SPObjectSecurity $profileServiceAppPermissions -Principal $currentUserAcctPrincipal -Rights "Full Control"
+                Grant-SPObjectSecurity $profileServiceAppPermissions -Principal $spServiceAcctPrincipal -Rights "Full Control"
                 If ($mySiteAppPoolAcct) {Grant-SPObjectSecurity $profileServiceAppSecurity -Principal $mySiteAppPoolAcctPrincipal -Rights "Full Control"}
                 If ($portalAppPoolAcct) {Grant-SPObjectSecurity $profileServiceAppSecurity -Principal $portalAppPoolAcctPrincipal -Rights "Full Control"}
                 # Give 'Retrieve People Data for Search Crawlers' permissions to the Content Access claims principal
@@ -2405,6 +2440,8 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
                     # Grant the Portal App Pool account rights to the Profile and Social DBs
                     $profileDB = $dbPrefix+$userProfile.Database.ProfileDB
                     $socialDB = $dbPrefix+$userProfile.Database.SocialDB
+                    Write-Host -ForegroundColor White " - Granting $portalAppPoolAcct rights to $mySiteDB..."
+                    Get-SPDatabase | ? {$_.Name -eq $mySiteDB} | Add-SPShellAdmin -UserName $portalAppPoolAcct
                     Write-Host -ForegroundColor White " - Granting $portalAppPoolAcct rights to $profileDB..."
                     Get-SPDatabase | ? {$_.Name -eq $profileDB} | Add-SPShellAdmin -UserName $portalAppPoolAcct
                     Write-Host -ForegroundColor White " - Granting $portalAppPoolAcct rights to $socialDB..."
@@ -3108,6 +3145,8 @@ Function StartClaimsToWindowsTokenService
             Try
             {
                 Write-Host -ForegroundColor White " - Starting $($claimsService.DisplayName)..."
+                UpdateProcessIdentity $claimsService
+                $claimsService.Update()
                 $claimsService.Provision()
                 If (-not $?) {throw " - Failed to start $($claimsService.DisplayName)"}
             }
@@ -3332,6 +3371,18 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
         If ($searchSvc -eq $null) {
             Throw "  - Unable to retrieve search service."
         }
+        if ([string]::IsNullOrEmpty($svcConfig.CustomIndexLocation))
+        {
+            # Use the default location
+            $indexLocation = "$env:ProgramFiles\Microsoft Office Servers\$env:spVer.0\Data\Office Server\Applications"
+        }
+        else
+        {
+            # Make sure new index location exists so we can use it later in the script
+            Write-Host -ForegroundColor White " - Checking requested IndexLocation path..."
+            EnsureFolder $svcConfig.CustomIndexLocation
+            $indexLocation = $svcConfig.CustomIndexLocation
+        }
         Write-Host -ForegroundColor White "  - Configuring search service..." -NoNewline
         Get-SPEnterpriseSearchService | Set-SPEnterpriseSearchService  `
           -ContactEmail $svcConfig.ContactEmail -ConnectionTimeout $svcConfig.ConnectionTimeout `
@@ -3339,11 +3390,8 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
           -IgnoreSSLWarnings $svcConfig.IgnoreSSLWarnings -InternetIdentity $svcConfig.InternetIdentity -PerformanceLevel $svcConfig.PerformanceLevel `
           -ServiceAccount $svcConfig.Account -ServicePassword $secSearchServicePassword
         If ($?) {Write-Host -ForegroundColor White "Done."}
-        
-        Write-Host -ForegroundColor White "  - Setting default index location on search service instance..." -NoNewline
-        $searchSvc | Set-SPEnterpriseSearchServiceInstance -DefaultIndexLocation $svcConfig.IndexLocation -ErrorAction SilentlyContinue
-        If ($?) {Write-Host -ForegroundColor White "Done."}
-        
+
+       
         If ($env:spVer -eq "14") # SharePoint 2010 steps
         {
             $svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication | ForEach-Object {
@@ -3379,6 +3427,13 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
 
                 # Add link to resources list
                 AddResourcesLink "Search Administration" ("searchadministration.aspx?appid=" +  $searchApp.Id)
+
+                if ($indexLocation -ne "$env:ProgramFiles\Microsoft Office Servers\14.0\Data\Office Server\Applications")
+                {
+                    Write-Host -ForegroundColor White "  - Setting default index location on search service instance..." -NoNewline
+                    $searchSvc | Set-SPEnterpriseSearchServiceInstance -DefaultIndexLocation $indexLocation -ErrorAction SilentlyContinue
+                    if ($?) {Write-Host -ForegroundColor White "Done."}
+                }
 
                 $installCrawlSvc = (($appConfig.CrawlComponent.Server | where {$_.Name -eq $env:computername}) -ne $null)
                 $installQuerySvc = (($appConfig.QueryComponent.Server | where {$_.Name -eq $env:computername}) -ne $null)
@@ -3425,7 +3480,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                     If ($crawlTopology.CrawlComponents.Count -eq 0 -or $crawlComponent -eq $null) {
                         $crawlStore = $searchApp.CrawlStores | where {$_.Name -eq "$($dbPrefix+$appConfig.DatabaseName)_CrawlStore"}
                         Write-Host -ForegroundColor White " - Creating new crawl component..."
-                        $crawlComponent = New-SPEnterpriseSearchCrawlComponent -SearchServiceInstance $searchSvc -SearchApplication $searchApp -CrawlTopology $crawlTopology -CrawlDatabase $crawlStore.Id.ToString() -IndexLocation $appConfig.IndexLocation
+                        $crawlComponent = New-SPEnterpriseSearchCrawlComponent -SearchServiceInstance $searchSvc -SearchApplication $searchApp -CrawlTopology $crawlTopology -CrawlDatabase $crawlStore.Id.ToString() -IndexLocation $indexLocation
                     } Else {
                         Write-Host -ForegroundColor White " - Crawl component already exist, skipping crawl component creation."
                     }
@@ -3459,7 +3514,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                     If ($queryComponent -eq $null) {
                         $partition = ($queryTopology | Get-SPEnterpriseSearchIndexPartition)
                         Write-Host -ForegroundColor White " - Creating new query component..."
-                        $queryComponent = New-SPEnterpriseSearchQueryComponent -IndexPartition $partition -QueryTopology $queryTopology -SearchServiceInstance $searchSvc -ShareName $svcConfig.ShareName
+                        $queryComponent = New-SPEnterpriseSearchQueryComponent -IndexPartition $partition -QueryTopology $queryTopology -SearchServiceInstance $searchSvc -ShareName $svcConfig.ShareName -IndexLocation $indexLocation
                         Write-Host -ForegroundColor White " - Setting index partition and property store database..."
                         $propertyStore = $searchApp.PropertyStores | where {$_.Name -eq "$($dbPrefix+$appConfig.DatabaseName)_PropertyStore"}
                         $partition | Set-SPEnterpriseSearchIndexPartition -PropertyDatabase $propertyStore.Id.ToString()
@@ -3585,9 +3640,9 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 {
                     $dbServer = $xmlinput.Configuration.Farm.Database.DBServer
                 }
+                $installAdminComponent = (($appConfig.AdminComponent.Server | where {$_.Name -eq $env:computername}) -ne $null)
                 $installCrawlComponent = (($appConfig.CrawlComponent.Server | where {$_.Name -eq $env:computername}) -ne $null)
                 $installQueryComponent = (($appConfig.QueryComponent.Server | where {$_.Name -eq $env:computername}) -ne $null)
-                $installAdminComponent = (($appConfig.AdminComponent.Server | where {$_.Name -eq $env:computername}) -ne $null)
                 $installSyncSvc = (($appConfig.SearchQueryAndSiteSettingsServers.Server | where {$_.Name -eq $env:computername}) -ne $null)
                 $installAnalyticsProcessingComponent = (($appConfig.AnalyticsProcessingComponent.Server | where {$_.Name -eq $env:computername}) -ne $null)
                 $installContentProcessingComponent = (($appConfig.ContentProcessingComponent.Server | where {$_.Name -eq $env:computername}) -ne $null)
@@ -3687,41 +3742,42 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 }
                 $activateTopology = $false
                 # Check if each search component is already assigned to the current server, then check that it's actually being requested for the current server, then create it as required.
-                Write-Host -ForegroundColor White "  - Checking administration component..." -NoNewline
+                Write-Host -ForegroundColor White "  - Checking admin component..." -NoNewline
                 $adminComponents = $clone.GetComponents() | Where-Object {$_.Name -like "AdminComponent*"}
-                If (!$adminComponents) # Assuming there should still only be one Admin component per farm, to be verified...
+                If ($installAdminComponent)
                 {
-                    if ($installAdminComponent)
+                    if (!($adminComponents | Where-Object {$_.ServerName -eq $env:COMPUTERNAME}))
                     {
                         Write-Host -ForegroundColor White "Creating..." -NoNewline
                         New-SPEnterpriseSearchAdminComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
                         If ($?)
                         {
                             Write-Host -ForegroundColor White "Done."
-                            $adminComponentReady = $true
                             $newComponentsCreated = $true
                         }
                     }
-                    else {Write-Host -ForegroundColor White "Not requested for this server."}
+                    else {Write-Host -ForegroundColor White "Already exists on this server."}
+                    $adminComponentReady = $true
                 }
-                Else {Write-Host -ForegroundColor White "Already exists."; $adminComponentReady = $true}
+                else {Write-Host -ForegroundColor White "Not requested for this server."}
+                if ($adminComponents) {Write-Host -ForegroundColor White "  - Admin component(s) already exist(s) in the farm."; $adminComponentReady = $true}
                 
                 Write-Host -ForegroundColor White "  - Checking content processing component..." -NoNewline
                 $contentProcessingComponents = $clone.GetComponents() | Where-Object {$_.Name -like "ContentProcessingComponent*"}
                 if ($installContentProcessingComponent)
                 {
-                        if (!($contentProcessingComponents | Where-Object {$_.ServerName -eq $env:COMPUTERNAME}))
+                    if (!($contentProcessingComponents | Where-Object {$_.ServerName -eq $env:COMPUTERNAME}))
+                    {
+                        Write-Host -ForegroundColor White "Creating..." -NoNewline
+                        New-SPEnterpriseSearchContentProcessingComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
+                        If ($?)
                         {
-                            Write-Host -ForegroundColor White "Creating..." -NoNewline
-                            New-SPEnterpriseSearchContentProcessingComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
-                            If ($?)
-                            {
-                                Write-Host -ForegroundColor White "Done."
-                                $newComponentsCreated = $true
-                            }
+                            Write-Host -ForegroundColor White "Done."
+                            $newComponentsCreated = $true
                         }
-                        else {Write-Host -ForegroundColor White "Already exists on this server."}
-                        $contentProcessingComponentReady = $true
+                    }
+                    else {Write-Host -ForegroundColor White "Already exists on this server."}
+                    $contentProcessingComponentReady = $true
                 }
                 else {Write-Host -ForegroundColor White "Not requested for this server."}
                 if ($contentProcessingComponents) {Write-Host -ForegroundColor White "  - Content processing component(s) already exist(s) in the farm."; $contentProcessingComponentReady = $true}
@@ -3730,18 +3786,18 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 $analyticsProcessingComponents = $clone.GetComponents() | Where-Object {$_.Name -like "AnalyticsProcessingComponent*"}
                 if ($installAnalyticsProcessingComponent)
                 {
-                        if (!($analyticsProcessingComponents | Where-Object {$_.ServerName -eq $env:COMPUTERNAME}))
+                    if (!($analyticsProcessingComponents | Where-Object {$_.ServerName -eq $env:COMPUTERNAME}))
+                    {
+                        Write-Host -ForegroundColor White "Creating..." -NoNewline
+                        New-SPEnterpriseSearchAnalyticsProcessingComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
+                        If ($?)
                         {
-                            Write-Host -ForegroundColor White "Creating..." -NoNewline
-                            New-SPEnterpriseSearchAnalyticsProcessingComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
-                            If ($?)
-                            {
-                                Write-Host -ForegroundColor White "Done."
-                                $newComponentsCreated = $true
-                            }
+                            Write-Host -ForegroundColor White "Done."
+                            $newComponentsCreated = $true
                         }
-                        else {Write-Host -ForegroundColor White "Already exists on this server."}
-                        $analyticsProcessingComponentReady = $true
+                    }
+                    else {Write-Host -ForegroundColor White "Already exists on this server."}
+                    $analyticsProcessingComponentReady = $true
                 }
                 else {Write-Host -ForegroundColor White "Not requested for this server."}
                 if ($analyticsProcessingComponents) {Write-Host -ForegroundColor White "  - Analytics processing component(s) already exist(s) in the farm."; $analyticsProcessingComponentReady = $true}
@@ -3750,18 +3806,18 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 $crawlComponents = $clone.GetComponents() | Where-Object {$_.Name -like "CrawlComponent*"} 
                 if ($installCrawlComponent)
                 {
-                        if (!($crawlComponents | Where-Object {$_.ServerName -eq $env:COMPUTERNAME}))
+                    if (!($crawlComponents | Where-Object {$_.ServerName -eq $env:COMPUTERNAME}))
+                    {
+                        Write-Host -ForegroundColor White "Creating..." -NoNewline
+                        New-SPEnterpriseSearchCrawlComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
+                        If ($?)
                         {
-                            Write-Host -ForegroundColor White "Creating..." -NoNewline
-                            New-SPEnterpriseSearchCrawlComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
-                            If ($?)
-                            {
-                                Write-Host -ForegroundColor White "Done."
-                                $newComponentsCreated = $true
-                            }
+                            Write-Host -ForegroundColor White "Done."
+                            $newComponentsCreated = $true
                         }
-                        else {Write-Host -ForegroundColor White "Already exists on this server."}
-                        $crawlComponentReady = $true
+                    }
+                    else {Write-Host -ForegroundColor White "Already exists on this server."}
+                    $crawlComponentReady = $true
                 }
                 else {Write-Host -ForegroundColor White "Not requested for this server."}
                 if ($crawlComponents) {Write-Host -ForegroundColor White "  - Crawl component(s) already exist(s) in the farm."; $crawlComponentReady = $true}
@@ -3770,18 +3826,22 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 $indexingComponents = $clone.GetComponents() | Where-Object {$_.Name -like "IndexComponent*"}
                 if ($installIndexComponent)
                 {
-                        if (!($indexingComponents | Where-Object {$_.ServerName -eq $env:COMPUTERNAME}))
+                    if (!($indexingComponents | Where-Object {$_.ServerName -eq $env:COMPUTERNAME}))
+                    {
+                        Write-Host -ForegroundColor White "Creating..." -NoNewline
+                        # Specify the RootDirectory parameter only if it's different than the default path
+                        if ($indexLocation -ne "$env:ProgramFiles\Microsoft Office Servers\15.0\Data\Office Server\Applications")
+                        {$rootDirectorySwitch = @{RootDirectory = $indexLocation}}
+                        else {$rootDirectorySwitch = ""}
+                        New-SPEnterpriseSearchIndexComponent –SearchTopology $clone -SearchServiceInstance $searchSvc @rootDirectorySwitch | Out-Null
+                        If ($?)
                         {
-                            Write-Host -ForegroundColor White "Creating..." -NoNewline
-                            New-SPEnterpriseSearchIndexComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
-                            If ($?)
-                            {
-                                Write-Host -ForegroundColor White "Done."
-                                $newComponentsCreated = $true
-                            }
+                            Write-Host -ForegroundColor White "Done."
+                            $newComponentsCreated = $true
                         }
-                        else {Write-Host -ForegroundColor White "Already exists on this server."}
-                        $indexComponentReady = $true
+                    }
+                    else {Write-Host -ForegroundColor White "Already exists on this server."}
+                    $indexComponentReady = $true
                 }
                 else {Write-Host -ForegroundColor White "Not requested for this server."}
                 if ($indexingComponents) {Write-Host -ForegroundColor White "  - Index component(s) already exist(s) in the farm."; $indexComponentReady = $true}
@@ -3790,18 +3850,18 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 $queryComponents = $clone.GetComponents() | Where-Object {$_.Name -like "QueryProcessingComponent*"}
                 if ($installQueryComponent)
                 {
-                        if (!($queryComponents | Where-Object {$_.ServerName -eq $env:COMPUTERNAME}))
+                    if (!($queryComponents | Where-Object {$_.ServerName -eq $env:COMPUTERNAME}))
+                    {
+                        Write-Host -ForegroundColor White "Creating..." -NoNewline
+                        New-SPEnterpriseSearchQueryProcessingComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
+                        If ($?)
                         {
-                            Write-Host -ForegroundColor White "Creating..." -NoNewline
-                            New-SPEnterpriseSearchQueryProcessingComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
-                            If ($?)
-                            {
-                                Write-Host -ForegroundColor White "Done."
-                                $newComponentsCreated = $true
-                            }
+                            Write-Host -ForegroundColor White "Done."
+                            $newComponentsCreated = $true
                         }
-                        else {Write-Host -ForegroundColor White "Already exists on this server."}
-                        $queryComponentReady = $true
+                    }
+                    else {Write-Host -ForegroundColor White "Already exists on this server."}
+                    $queryComponentReady = $true
                 }
                 else {Write-Host -ForegroundColor White "Not requested for this server."}
                 if ($queryComponents) {Write-Host -ForegroundColor White "  - Query component(s) already exist(s) in the farm."; $queryComponentReady = $true}
@@ -3906,12 +3966,12 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 WriteLine
             }
         }
-        
+
         # SLN: Create the network share (will report an error if exist)
         # default to primitives 
-        $pathToShare = """" + $svcConfig.ShareName + "=" + $svcConfig.IndexLocation + """"
+        $pathToShare = """" + $svcConfig.ShareName + "=" + $indexLocation + """"
         # The path to be shared should exist if the Enterprise Search App creation succeeded earlier
-        EnsureFolder $svcConfig.IndexLocation
+        EnsureFolder $indexLocation
         Write-Host -ForegroundColor White " - Creating network share $pathToShare"
         Start-Process -FilePath net.exe -ArgumentList "share $pathToShare `"/GRANT:WSS_WPG,CHANGE`"" -NoNewWindow -Wait -ErrorAction SilentlyContinue
 
@@ -5057,7 +5117,7 @@ Function Get-FarmServers ([xml]$xmlinput)
     $servers = $null
     $farmServers = @()
     # Look for server name references in the XML
-    ForEach ($node in $xmlinput.SelectNodes("//*[@Provision]|//*[@Install]|//*[CrawlServers]|//*[QueryServers]|//*[SearchQueryAndSiteSettingsServers]|//*[AdminComponent]|//*[@Start]"))
+    ForEach ($node in $xmlinput.SelectNodes("//*[@Provision]|//*[@Install]|//*[CrawlComponent]|//*[QueryComponent]|//*[SearchQueryAndSiteSettingsServers]|//*[AdminComponent]|//*[IndexComponent]|//*[ContentProcessingComponent]|//*[AnalyticsProcessingComponent]|//*[@Start]"))
     {
         # Try to set the server name from the various elements/attributes
         $servers = @(GetFromNode $node "Provision")
@@ -5722,7 +5782,7 @@ Function CheckIfUpgradeNeeded
 # Copyright Todd Klindt 2011
 # Originally published to http://www.toddklindt.com/blog
 # ====================================================================================
-Function AddToHOSTS
+Function AddToHOSTS ($hosts)
 {
     Write-Host -ForegroundColor White " - Adding HOSTS file entries for local resolution..."
     # Make backup copy of the Hosts file with today's date
@@ -5733,9 +5793,12 @@ Function AddToHOSTS
     Write-Host -ForegroundColor White " - $filecopy"
     Copy-Item $hostsfile -Destination $filecopy
 
-    # Get a list of the AAMs and weed out the duplicates
-    $hosts = Get-SPAlternateURL | ForEach-Object {$_.incomingurl.replace("https://","").replace("http://","")} | where-Object { $_.tostring() -notlike "*:*" } | Select-Object -Unique
-     
+    if (!$hosts) # No hosts were passed as arguments, so look at the AAMs in the farm
+    {
+        # Get a list of the AAMs and weed out the duplicates
+        $hosts = Get-SPAlternateURL | ForEach-Object {$_.incomingurl.replace("https://","").replace("http://","")} | where-Object { $_.tostring() -notlike "*:*" } | Select-Object -Unique
+    }
+    
     # Get the contents of the Hosts file
     $file = Get-Content $hostsfile
     $file = $file | Out-String
