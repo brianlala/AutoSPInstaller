@@ -1,6 +1,6 @@
 ﻿param 
 (
-    [string]$inputFile = $(throw '- Need parameter input file (e.g. "c:\SP\AutoSPInstaller\AutoSPInstallerInput.xml")'),
+    [string]$inputFile = $(throw '- Need parameter input file (e.g. "\\SPSERVER01\C$\SP\AutoSPInstaller\AutoSPInstallerInput.xml")'),
     [string]$targetServer = "",
     [string]$remoteAuthPassword = "",
     [switch]$unattended
@@ -102,7 +102,7 @@ Function Install-Remote
                 ##$serverJob = 
                 ##Start-Job -Name "$server" -Credential $credential -FilePath $MyInvocation.ScriptName -ArgumentList "$inputFile -targetServer $server"
                 ##$credential = New-Object System.Management.Automation.PsCredential $credential.UserName,$credential.Password
-                Start-Process -FilePath "$PSHOME\powershell.exe" -ArgumentList "Invoke-Command -ScriptBlock {
+                Start-Process -FilePath "$PSHOME\powershell.exe" -ArgumentList "-ExecutionPolicy Bypass Invoke-Command -ScriptBlock {
                                                                                 . `"$env:dp0\AutoSPInstallerFunctions.ps1`"; `
                                                                                 StartTracing -Server $server; `
                                                                                 Test-ServerConnection -Server $server; `
@@ -425,7 +425,7 @@ If (MatchComputerName $farmServers $env:COMPUTERNAME)
             {
                 Write-Host -ForegroundColor White " - Re-Launching:"
                 Write-Host -ForegroundColor White " - $scriptCommandLine"
-                Start-Process -WorkingDirectory $PSHOME -FilePath "powershell.exe" -ArgumentList "$scriptCommandLine -RemoteAuthPassword $password" -Verb RunAs
+                Start-Process -WorkingDirectory $PSHOME -FilePath "powershell.exe" -ArgumentList "-ExecutionPolicy Bypass $scriptCommandLine -RemoteAuthPassword $password" -Verb RunAs
                 Start-Sleep 10
             }
         }

@@ -18,7 +18,9 @@
        This allows you to configure an entire multi-server farm with different servers fulfilling different roles
        using a single configuration file.
        e.g. <ExcelServices Provision="Server1 Server2"> would provision excel services only on Server1 and Server2. -->
-<!-- The Environment attribute below appears at the top of the installation transcript. It does not affect the installation -->
+<!-- The Environment attribute below appears at the top of the installation transcript, and will now also appear at the top of the SharePoint 2013 Central Administration top-left branding bar. It does not affect the SharePoint 2010 installation though.
+     Simply leave the Environment attribute blank if you do not want to alter the branding bar in SP2013 Central Admin.
+     The Version attribute is for now really just the XML schema version. -->
 <Configuration Environment="Dev" Version="3.85">
     <!-- The Install section controls what modifications are made to the Windows OS prior to installation and how the SharePoint installation is run.
          You can also explicitly state the SPVersion of SharePoint being installed, (in case you have binaries for both SP2010/SP2013 in your folder structure).
@@ -40,7 +42,8 @@
         <PauseAfterInstall>false</PauseAfterInstall>
         <!-- Set RemoteInstall Enable="true" to attempt a centralized, remote install & config of your entire farm -->
         <RemoteInstall Enable="false">
-            <!-- ParallelInstall controls whether SharePoint binary file installs are triggered simultaneously on all servers in the farm during a remote install. Can speed things up considerably (unless of course all your VMs are running on the same host, sharing I/O resources etc.!) -->
+            <!-- ParallelInstall controls whether SharePoint binary file installs are triggered simultaneously on all servers in the farm during a remote install. Can speed things up considerably (unless of course all your VMs are running on the same host, sharing I/O resources etc.!)
+                 Note that if ParallelInstall is set to true, it will override PauseAfterInstall above such that the script will *always* pause after install. -->
             <ParallelInstall>false</ParallelInstall>
         </RemoteInstall>
         <!-- AutoAdminLogon tells the script to place values in the registry that allow automatic logon with the install account credentials (only), should the installation proces require reboot(s).

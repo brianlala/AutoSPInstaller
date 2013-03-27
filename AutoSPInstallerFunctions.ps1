@@ -1315,6 +1315,16 @@ Function ConfigureFarm([xml]$xmlinput)
         
         # Provision CentralAdmin if indicated in AutoSPInstallerInput.xml and the CA web app doesn't already exist
         If ((ShouldIProvision($xmlinput.Configuration.Farm.CentralAdmin) -eq $true) -and (!($centralAdmin))) {CreateCentralAdmin $xmlinput}
+        # Update Central Admin branding text for SharePoint 2013 based on the XML input Environment attribute
+        if ($env:spVer -eq "15" -and !([string]::IsNullOrEmpty($xmlinput.Configuration.Environment)))
+        {
+            # From http://www.wictorwilen.se/sharepoint-2013-central-administration-productivity-tip?utm_source=feedburner&utm_medium=feed&utm_campaign=Feed%3A+WictorWilen+%28Wictor+Wil%C3%A9n+-+SharePoint+MCA%2C+MCM+and+MVP%29
+            Write-Host -ForegroundColor White " - Updating Central Admin branding text to `"$($xmlinput.Configuration.Environment)`"..."
+            $suiteBarBrandingElement = "SharePoint - " + $xmlinput.Configuration.Environment
+            $ca = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.IsAdministrationWebApplication -eq $true}
+            $ca.SuiteBarBrandingElementHtml = "<div class='ms-core-brandingText'>$suiteBarBrandingElement</div>"
+            $ca.Update()
+        }
         # Install application content if this is a new farm
         If ($doFullConfig)
         {
@@ -1761,16 +1771,30 @@ Function CreateMetadataServiceApp([xml]$xmlinput)
             Else {Write-Host -ForegroundColor White " - Managed Metadata Service already started."}
 
             # Create a Metadata Service Application
-            If((Get-SPServiceApplication | ? {$_.GetType().ToString() -eq "Microsoft.SharePoint.Taxonomy.MetadataWebServiceApplication"}) -eq $null)
-            {  
+            If ((Get-SPServiceApplication | ? {$_.GetType().ToString() -eq "Microsoft.SharePoint.Taxonomy.MetadataWebServiceApplication"}) -eq $null)
+            {
                 # Create Service App
                 Write-Host -ForegroundColor White " - Creating Metadata Service Application..."
                 $metaDataServiceApp = New-SPMetadataServiceApplication -Name $metadataServiceName -ApplicationPool $applicationPool -DatabaseServer $dbServer -DatabaseName $metaDataDB
                 If (-not $?) { Throw " - Failed to create Metadata Service Application" }
+            }
+            Else 
+            {
+                Write-Host -ForegroundColor White " - Managed Metadata Service Application already provisioned."
+            }
+            if ((Get-SPServiceApplicationProxy | ? {$_.GetType().ToString() -eq "Microsoft.SharePoint.Taxonomy.MetadataWebServiceApplicationProxy"}) -eq $null)
+            {
                 # create proxy
                 Write-Host -ForegroundColor White " - Creating Metadata Service Application Proxy..."
                 $metaDataServiceAppProxy = New-SPMetadataServiceApplicationProxy -Name $metadataServiceProxyName -ServiceApplication $metaDataServiceApp -DefaultProxyGroup -ContentTypePushdownEnabled -DefaultKeywordTaxonomy -DefaultSiteCollectionTaxonomy
                 If (-not $?) { Throw " - Failed to create Metadata Service Application Proxy" }
+            }
+            else 
+            {
+                Write-Host -ForegroundColor White " - Managed Metadata Service Application Proxy already provisioned."
+            }
+            if ($metaDataServiceApp -or $metaDataServiceAppProxy)
+            {
                 # Added to enable Metadata Service Navigation for SP2013, per http://www.toddklindt.com/blog/Lists/Posts/Post.aspx?ID=354
                 If ($env:spVer -eq "15")
                 {
@@ -1797,10 +1821,6 @@ Function CreateMetadataServiceApp([xml]$xmlinput)
                 # Apply the changes to the Metadata Service application
                 Set-SPServiceApplicationSecurity $metadataServiceAppIDToSecure -objectSecurity $metadataServiceAppSecurity
                 Write-Host -ForegroundColor White " - Done creating Managed Metadata Service Application."
-            }
-            Else 
-            {
-                Write-Host -ForegroundColor White " - Managed Metadata Service Application already provisioned."
             }
         }
         Catch
@@ -2558,7 +2578,7 @@ Else {Write-Host -ForegroundColor White " - Done.";Start-Sleep 15}
                         $addProfileScriptFile = "$env:TEMP\AutoSPInstaller-AddProfileSyncCmd.ps1"
                         $addProfileSyncCmd | Out-File $addProfileScriptFile
                         # Run our Add-SPProfileSyncConnection script as the Farm Account - doesn't seem to work otherwise
-                        Start-Process -WorkingDirectory $PSHOME -FilePath "powershell.exe" -Credential $farmCredential -ArgumentList "-Command Start-Process -WorkingDirectory `"'$PSHOME'`" -FilePath `"'powershell.exe'`" -ArgumentList `"'$addProfileScriptFile'`" -Verb Runas" -Wait
+                        Start-Process -WorkingDirectory $PSHOME -FilePath "powershell.exe" -Credential $farmCredential -ArgumentList "-ExecutionPolicy Bypass -Command Start-Process -WorkingDirectory `"'$PSHOME'`" -FilePath `"'powershell.exe'`" -ArgumentList `"'-ExecutionPolicy Bypass $addProfileScriptFile'`" -Verb Runas" -Wait
                         # Give Add-SPProfileSyncConnection time to complete before continuing
                         Start-Sleep 120
                         Remove-Item -LiteralPath $addProfileScriptFile -Force -ErrorAction SilentlyContinue
@@ -2625,7 +2645,7 @@ Function CreateUPSAsAdmin([xml]$xmlinput)
         If (Confirm-LocalSession) # Create the UPA as usual if this isn't a remote session
         {
             # Start a process under the Farm Account's credentials, then spawn an elevated process within to finally execute the script file that actually creates the UPS
-            Start-Process -WorkingDirectory $PSHOME -FilePath "powershell.exe" -Credential $farmCredential -ArgumentList "-Command Start-Process -WorkingDirectory `"'$PSHOME'`" -FilePath `"'powershell.exe'`" -ArgumentList `"'$scriptFile'`" -Verb Runas" -Wait
+            Start-Process -WorkingDirectory $PSHOME -FilePath "powershell.exe" -Credential $farmCredential -ArgumentList "-ExecutionPolicy Bypass -Command Start-Process -WorkingDirectory `"'$PSHOME'`" -FilePath `"'powershell.exe'`" -ArgumentList `"'-ExecutionPolicy Bypass $scriptFile'`" -Verb Runas" -Wait
         }
         Else # Do some fancy stuff to get this to work over a remote session
         {
@@ -2644,7 +2664,7 @@ Function CreateUPSAsAdmin([xml]$xmlinput)
             Invoke-Command -ScriptBlock {param ($value) Set-Variable -Name ScriptFile -Value $value} -ArgumentList $scriptFile -Session $UPSession
             Write-Host -ForegroundColor White " - Creating $userProfileServiceName under `"remote`" session..."
             # Start a (local) process (on our "remote" session), then spawn an elevated process within to finally execute the script file that actually creates the UPS
-            Invoke-Command -ScriptBlock {Start-Process -FilePath "$PSHOME\powershell.exe" -ArgumentList $scriptFile -Verb Runas} -Session $UPSession
+            Invoke-Command -ScriptBlock {Start-Process -FilePath "$PSHOME\powershell.exe" -ArgumentList "-ExecutionPolicy Bypass $scriptFile" -Verb Runas} -Session $UPSession
         }
     }
     Catch
@@ -3977,8 +3997,14 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
 
         # Set the crawl start addresses (including the elusive sps3:// URL required for People Search, if My Sites are provisioned)
         $crawlStartAddresses = $portalURL+":"+$portalPort
+        # Updated to include all web apps, not just main Portal and MySites host
+        ForEach ($webAppConfig in $xmlinput.Configuration.WebApplications.WebApplication | Where-Object {$_.Url -ne $portalURL -and $_.Url -ne $mySiteURL})
+        {
+            $crawlStartAddresses += ","+$($webAppConfig.url)+":"+$($webAppConfig.Port)
+        }
+        
         If ($mySiteURL -and $mySitePort -and $mySiteHostHeader)
-        {   
+        {
         	# Need to set the correct sps (People Search) URL protocol in case My Sites are SSL-bound
         	If ($mySiteURL -like "https*") {$peopleSearchProtocol = "sps3s://"}
         	Else {$peopleSearchProtocol = "sps3://"}
@@ -3987,8 +4013,17 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
         Write-Host -ForegroundColor White " - Setting up crawl addresses for default content source..." -NoNewline
         Get-SPEnterpriseSearchServiceApplication | Get-SPEnterpriseSearchCrawlContentSource | Set-SPEnterpriseSearchCrawlContentSource -StartAddresses $crawlStartAddresses
         If ($?) {Write-Host -ForegroundColor White "Done."}
+        if ($env:spVer -eq "15") # Invoke-WebRequest requires PowerShell 3.0 but if we're installing SP2013 and we've gotten this far, we must have v3.0
+        {
+            # Issue a request to the Farm Search Administration page to avoid a Health Analyzer warning about 'Missing Server Side Dependencies'
+            $ca = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.IsAdministrationWebApplication -eq $true}
+            $centralAdminUrl = $ca.Url
+            if ($ca.Url -like "http://*" -or $ca.Url -like "*$($env:COMPUTERNAME)*") # If Central Admin uses SSL, only attempt the web request if we're on the same server as Central Admin, otherwise it may throw a certificate error due to our self-signed cert
+            {
+                $null = Invoke-WebRequest -Uri $centralAdminUrl"searchfarmdashboard.aspx" -UseDefaultCredentials -DisableKeepAlive -ErrorAction SilentlyContinue
+            }
+        }
     }
-    
     Else
     {
         WriteLine
@@ -5938,7 +5973,7 @@ Function ImportWebAdministration
 
 Function AddResourcesLink([string]$title,[string]$url)
 {
-    $centraladminapp = (Get-spwebapplication -includecentraladministration | where {$_.DisplayName -eq "SharePoint Central Administration v4"});
+    $centraladminapp = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.IsAdministrationWebApplication -eq $true}
     $centraladminurl = $centraladminapp.Url
     $centraladmin = (Get-SPSite $centraladminurl)
 
