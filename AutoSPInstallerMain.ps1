@@ -113,8 +113,6 @@ Function Install-Remote
                                                                                 Pause `"exit`"; `
                                                                                 Stop-Transcript}" -Verb Runas
                 Start-Sleep 10
-                #Start-Process -FilePath "$PSHOME\powershell.exe" -ArgumentList "$($MyInvocation.ScriptName) $inputFile -targetServer $server" -Verb Runas
-                ##[array]$serverJobs += $serverJob 
             }
             Else # Launch each farm server install in sequence, one-at-a-time, or run these steps on the current $targetServer
             {
@@ -406,9 +404,20 @@ If (MatchComputerName $farmServers $env:COMPUTERNAME)
                 if ((Confirm-LocalSession) -and ([string]::IsNullOrEmpty($restartPrompt))) {$restartPrompt = Read-Host -Prompt " - Do you want to restart immediately? (y/n)"}
                 If ($restartPrompt -eq "y")
                 {
-                    if (!(Confirm-LocalSession)) {Write-Host " - Restarting - "; Start-Sleep 5; Restart-Computer}
+                    if (!(Confirm-LocalSession))
+                    {
+                        Write-Host " - Restarting - "
+                        Start-Sleep 5
+                        Restart-Computer -ErrorAction SilentlyContinue
+                        if (!$?)
+                        {
+                            Write-Warning "Restart failed; there may be (an) other user(s) logged in!"
+                            $forceRestart = Read-Host -Prompt " - Do you want to force a restart? (y/n)"
+                            if ($forceRestart -eq "y") {Restart-Computer -Force}
+                        }
+                    }
                     # If this is a non-remote session, launch Restart-Computer from another PS window/process
-                    else {Start-Process -FilePath "$PSHOME\powershell.exe" -ArgumentList "Write-Host `" - Restarting - `"; Start-Sleep 5; Restart-Computer"}
+                    else {Start-Process -FilePath "$PSHOME\powershell.exe" -ArgumentList "Write-Host ' - Restarting - '; Start-Sleep 5; Restart-Computer -ErrorAction SilentlyContinue; if (!`$?) {Write-Warning 'Restart failed; there may be (an) other user(s) logged in!'; `$forceRestart = Read-Host -Prompt ' - Do you want to force a restart? (y/n)'; if (`$forceRestart -eq 'y') {Restart-Computer -Force}}"}
                     $restarting = $true
                 }
                 Else {Write-Host -ForegroundColor Yellow " - Please restart your computer to continue AutoSPInstaller."}

@@ -213,6 +213,9 @@ Function CheckConfigFiles([xml]$xmlinput)
             throw " - The Product ID (PIDKey) is missing or badly formatted.`n - Check the value of <PIDKey> in `"$(Split-Path -Path $inputFile -Leaf)`" and try again."
         }
         $officeServerPremium = $xmlinput.Configuration.Install.SKU -replace "Enterprise","1" -replace "Standard","0"
+        $dataDir = $xmlinput.Configuration.Install.DataDir
+        # Set it to the default value if it's not specified in $xmlinput
+        if ([string]::IsNullOrEmpty($dataDir)) {$dataDir = "%PROGRAMFILES%\Microsoft Office Servers\$env:spVer.0\Data"}
         $xmlConfig = @"
 <Configuration>
   <Package Id="sts">
@@ -226,6 +229,7 @@ Function CheckConfigFiles([xml]$xmlinput)
   <Logging Type="verbose" Path="%temp%" Template="SharePoint Server Setup(*).log"/>
   <Display Level="basic" CompletionNotice="No" AcceptEula="Yes"/>
   <INSTALLLOCATION Value="%PROGRAMFILES%\Microsoft Office Servers\" />
+  <DATADIR Value="$dataDir"/>
   <PIDKEY Value="$pidKey"/>
   <Setting Id="SERVERROLE" Value="APPLICATION"/>
   <Setting Id="USINGUIINSTALLMODE" Value="1"/>
@@ -3386,6 +3390,9 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
         Else {$mySiteHostHeader = $mySiteURL -replace "http://",""}
         $secSearchServicePassword = ConvertTo-SecureString -String $svcConfig.Password -AsPlainText -Force
         $secContentAccessAcctPWD = ConvertTo-SecureString -String $svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication.ContentAccessAccountPassword -AsPlainText -Force
+        $dataDir = $xmlinput.Configuration.Install.DataDir
+        # Set it to the default value if it's not specified in $xmlinput
+        if ([string]::IsNullOrEmpty($dataDir)) {$dataDir = "$env:ProgramFiles\Microsoft Office Servers\$env:spVer.0\Data"}
 
         $searchSvc = Get-SPEnterpriseSearchServiceInstance -Local
         If ($searchSvc -eq $null) {
@@ -3394,7 +3401,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
         if ([string]::IsNullOrEmpty($svcConfig.CustomIndexLocation))
         {
             # Use the default location
-            $indexLocation = "$env:ProgramFiles\Microsoft Office Servers\$env:spVer.0\Data\Office Server\Applications"
+            $indexLocation = "$dataDir\Office Server\Applications"
         }
         else
         {
@@ -3448,7 +3455,8 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 # Add link to resources list
                 AddResourcesLink "Search Administration" ("searchadministration.aspx?appid=" +  $searchApp.Id)
 
-                if ($indexLocation -ne "$env:ProgramFiles\Microsoft Office Servers\14.0\Data\Office Server\Applications")
+                # If the index location isn't already set to either the default location or our custom-specified location, set the default location for the search service instance
+                if ($indexLocation -ne "$dataDir\Office Server\Applications" -or $indexLocation -ne $searchSvc.DefaultIndexLocation)
                 {
                     Write-Host -ForegroundColor White "  - Setting default index location on search service instance..." -NoNewline
                     $searchSvc | Set-SPEnterpriseSearchServiceInstance -DefaultIndexLocation $indexLocation -ErrorAction SilentlyContinue
@@ -3746,6 +3754,14 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 # Update the default Content Access Account
                 Update-SearchContentAccessAccount $($appConfig.Name) $searchApp $($svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication.ContentAccessAccount) $secContentAccessAcctPWD
 
+                # If the index location isn't already set to either the default location or our custom-specified location, set the default location for the search service instance
+                if ($indexLocation -ne "$dataDir\Office Server\Applications" -or $indexLocation -ne $searchSvc.DefaultIndexLocation)
+                {
+                    Write-Host -ForegroundColor White "  - Setting default index location on search service instance..." -NoNewline
+                    $searchSvc | Set-SPEnterpriseSearchServiceInstance -DefaultIndexLocation $indexLocation -ErrorAction SilentlyContinue
+                    if ($?) {Write-Host -ForegroundColor White "Done."}
+                }
+
                 # Look for a topology that has components, or is still Inactive, because that's probably our $clone
                 $clone = $searchApp.Topologies | Where {$_.ComponentCount -gt 0 -and $_.State -eq "Inactive"} | Select-Object -First 1
                 if (!$clone)
@@ -3850,7 +3866,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                     {
                         Write-Host -ForegroundColor White "Creating..." -NoNewline
                         # Specify the RootDirectory parameter only if it's different than the default path
-                        if ($indexLocation -ne "$env:ProgramFiles\Microsoft Office Servers\15.0\Data\Office Server\Applications")
+                        if ($indexLocation -ne "$dataDir\Office Server\Applications")
                         {$rootDirectorySwitch = @{RootDirectory = $indexLocation}}
                         else {$rootDirectorySwitch = ""}
                         New-SPEnterpriseSearchIndexComponent –SearchTopology $clone -SearchServiceInstance $searchSvc @rootDirectorySwitch | Out-Null
@@ -4020,7 +4036,9 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
             $centralAdminUrl = $ca.Url
             if ($ca.Url -like "http://*" -or $ca.Url -like "*$($env:COMPUTERNAME)*") # If Central Admin uses SSL, only attempt the web request if we're on the same server as Central Admin, otherwise it may throw a certificate error due to our self-signed cert
             {
-                $null = Invoke-WebRequest -Uri $centralAdminUrl"searchfarmdashboard.aspx" -UseDefaultCredentials -DisableKeepAlive -ErrorAction SilentlyContinue
+                Write-Host -ForegroundColor White " - Requesting searchfarmdashboard.aspx (resolves Health Analyzer error)..." -NoNewLine
+                $null = Invoke-WebRequest -Uri $centralAdminUrl"searchfarmdashboard.aspx" -UseDefaultCredentials -DisableKeepAlive -UseBasicParsing -ErrorAction SilentlyContinue
+                Write-Host "Done." 
             }
         }
     }
@@ -5023,11 +5041,11 @@ Function Configure-PDFSearchAndIcon
     # Only configure PDF icon if we are running SP2010 (as SP2013 includes one)
     If (($xmlinput.Configuration.AdobePDF.Icon.Configure -eq $true) -and ($env:spVer -eq "14"))
     {
-        $pdfIconUrl = "http://helpx.adobe.com/content/dam/kb/en/837/cpsid_83709/attachments/AdobePDF.png"
+        $pdfIconUrl = "http://www.adobe.com/images/pdficon_small.png"
         $docIconFolderPath = "$sharePointRoot\TEMPLATE\XML"
         $docIconFilePath = "$docIconFolderPath\DOCICON.XML"
         Write-Host -ForegroundColor White " - Configuring PDF Icon..."
-        $pdfIcon = "AdobePDF.png"
+        $pdfIcon = "pdficon_small.png"
         If (!(Get-Item $sharePointRoot\Template\Images\$pdfIcon -ErrorAction SilentlyContinue))
         {
             ForEach ($sourceFileLocation in $sourceFileLocations)

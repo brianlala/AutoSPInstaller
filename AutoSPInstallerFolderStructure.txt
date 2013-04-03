@@ -21,8 +21,8 @@ OR
 \SP\201x\SharePoint\PrerequisiteInstallerFiles\
 \SP\2013\SharePoint\PrerequisiteInstallerFiles\sxs (optional, for offline install of .Net Framework 3.5.1 on Windows 2012)
 \SP\2010\OfficeWebApps\ (optional, only required/supported with SP2010)
-\SP\2010\PDF\ (optional, only required/supported with SP2010)
-\SP\2010\PDF\icpdf.gif (optional, only required/supported with SP2010)
+\SP\201x\PDF\ (optional)
+\SP\201x\PDF\AdobePDF.png (optional)
 \SP\2010\PDF\PDFiFilter64installer.zip (optional, only required/supported with SP2010)
 \SP\2010\PDF\PDFiFilter64installer.msi (optional, only required/supported with SP2010)
 \SP\201x\ForeFront\ (optional)
