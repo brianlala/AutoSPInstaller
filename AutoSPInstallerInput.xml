@@ -21,7 +21,7 @@
 <!-- The Environment attribute below appears at the top of the installation transcript, and will now also appear at the top of the SharePoint 2013 Central Administration top-left branding bar. It does not affect the SharePoint 2010 installation though.
      Simply leave the Environment attribute blank if you do not want to alter the branding bar in SP2013 Central Admin.
      The Version attribute is for now really just the XML schema version. -->
-<Configuration Environment="Dev" Version="3.86">
+<Configuration Environment="Dev" Version="3.87">
     <!-- The Install section controls what modifications are made to the Windows OS prior to installation and how the SharePoint installation is run.
          You can also explicitly state the SPVersion of SharePoint being installed, (in case you have binaries for both SP2010/SP2013 in your folder structure).
          Allowed values are "2010" or "2013". If you omit this, the script will attempt to determine the version anyhow, and default to 2013 if both sets of install files are present. -->
@@ -106,7 +106,8 @@
         <!-- The Services section configures the core service instances & components that are part of SharePoint Foundation -->
         <Services>
             <SandboxedCodeService Start="false" />
-            <ClaimsToWindowsTokenService Start="false" />
+            <!-- The UpdateAccount attribute will set the Claims To Windows Token Service (C2WTS) to run under an account other than the default Local System (the general spservice account), and thus avoid a Health Analyzer warning. However it might break things like PowerPivot and Excel Services so best bet is to leave it "false" -->
+            <ClaimsToWindowsTokenService Start="false" UpdateAccount="false" />
             <SMTP Install="false" />
             <OutgoingEmail Configure="true">
                 <SMTPServer></SMTPServer>

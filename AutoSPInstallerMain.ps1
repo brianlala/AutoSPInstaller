@@ -352,7 +352,7 @@ If (MatchComputerName $farmServers $env:COMPUTERNAME)
         
         If (($xmlinput.Configuration.Install.PauseAfterInstall -eq $true) -or ($xmlinput.Configuration.Install.RemoteInstall.ParallelInstall -eq $true))
         {
-            Pause "proceed with farm configuration"
+            Pause "proceed with farm configuration" "y"
         }
         Setup-Farm
         Setup-Services
