@@ -940,8 +940,11 @@ Function InstallLanguagePacks([xml]$xmlinput)
             If (!$language)
             {
                 Write-Host -ForegroundColor Blue " - Installing extracted language pack $languagePackFolder..." -NoNewline
+                $startTime = Get-Date
                 Start-Process -WorkingDirectory "$bits\$spYear\LanguagePacks\$languagePackFolder\" -FilePath "setup.exe" -ArgumentList "/config $bits\$spYear\LanguagePacks\$languagePackFolder\Files\SetupSilent\config.xml"
                 Show-Progress -Process setup -Color Blue -Interval 5
+                $delta,$null = (New-TimeSpan -Start $startTime -End (Get-Date)).ToString() -split "\."
+                Write-Host -ForegroundColor White " - Language pack $languagePackFolder setup completed in $delta."
             }
         }
         Write-Host -ForegroundColor White " - Language Pack installation complete."
@@ -958,8 +961,11 @@ Function InstallLanguagePacks([xml]$xmlinput)
             If (!$language)
             {
                 Write-Host -ForegroundColor Blue " - Installing $languagePack..." -NoNewline
+                $startTime = Get-Date
                 Start-Process -FilePath "$bits\$spYear\LanguagePacks\$languagePack" -ArgumentList "/quiet /norestart"
                 Show-Progress -Process $($languagePack -replace ".exe", "") -Color Blue -Interval 5
+                $delta,$null = (New-TimeSpan -Start $startTime -End (Get-Date)).ToString() -split "\."
+                Write-Host -ForegroundColor White " - Language pack $languagePack setup completed in $delta."
                 $language = (($languagePack -replace "ServerLanguagePack_","") -replace ".exe","")
                 # Install Foundation Language Pack SP1, then Server Language Pack SP1, if found
                 If (Get-ChildItem "$bits\$spYear\LanguagePacks" -Name -Include spflanguagepack2010sp1-kb2460059-x64-fullfile-$language.exe -ErrorAction SilentlyContinue)
@@ -1000,6 +1006,91 @@ Function InstallLanguagePacks([xml]$xmlinput)
     ForEach ($language in $installedOfficeServerLanguages)
     {
         Write-Host "  -" ([System.Globalization.CultureInfo]::GetCultureInfo($language).DisplayName)
+    }
+    WriteLine
+}
+#EndRegion
+
+#Region Install Cumulative Update(s)
+# ===================================================================================
+# Func: Install Cumulative Updates
+# Desc: Install SharePoint Cumulative Updates (CUs) to work around slipstreaming issues
+# ===================================================================================
+Function InstallCumulativeUpdates
+{
+    WriteLine
+    Write-Host -ForegroundColor White " - Looking for SharePoint updates to install..."
+    $spYears = @{"14" = "2010"; "15" = "2013"}
+    $spYear = $spYears.$env:spVer
+    # Result codes below are from http://technet.microsoft.com/en-us/library/cc179058(v=office.14).aspx
+    $oPatchInstallResultCodes = @{"17301" = "Error: General Detection error";
+                                  "17302" = "Error: Applying patch";
+                                  "17303" = "Error: Extracting file";
+                                  "17021" = "Error: Creating temp folder";
+                                  "17022" = "Success: Reboot flag set"; 
+                                  "17023" = "Error: User cancelled installation";
+                                  "17024" = "Error: Creating folder failed";
+                                  "17025" = "Patch already installed";
+                                  "17026" = "Patch already installed to admin installation";
+                                  "17027" = "Installation source requires full file update";
+                                  "17028" = "No product installed for contained patch";
+                                  "17029" = "Patch failed to install";
+                                  "17030" = "Detection: Invalid CIF format";
+                                  "17031" = "Detection: Invalid baseline";
+                                  "17034" = "Error: Required patch does not apply to the machine";
+                                  "17038" = "You do not have sufficient privileges to complete this installation for all users of the machine. Log on as administrator and then retry this installation";
+                                  "17044" = "Installer was unable to run detection for this package"}
+    $marchPublicUpdate = Get-ChildItem "$bits\$spYear\Updates" -Name -Include "ubersrvsp2013-kb2767999-fullfile-x64-glb.exe" -ErrorAction SilentlyContinue
+    If ($marchPublicUpdate)
+    {
+        Write-Host -ForegroundColor Blue "  - Installing $spYear March 2013 Public Update $marchPublicUpdate..." -NoNewline
+        $startTime = Get-Date
+        Start-Process -FilePath "$bits\$spYear\Updates\$marchPublicUpdate" -ArgumentList "/passive /norestart"
+        Show-Progress -Process $($marchPublicUpdate -replace ".exe", "") -Color Blue -Interval 5
+        $delta,$null = (New-TimeSpan -Start $startTime -End (Get-Date)).ToString() -split "\."
+        Write-Host -ForegroundColor White "  - March Public Update install completed in $delta."
+    }
+    $cumulativeUpdates = Get-ChildItem "$bits\$spYear\Updates" -Name -Include office2010*.exe,ubersrv*.exe -ErrorAction SilentlyContinue | Where-Object {$_ -ne "ubersrvsp2013-kb2767999-fullfile-x64-glb.exe"} | Sort-Object -Descending
+    # Look for Server Cumulative Update installers
+    If ($cumulativeUpdates)
+    {
+        if ($spYear -eq "2013" -and !$marchPublicUpdate)
+        {
+            Write-Warning "Updates were found in $bits\$spYear\Updates, but the March SP2013 Public Update is missing and needs to be installed first."
+        }
+        else
+        {
+            Write-Host -ForegroundColor White "  - Installing SharePoint Cumulative Updates:"
+            ForEach ($cumulativeUpdate in $cumulativeUpdates)
+            {
+                Write-Host -ForegroundColor Blue "   - Installing $cumulativeUpdate..." -NoNewline
+                $startTime = Get-Date
+                Start-Process -FilePath "$bits\$spYear\Updates\$cumulativeUpdate" -ArgumentList "/passive /norestart"
+                Show-Progress -Process $($cumulativeUpdate -replace ".exe", "") -Color Blue -Interval 5
+                $delta,$null = (New-TimeSpan -Start $startTime -End (Get-Date)).ToString() -split "\."
+                $oPatchInstallLog = Get-ChildItem -Path (Get-Item $env:TEMP).FullName | ? {$_.Name -like "opatchinstall*.log"} | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
+                # Get install result from log
+                $oPatchInstallResultMessage = $oPatchInstallLog | Select-String -SimpleMatch -Pattern "OPatchInstall: Property 'SYS.PROC.RESULT' value" | Select-Object -Last 1
+                If (!($oPatchInstallResultMessage -like "*value '0'*")) # Anything other than 0 means unsuccessful but that's not necessarily a bad thing
+                {
+                    $null,$oPatchInstallResultCode = $oPatchInstallResultMessage.Line -split "OPatchInstall: Property 'SYS.PROC.RESULT' value '"
+                    $oPatchInstallResultCode = $oPatchInstallResultCode.TrimEnd("'")
+                    ## OPatchInstall: Property 'SYS.PROC.RESULT' value '17028' means the patch was not needed or installed product was newer
+                    if ($oPatchInstallResultCode -eq "17028") {Write-Host -ForegroundColor White "   - Patch not required; installed product is newer."}
+                    else {Write-Host " - $($oPatchInstallResultCodes.$oPatchInstallResultCode)"}
+                }
+                Write-Host -ForegroundColor White "   - $cumulativeUpdate install completed in $delta."
+            }
+            Write-Host -ForegroundColor White "  - Cumulative Update installation complete."
+        }
+    }
+    if (!$marchPublicUpdate -and !$cumulativeUpdates) 
+    {
+        Write-Host -ForegroundColor White " - No updates found in $bits\$spYear\Updates, skipping."
+    }
+    else
+    {
+        Write-Host -ForegroundColor White " - Finished installing SharePoint updates."
     }
     WriteLine
 }
@@ -5237,7 +5328,7 @@ Function Enable-CredSSP ($remoteFarmServers)
 {
     ForEach ($server in $remoteFarmServers) {Write-Host -ForegroundColor White " - Enabling WSManCredSSP for `"$server`""}
     Enable-WSManCredSSP -Role Client -Force -DelegateComputer $remoteFarmServers | Out-Null
-    If (!$?) {Pause "exit..."; throw $_}
+    If (!$?) {Pause "exit"; throw $_}
 }
 
 Function Test-ServerConnection ($server)
@@ -5409,7 +5500,7 @@ Function Load-SharePoint-Powershell
     If ((Get-PsSnapin |?{$_.Name -eq "Microsoft.SharePoint.PowerShell"})-eq $null)
     {
         WriteLine
-        Write-Host -ForegroundColor White " - Loading SharePoint Powershell Snapin"
+        Write-Host -ForegroundColor White " - Loading SharePoint Powershell Snapin..."
         # Added the line below to match what the SharePoint.ps1 file implements (normally called via the SharePoint Management Shell Start Menu shortcut)
         If (Confirm-LocalSession) {$Host.Runspace.ThreadOptions = "ReuseThread"}
         Add-PsSnapin Microsoft.SharePoint.PowerShell -ErrorAction Stop | Out-Null

@@ -168,6 +168,7 @@ Function Run-Install
     InstallSharePoint $xmlinput
     InstallOfficeWebApps2010 $xmlinput
     InstallLanguagePacks $xmlinput
+    InstallCumulativeUpdates
     FixTaxonomyPickerBug
 }
 #EndRegion

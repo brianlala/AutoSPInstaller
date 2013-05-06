@@ -5,10 +5,6 @@
 \SP\AutoSPInstaller\AutoSPInstallerFunctionsCustom.ps1
 \SP\AutoSPInstaller\AutoSPInstallerConfigureRemoteTarget.ps1
 \SP\AutoSPInstaller\README.rtf
-\SP\AutoSPInstaller\Hotfixes\
-\SP\AutoSPInstaller\Hotfixes\Windows6.0-KB971831-x64.msu
-\SP\AutoSPInstaller\Hotfixes\Windows6.1-KB976462-v2-x64.msu
-\SP\AutoSPInstaller\Hotfixes\Windows6.1-KB976462-x64.msu
 
 \SP\201x (SharePoint 2010 or 2013 binary files - e.g. \2010\ or \2013\ - or both, in different folders)
 
@@ -20,9 +16,12 @@ OR
 \SP\201x\SharePoint\
 \SP\201x\SharePoint\PrerequisiteInstallerFiles\
 \SP\2013\SharePoint\PrerequisiteInstallerFiles\sxs (optional, for offline install of .Net Framework 3.5.1 on Windows 2012)
+\SP\201x\SharePoint\Updates (optional, for slipstreaming Service Packs and Public/Cumulative Updates. NOTE not all updates support slipstreaming!)
 \SP\2010\OfficeWebApps\ (optional, only required/supported with SP2010)
 \SP\201x\PDF\ (optional)
 \SP\201x\PDF\pdficon_small.png (optional)
 \SP\2010\PDF\PDFiFilter64installer.zip (optional, only required/supported with SP2010)
 \SP\2010\PDF\PDFiFilter64installer.msi (optional, only required/supported with SP2010)
 \SP\201x\ForeFront\ (optional)
+
+\SP\201x\Updates (optional, for installation of SharePoint Public/Cumulative Updates instead of or in addition to slipstreaming)
