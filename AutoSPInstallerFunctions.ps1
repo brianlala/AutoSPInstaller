@@ -2044,7 +2044,7 @@ Function AssignCert([xml]$xmlinput)
         # Check if we have specified no host header
         if (!([string]::IsNullOrEmpty($webApp.UseHostHeader)) -and $webApp.UseHostHeader -eq $false)
         {
-            Set-ItemProperty IIS:\Sites\$SSLSiteName -Name bindings -Value @{protocol="https";bindingInformation="*:$($SSLPort):*"}
+            Set-ItemProperty IIS:\Sites\$SSLSiteName -Name bindings -Value @{protocol="https";bindingInformation="*:$($SSLPort):"}
         }
         else # Set the binding to the host header
         {
