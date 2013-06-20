@@ -21,7 +21,7 @@
 <!-- The Environment attribute below appears at the top of the installation transcript, and will now also appear at the top of the SharePoint 2013 Central Administration top-left branding bar. It does not affect the SharePoint 2010 installation though.
      Simply leave the Environment attribute blank if you do not want to alter the branding bar in SP2013 Central Admin.
      The Version attribute is for now really just the XML schema version. -->
-<Configuration Environment="Dev" Version="3.87">
+<Configuration Environment="Dev" Version="3.9">
     <!-- The Install section controls what modifications are made to the Windows OS prior to installation and how the SharePoint installation is run.
          You can also explicitly state the SPVersion of SharePoint being installed, (in case you have binaries for both SP2010/SP2013 in your folder structure).
          Allowed values are "2010" or "2013". If you omit this, the script will attempt to determine the version anyhow, and default to 2013 if both sets of install files are present. -->
@@ -77,7 +77,6 @@
         <Account AddToLocalAdminsDuringSetup="true" LeaveInLocalAdmins="false">
             <Username>DOMAIN\SP_Farm</Username>
             <Password></Password>
-            <Email>spfarm@domain.com</Email>
         </Account>
         <!-- Which server(s) to provision CentralAdmin on. Specify "true" or a list of servers -->
         <CentralAdmin Provision="true">
@@ -103,7 +102,8 @@
             <!-- The name of the farm configuration database -->
             <ConfigDB>Config</ConfigDB>
         </Database>
-        <!-- The Services section configures the core service instances & components that are part of SharePoint Foundation -->
+        <!-- The Services section configures the core service instances & components that are part of SharePoint. *You should carefully plan and review them - incorrect configuration can have nasty effects.* 
+             Note that while some services are stopped by default, many are already started so be careful to specify ONLY the servers on which you want a particular service to be running (or "true" for all, "false" for none) -->
         <Services>
             <SandboxedCodeService Start="false" />
             <!-- The UpdateAccount attribute will set the Claims To Windows Token Service (C2WTS) to run under an account other than the default Local System (the general spservice account), and thus avoid a Health Analyzer warning. However it might break things like PowerPivot and Excel Services so best bet is to leave it "false" -->
@@ -114,6 +114,14 @@
                 <EmailAddress></EmailAddress>
                 <ReplyToEmail></ReplyToEmail>
             </OutgoingEmail>
+            <IncomingEmail Start="true" />
+            <!-- As a general rule DistributedCache - Start should never be set to "false", only either "true" for all servers, or a comma-delimited list of specific servers -->
+            <DistributedCache Start="true" />
+            <!-- As a general rule WorkflowTimer - Start should never be set to "false", only either "true" for all servers, or a comma-delimited list of specific servers -->
+            <WorkflowTimer Start="true" />
+            <!-- As a general rule FoundationWebApplication - Start should never be set to "false", only either "true" for all servers, or a comma-delimited list of specific WFE servers 
+                 *Note* if you want to remotely install dedicated WFEs in your farm (i.e. RemoteInstall Enable="True") you should name the servers here, in a comma separated list - e.g. Start="WFE1,WFE2,WFEx" -->
+            <FoundationWebApplication Start="true" />
         </Services>
         <!-- The ManagedAccounts section configures all accounts that will be added to SharePoint as managed accounts. -->
         <ManagedAccounts>
@@ -188,6 +196,7 @@
         applicationPoolAccount: DOMAIN\USERNAME of the account under which the application pool runs. This should be a managed account.
         url: URL of the root site collection in the application pool. Do not include the port number, but do set http/https correctly.
         port: Port on which the web application runs.
+        UseHostHeader: true = indicates that this web app's IIS site will be configured with a host header. false = host header field in IIS will be blank
         databaseName: Name of the first content database.
         useClaims: false = disable claims based authentication. true = enable claims based authentication.
         useBasicAuthentication: false = only accept Kerberos/NTLM claims. true = also accept Basic authentication claims. Has no effect if useClaims is false.
@@ -220,6 +229,7 @@
             <SiteCollections>
                 <!-- You can specify multiple site collections within a web application.
                 siteUrl: URL of the site collection. Include the port if it is non default for the protocol (80/443). Do not include default ports as this will make the script fail.
+                HostNamedSiteCollection: true = specifies that this will be a host-named site collection. false = specifies that this will be a path-based site collection (make sure you have added a corresponding ManagedPath above).
                 owner: Site collection owner account.
                 name: Name/title of the site collection.
                 description: Description of the site collection.
@@ -250,7 +260,7 @@
                         applicationPoolAccount="DOMAIN\SP_ProfilesAppPool"
                         url="http://localhost"
                         port="8080"
-                        UseHostHeader="true"                        
+                        UseHostHeader="true"
                         AddURLToLocalIntranetZone="true"
                         databaseName="Content_MySites"
                         useClaims="true"

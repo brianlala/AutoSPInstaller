@@ -194,10 +194,10 @@ Function Setup-Farm
 #Region Setup Services
 Function Setup-Services
 {
-    StartSandboxedCodeService $xmlinput
+    ConfigureSandboxedCodeService $xmlinput
     CreateStateServiceApp $xmlinput
     CreateMetadataServiceApp $xmlinput
-    StartClaimsToWindowsTokenService $xmlinput
+    ConfigureClaimsToWindowsTokenService $xmlinput
     CreateUserProfileServiceApplication $xmlinput
     CreateSPUsageApp $xmlinput
     ConfigureUsageLogging $xmlinput
@@ -212,6 +212,7 @@ Function Setup-Services
     CreateVisioServiceApp $xmlinput
     CreatePerformancePointServiceApp $xmlinput
     CreateWordAutomationServiceApp $xmlinput
+    ConfigureWorkflowTimerService $xmlinput
     if ($env:spVer -eq "14") # These are for SP2010 / Office Web Apps 2010 only
     {
         CreateExcelOWAServiceApp $xmlinput
@@ -230,7 +231,9 @@ Function Setup-Services
     }
 	InstallSMTP $xmlinput
     ConfigureOutgoingEmail $xmlinput
+    ConfigureIncomingEmail $xmlinput
     Configure-PDFSearchAndIcon $xmlinput
+    ConfigureFoundationWebApplicationService $xmlinput
     InstallForeFront $xmlinput
 }
 #EndRegion
@@ -466,8 +469,8 @@ If (MatchComputerName $farmServers $env:COMPUTERNAME)
                 Write-Host -ForegroundColor White " - Launching Central Admin..."
                 Start-Process $PSConfigUI -ArgumentList "-cmd showcentraladmin"
             }
-            # Launch any site collections we created, but only if this is a local (non-remote) session and this is a farm server
-            If (MatchComputerName $farmServers $env:COMPUTERNAME)
+            # Launch any site collections we created, but only if this is a local (non-remote) session and this is a farm server and the Foundation Web Application Service is not disabled
+            If (MatchComputerName $farmServers $env:COMPUTERNAME -and (ShouldIProvision $xmlinput.Configuration.Farm.Services.FoundationWebApplication -eq $true))
             {
                 ForEach ($webApp in $xmlinput.Configuration.WebApplications.WebApplication)
                 {
