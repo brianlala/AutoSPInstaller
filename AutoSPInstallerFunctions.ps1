@@ -40,23 +40,25 @@ Function ValidateCredentials([xml]$xmlinput)
         Throw " - You are running this script under a local machine user account. You must be a domain user"
     }
 
-    ForEach($node in $xmlinput.SelectNodes("//*[@Password]|//*[@password]|//*[@ContentAccessAccountPassword]|//*[@UnattendedIDPassword]|//*[Password]|//*[password]|//*[ContentAccessAccountPassword]|//*[UnattendedIDPassword]"))
+    ForEach($node in $xmlinput.SelectNodes("//*[@Password]|//*[@password]|//*[@ContentAccessAccountPassword]|//*[@UnattendedIDPassword]|//*[@SyncConnectionAccountPassword]|//*[Password]|//*[password]|//*[ContentAccessAccountPassword]|//*[UnattendedIDPassword]|//*[SyncConnectionAccountPassword]"))
     {
         $user = (GetFromNode $node "username")
         If ($user -eq "") { $user = (GetFromNode $node "Username") }
         If ($user -eq "") { $user = (GetFromNode $node "Account") }
         If ($user -eq "") { $user = (GetFromNode $node "ContentAccessAccount") }
         If ($user -eq "") { $user = (GetFromNode $node "UnattendedIDUser") }
+        If ($user -eq "") { $user = (GetFromNode $node "SyncConnectionAccount") }
 
         $password = (GetFromNode $node "password")
         If ($password -eq "") { $password = (GetFromNode $node "Password") }
         If ($password -eq "") { $password = (GetFromNode $node "ContentAccessAccountPassword") }
         If ($password -eq "") { $password = (GetFromNode $node "UnattendedIDPassword") }
+        If ($password -eq "") { $password = (GetFromNode $node "SyncConnectionAccountPassword") }
 
         If (($password -ne "") -and ($user -ne ""))
         {
             $currentDomain = "LDAP://" + ([ADSI]"").distinguishedName
-            Write-Host -ForegroundColor White " - Account `"$user`"..." -NoNewline
+            Write-Host -ForegroundColor White " - Account `"$user`" in $($node.Name)..." -NoNewline
             $dom = New-Object System.DirectoryServices.DirectoryEntry($currentDomain,$user,$password)
             If ($dom.Path -eq $null)
             {
@@ -69,7 +71,38 @@ Function ValidateCredentials([xml]$xmlinput)
             }
         }
     }
-        If ($acctInvalid) {Throw " - At least one set of credentials is invalid.`n - Check usernames and passwords in each place they are used."}
+    if ($xmlinput.Configuration.WebApplications)
+    {
+        # Get application pool accounts
+        foreach ($webApp in $($xmlinput.Configuration.WebApplications.WebApplication))
+        {
+            $appPoolAccounts = @($appPoolAccounts+$webApp.applicationPoolAccount)
+            # Get site collection owners #
+            foreach ($siteCollection in $($webApp.SiteCollections.SiteCollection))
+            {
+                $siteCollectionOwners = @($siteCollectionOwners+$siteCollection.Owner)
+            }
+        }
+    }
+    $appPoolAccounts = $appPoolAccounts | Select-Object -Unique
+    $siteCollectionOwners = $siteCollectionOwners | Select-Object -Unique
+    # Check for the existence of object cache accounts and other ones for which we don't need to specify passwords
+    $accountsToCheck = @($xmlinput.Configuration.Farm.ObjectCacheAccounts.SuperUser,$xmlinput.Configuration.Farm.ObjectCacheAccounts.SuperReader)+$appPoolAccounts+$siteCollectionOwners | Select-Object -Unique
+    foreach ($account in $accountsToCheck)
+    {
+        $domain,$accountName = $account -split "\\"
+        Write-Host -ForegroundColor White " - Account `"$account`"..." -NoNewline
+        if (!(userExists $accountName))
+        {
+            Write-Host -BackgroundColor Red -ForegroundColor Black "Invalid!"
+            $acctInvalid = $true
+        }
+        else
+        {
+            Write-Host -ForegroundColor Black -BackgroundColor Green "Verified."
+        }
+    }
+    If ($acctInvalid) {Throw " - At least one set of credentials is invalid.`n - Check usernames and passwords in each place they are used."}
     WriteLine
 }
 #EndRegion
@@ -239,7 +272,7 @@ Function CheckConfigFiles([xml]$xmlinput)
 </Configuration>
 "@
         $script:configFile = Join-Path -Path (Get-Item $env:TEMP).FullName -ChildPath $($xmlinput.Configuration.Install.ConfigFile)
-        Write-Host -ForegroundColor White " - Writing $($xmlinput.Configuration.Install.ConfigFile) to (Get-Item $env:TEMP).FullName..."
+        Write-Host -ForegroundColor White " - Writing $($xmlinput.Configuration.Install.ConfigFile) to $((Get-Item $env:TEMP).FullName)..."
         Set-Content -Path "$configFile" -Force -Value $xmlConfig
     }
     #EndRegion
@@ -1055,13 +1088,13 @@ Function InstallCumulativeUpdates
         {
             $null,$oPatchInstallResultCode = $oPatchInstallResultMessage.Line -split "OPatchInstall: Property 'SYS.PROC.RESULT' value '"
             $oPatchInstallResultCode = $oPatchInstallResultCode.TrimEnd("'")
-            ## OPatchInstall: Property 'SYS.PROC.RESULT' value '17028' means the patch was not needed or installed product was newer
+            # OPatchInstall: Property 'SYS.PROC.RESULT' value '17028' means the patch was not needed or installed product was newer
             if ($oPatchInstallResultCode -eq "17028") {Write-Host -ForegroundColor White "   - Patch not required; installed product is same or newer."}
             else {Write-Host "  - $($oPatchInstallResultCodes.$oPatchInstallResultCode)"}
         }
         Write-Host -ForegroundColor White "  - March Public Update install completed in $delta."
     }
-    $cumulativeUpdates = Get-ChildItem "$bits\$spYear\Updates" -Name -Include office2010*.exe,ubersrv*.exe -ErrorAction SilentlyContinue | Where-Object {$_ -ne "ubersrvsp2013-kb2767999-fullfile-x64-glb.exe"} | Sort-Object -Descending
+    $cumulativeUpdates = Get-ChildItem "$bits\$spYear\Updates" -Name -Include office2010*.exe,ubersrv*.exe,ubersts*.exe -ErrorAction SilentlyContinue | Where-Object {$_ -ne "ubersrvsp2013-kb2767999-fullfile-x64-glb.exe"} | Sort-Object -Descending
     # Look for Server Cumulative Update installers
     If ($cumulativeUpdates)
     {
@@ -1084,7 +1117,7 @@ Function InstallCumulativeUpdates
             {
                 $null,$oPatchInstallResultCode = $oPatchInstallResultMessage.Line -split "OPatchInstall: Property 'SYS.PROC.RESULT' value '"
                 $oPatchInstallResultCode = $oPatchInstallResultCode.TrimEnd("'")
-                ## OPatchInstall: Property 'SYS.PROC.RESULT' value '17028' means the patch was not needed or installed product was newer
+                # OPatchInstall: Property 'SYS.PROC.RESULT' value '17028' means the patch was not needed or installed product was newer
                 if ($oPatchInstallResultCode -eq "17028") {Write-Host -ForegroundColor White "   - Patch not required; installed product is same or newer."}
                 elseif ($oPatchInstallResultCode -eq "17031")
                 {
@@ -1276,11 +1309,13 @@ Function CreateOrJoinFarm([xml]$xmlinput, $secPhrase, $farmCredential)
 }
 #EndRegion
 
-#Region Run PSConfig
+#Region PSConfig
 Function Run-PSConfig
 {
-    $attemptNum += 1
     Start-Process -FilePath $PSConfig -ArgumentList "-cmd upgrade -inplace b2b -force -cmd applicationcontent -install -cmd installfeatures" -NoNewWindow -Wait
+}
+Function Check-PSConfig
+{
     $PSConfigLogLocation = $((Get-SPDiagnosticConfig).LogLocation) -replace "%CommonProgramFiles%","$env:CommonProgramFiles"
     $PSConfigLog = get-childitem $PSConfigLogLocation | ? {$_.Name -like "PSCDiagnostics*"} | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
     If ($PSConfigLog -eq $null)
@@ -1291,22 +1326,7 @@ Function Run-PSConfig
     {
         # Get error(s) from log
         $PSConfigLastError = $PSConfigLog | select-string -SimpleMatch -CaseSensitive -Pattern "ERR" | Select-Object -Last 1
-        If ($PSConfigLastError)
-        {
-            Write-Warning $PSConfigLastError.Line
-            While ($attemptNum -le 4)
-            {
-                Write-Host -ForegroundColor White " - An error occurred running PSConfig, trying again ($attemptNum)..."
-                Start-Sleep -Seconds 5
-                Run-PSConfig
-            }
-            If ($attemptNum -ge 5)
-            {
-                Write-Host -ForegroundColor White " - After $attemptNum attempts to run PSConfig, trying GUI-based..."
-                Start-Process -FilePath $PSConfigUI -NoNewWindow -Wait
-                $PSConfigLastError = $null
-            }
-        }
+        return $PSConfigLastError
     }
 }
 #EndRegion
@@ -1491,8 +1511,26 @@ Function ConfigureFarm([xml]$xmlinput)
     # Check again if we need to run PSConfig, in case a CU was installed on a subsequent pass of AutoSPInstaller
     if (CheckIfUpgradeNeeded -eq $true)
     {
+        $retryNum = 1
         Run-PSConfig
-        Clear-Variable -Name attemptNum -ErrorAction SilentlyContinue
+        $PSConfigLastError = Check-PSConfig
+        while (!([string]::IsNullOrEmpty($PSConfigLastError)) -and $retryNum -le 4)
+        {
+            Write-Warning $PSConfigLastError.Line
+            Write-Host -ForegroundColor White " - An error occurred running PSConfig, trying again ($retryNum)..."
+            Start-Sleep -Seconds 5
+            $retryNum += 1
+            Run-PSConfig
+            $PSConfigLastError = Check-PSConfig
+        }
+        If ($retryNum -ge 5)
+        {
+            Write-Host -ForegroundColor White " - After $retryNum attempts to run PSConfig, trying GUI-based..."
+            Start-Process -FilePath $PSConfigUI -NoNewWindow -Wait
+        }
+        Clear-Variable -Name PSConfigLastError -ErrorAction SilentlyContinue
+        Clear-Variable -Name PSConfigLog -ErrorAction SilentlyContinue
+        Clear-Variable -Name retryNum -ErrorAction SilentlyContinue
     }
     $spRegVersion = (Get-Item -Path "HKLM:\SOFTWARE\Microsoft\Shared Tools\Web Server Extensions\$env:spVer.0\").GetValue("Version")
     If (!($spRegVersion))
@@ -1546,11 +1584,28 @@ Function ConfigureLanguagePacks([xml]$xmlinput)
         Write-Host -ForegroundColor White " - Configuring language packs..."
         # Let's sleep for a while to let the farm config catch up...
         Start-Sleep 20
-        $attemptNum += 1
+        $retryNum += 1
         # Run PSConfig.exe per http://sharepoint.stackexchange.com/questions/9927/sp2010-psconfig-fails-trying-to-configure-farm-after-installing-language-packs
         # Note this was changed from v2v to b2b as suggested by CodePlex user jwthompson98
         Run-PSConfig
-        Clear-Variable -Name attemptNum -ErrorAction SilentlyContinue
+        $PSConfigLastError = Check-PSConfig
+        while (!([string]::IsNullOrEmpty($PSConfigLastError)) -and $retryNum -le 4)
+        {
+            Write-Warning $PSConfigLastError.Line
+            Write-Host -ForegroundColor White " - An error occurred running PSConfig, trying again ($retryNum)..."
+            Start-Sleep -Seconds 5
+            $retryNum += 1
+            Run-PSConfig
+            $PSConfigLastError = Check-PSConfig
+        }
+        If ($retryNum -ge 5)
+        {
+            Write-Host -ForegroundColor White " - After $retryNum attempts to run PSConfig, trying GUI-based..."
+            Start-Process -FilePath $PSConfigUI -NoNewWindow -Wait
+        }
+        Clear-Variable -Name PSConfigLastError -ErrorAction SilentlyContinue
+        Clear-Variable -Name PSConfigLog -ErrorAction SilentlyContinue
+        Clear-Variable -Name retryNum -ErrorAction SilentlyContinue
         WriteLine
     }
 }
@@ -2081,7 +2136,6 @@ Function CreateWebApplications([xml]$xmlinput)
         ForEach ($webApp in $xmlinput.Configuration.WebApplications.WebApplication)
         {
             CreateWebApp $webApp
-            ConfigureObjectCache $webApp
             ConfigureOnlineWebPartCatalog $webApp
             Add-LocalIntranetURL $webApp.URL
             WriteLine
@@ -2192,6 +2246,8 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
         $wa.GrantAccessToProcessIdentity("$($spservice.username)")
         Write-Host -ForegroundColor White "Done."
     }
+    WriteLine
+    ConfigureObjectCache $webApp
 
     ForEach ($siteCollection in $webApp.SiteCollections.SiteCollection)
     {
@@ -3573,9 +3629,9 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
         {
             $svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication | ForEach-Object {
                 $appConfig = $_
-                If (($appConfig.DatabaseServer -ne "") -and ($appConfig.DatabaseServer -ne $null))
+                If (!([string]::IsNullOrEmpty($appConfig.Database.DBServer)))
                 {
-                    $dbServer = $appConfig.DatabaseServer
+                    $dbServer = $appConfig.Database.DBServer
                 }
                 Else
                 {
@@ -3590,7 +3646,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                     Write-Host -ForegroundColor White " - Creating $($appConfig.Name)..."
                     $searchApp = New-SPEnterpriseSearchServiceApplication -Name $appConfig.Name `
                         -DatabaseServer $dbServer `
-                        -DatabaseName $($dbPrefix+$appConfig.DatabaseName) `
+                        -DatabaseName $($dbPrefix+$appConfig.Database.Name) `
                         -FailoverDatabaseServer $appConfig.FailoverDatabaseServer `
                         -ApplicationPool $pool `
                         -AdminApplicationPool $adminPool `
@@ -3656,7 +3712,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 If ($installCrawlSvc) {
                     $crawlComponent = $crawlTopology.CrawlComponents | where {MatchComputerName $_.ServerName $env:COMPUTERNAME}
                     If ($crawlTopology.CrawlComponents.Count -eq 0 -or $crawlComponent -eq $null) {
-                        $crawlStore = $searchApp.CrawlStores | where {$_.Name -eq "$($dbPrefix+$appConfig.DatabaseName)_CrawlStore"}
+                        $crawlStore = $searchApp.CrawlStores | where {$_.Name -eq "$($dbPrefix+$appConfig.Database.Name)_CrawlStore"}
                         Write-Host -ForegroundColor White " - Creating new crawl component..."
                         $crawlComponent = New-SPEnterpriseSearchCrawlComponent -SearchServiceInstance $searchSvc -SearchApplication $searchApp -CrawlTopology $crawlTopology -CrawlDatabase $crawlStore.Id.ToString() -IndexLocation $indexLocation
                     } Else {
@@ -3694,7 +3750,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                         Write-Host -ForegroundColor White " - Creating new query component..."
                         $queryComponent = New-SPEnterpriseSearchQueryComponent -IndexPartition $partition -QueryTopology $queryTopology -SearchServiceInstance $searchSvc -ShareName $svcConfig.ShareName -IndexLocation $indexLocation
                         Write-Host -ForegroundColor White " - Setting index partition and property store database..."
-                        $propertyStore = $searchApp.PropertyStores | where {$_.Name -eq "$($dbPrefix+$appConfig.DatabaseName)_PropertyStore"}
+                        $propertyStore = $searchApp.PropertyStores | where {$_.Name -eq "$($dbPrefix+$appConfig.Database.Name)_PropertyStore"}
                         $partition | Set-SPEnterpriseSearchIndexPartition -PropertyDatabase $propertyStore.Id.ToString()
                     } Else {
                         Write-Host -ForegroundColor White " - Query component already exists, skipping query component creation."
@@ -3810,9 +3866,9 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
         {
             $svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication | ForEach-Object {
                 $appConfig = $_
-                If (($appConfig.DatabaseServer -ne "") -and ($appConfig.DatabaseServer -ne $null))
+                If (!([string]::IsNullOrEmpty($appConfig.Database.DBServer)))
                 {
-                    $dbServer = $appConfig.DatabaseServer
+                    $dbServer = $appConfig.Database.DBServer
                 }
                 Else
                 {
@@ -3891,7 +3947,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                     Write-Host -ForegroundColor White "Creating $($appConfig.Name)..." -NoNewline
                     $searchApp = New-SPEnterpriseSearchServiceApplication -Name $appConfig.Name `
                         -DatabaseServer $dbServer `
-                        -DatabaseName $($dbPrefix+$appConfig.DatabaseName) `
+                        -DatabaseName $($dbPrefix+$appConfig.Database.Name) `
                         -FailoverDatabaseServer $appConfig.FailoverDatabaseServer `
                         -ApplicationPool $pool `
                         -AdminApplicationPool $adminPool `
@@ -6304,6 +6360,27 @@ Function Set-UserAccountControl ($flag)
         Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\policies\system" -Name EnableLUA -Value $flag
     }
 }
+
+# ====================================================================================
+# Func: userExists
+# Desc: "Here is a little powershell function I made to see check if specific active directory users exists or not."
+# From: http://oyvindnilsen.com/powershell-function-to-check-if-active-directory-users-exists/
+# ====================================================================================
+function userExists ([string]$name)
+{
+    #written by: Øyvind Nilsen (oyvindnilsen.com)
+    [bool]$ret = $false #return variable
+    $domainRoot = [ADSI]''
+    $dirSearcher = New-Object System.DirectoryServices.DirectorySearcher($domainRoot)
+    $dirSearcher.filter = "(&(objectClass=user)(sAMAccountName=$name))"
+    $results = $dirSearcher.findall()
+    if ($results.Count -gt 0) #if a user object is found, that means the user exists.
+    {
+        $ret = $true
+    }
+    return $ret
+}
+
 #EndRegion
 
 #Region Shortcuts

@@ -21,14 +21,14 @@
 <!-- The Environment attribute below appears at the top of the installation transcript, and will now also appear at the top of the SharePoint 2013 Central Administration top-left branding bar. It does not affect the SharePoint 2010 installation though.
      Simply leave the Environment attribute blank if you do not want to alter the branding bar in SP2013 Central Admin.
      The Version attribute is for now really just the XML schema version. -->
-<Configuration Environment="Dev" Version="3.9">
+<Configuration Environment="Dev" Version="3.92">
     <!-- The Install section controls what modifications are made to the Windows OS prior to installation and how the SharePoint installation is run.
          You can also explicitly state the SPVersion of SharePoint being installed, (in case you have binaries for both SP2010/SP2013 in your folder structure).
          Allowed values are "2010" or "2013". If you omit this, the script will attempt to determine the version anyhow, and default to 2013 if both sets of install files are present. -->
     <Install SPVersion="2013">
         <!-- The following few elements are parameters for the file containing the unattended install settings for SharePoint's setup.exe. Normally this is called config.xml.
              AutoSPInstaller can now create this file if it doesn't already exist (based on the ConfigFile name), and use the values below for PIDKey and SKU. -->
-        <ConfigFile>config.xml</ConfigFile>
+        <ConfigFile>config-AutoSPInstaller.xml</ConfigFile>
         <!-- DataDir is the location to use to store the SharePoint data files, including (by default) the search index files (on a drive letter that must exist on all SharePoint servers in the farm)
              If you don't specify a value, the default location of %PROGRAMFILES%\Microsoft Office Servers\14.0\Data or %PROGRAMFILES%\Microsoft Office Servers\15.0\Data (based on SharePoint version) is used -->
         <DataDir></DataDir>
@@ -361,14 +361,23 @@
                                  ShareName="SearchIndex">
             <EnterpriseSearchServiceApplications>
                 <EnterpriseSearchServiceApplication Name="Search Service Application"
-                                                    DatabaseServer=""
-                                                    DatabaseName="Search"
                                                     FailoverDatabaseServer=""
                                                     Partitioned="false"
                                                     Partitions="1"
                                                     SearchServiceApplicationType="Regular"
                                                     ContentAccessAccount="DOMAIN\SP_SearchContent"
                                                     ContentAccessAccountPassword="">
+                    <Database>
+                        <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
+                        <Name>Search</Name>
+                        <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
+                             If you leave <DBServer> blank, the default DBServer value for the farm is used -->
+                        <DBServer></DBServer>
+                        <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
+                        <DBAlias Create="true"
+                                 DBInstance="localhost"
+                                 DBPort="" />
+                    </Database>
                     <ApplicationPool Name="SharePoint Search Application Pool" Account="DOMAIN\SP_SearchService" Password="" />
                     <CrawlComponent>
                         <Server Name="localhost" />
@@ -604,10 +613,10 @@
         </AccessServices>
         <!-- If you choose to provision Performance Point Services, the user running the script must be in the sysadmin role of the SQL server whilst the script runs. This can be revoked afterwards. -->
         <PerformancePointService Provision="false"
-                      Name="PerformancePoint Service"
-                      ProxyName="PerformancePoint Service"
-                      UnattendedIDUser="DOMAIN\SP_PerfPointUser"
-                      UnattendedIDPassword="">
+                                 Name="PerformancePoint Service"
+                                 ProxyName="PerformancePoint Service"
+                                 UnattendedIDUser="DOMAIN\SP_PerfPointUser"
+                                 UnattendedIDPassword="">
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
