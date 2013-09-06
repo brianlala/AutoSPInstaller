@@ -168,7 +168,7 @@ Function Run-Install
     InstallSharePoint $xmlinput
     InstallOfficeWebApps2010 $xmlinput
     InstallLanguagePacks $xmlinput
-    InstallCumulativeUpdates
+    InstallUpdates
     FixTaxonomyPickerBug
 }
 #EndRegion
@@ -470,7 +470,7 @@ If (MatchComputerName $farmServers $env:COMPUTERNAME)
                 Start-Process $PSConfigUI -ArgumentList "-cmd showcentraladmin"
             }
             # Launch any site collections we created, but only if this is a local (non-remote) session and this is a farm server and the Foundation Web Application Service is not disabled
-            If (MatchComputerName $farmServers $env:COMPUTERNAME -and (ShouldIProvision $xmlinput.Configuration.Farm.Services.FoundationWebApplication -eq $true))
+            If ((MatchComputerName $farmServers $env:COMPUTERNAME) -and (ShouldIProvision $xmlinput.Configuration.Farm.Services.FoundationWebApplication))
             {
                 ForEach ($webApp in $xmlinput.Configuration.WebApplications.WebApplication)
                 {

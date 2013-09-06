@@ -12,8 +12,8 @@ Function ValidatePassphrase([xml]$xmlinput)
         Return
     }
     $groups=0
-    If ($farmPassphrase -match "[a-z]") { $groups = $groups + 1 }
-    If ($farmPassphrase -match "[A-Z]") { $groups = $groups + 1 }
+    If ($farmPassphrase -cmatch "[a-z]") { $groups = $groups + 1 }
+    If ($farmPassphrase -cmatch "[A-Z]") { $groups = $groups + 1 }
     If ($farmPassphrase -match "[0-9]") { $groups = $groups + 1 }
     If ($farmPassphrase -match "[^a-zA-Z0-9]") { $groups = $groups + 1 }
 
@@ -58,7 +58,7 @@ Function ValidateCredentials([xml]$xmlinput)
         If (($password -ne "") -and ($user -ne ""))
         {
             $currentDomain = "LDAP://" + ([ADSI]"").distinguishedName
-            Write-Host -ForegroundColor White " - Account `"$user`" in $($node.Name)..." -NoNewline
+            Write-Host -ForegroundColor White " - Account `"$user`" ($($node.Name))..." -NoNewline
             $dom = New-Object System.DirectoryServices.DirectoryEntry($currentDomain,$user,$password)
             If ($dom.Path -eq $null)
             {
@@ -513,7 +513,7 @@ Function InstallPrerequisites([xml]$xmlinput)
         Try
         {
 			# Install prerequisites manually without using PrerequisiteInstaller if we're installing SP2010 on on Windows Server 2012
-            if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*") -and ($env:spVer -eq "14"))
+            if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
             {
 			    Throw " - SharePoint 2010 is officially unsupported on Windows Server 2012 - see http://support.microsoft.com/kb/2724471"
 			}
@@ -547,7 +547,7 @@ Function InstallPrerequisites([xml]$xmlinput)
                     }
                     ElseIf ($env:spVer -eq "15") #SP2013
                     {
-                        if ((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*") # Try to pre-install .Net Framework 3.5.1 on Windows Server 2012
+                        if ((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") # Try to pre-install .Net Framework 3.5.1 on Windows Server 2012
                         {
                             if (Test-Path -Path "$env:SPbits\PrerequisiteInstallerFiles\sxs")
                             {
@@ -613,6 +613,7 @@ Function InstallPrerequisites([xml]$xmlinput)
                 {
                     $missingHotfixes = @{"Windows8-RT-KB2765317-x64.msu" = "http://download.microsoft.com/download/0/2/E/02E9E569-5462-48EB-AF57-8DCCF852E6F4/Windows8-RT-KB2765317-x64.msu"}
                 }
+                else {} # Reserved for Win2012 R2
                 $hotfixLocation = $env:SPbits+"\PrerequisiteInstallerFiles"
                 ForEach ($hotfixPatch in $missingHotfixes.Keys)
                 {
@@ -738,6 +739,11 @@ Function InstallPrerequisites([xml]$xmlinput)
                 {
                     Write-Host -ForegroundColor White " - A pending restart blocks the installation."
                     $preReqKnownIssueRestart = $true
+                }
+                ElseIf ($preReqLog | Select-String -SimpleMatch -Pattern "Error: This tool supports Windows Server version 6.1 and version 6.2" -Encoding Unicode)
+                {
+                    Write-Host -ForegroundColor White " - A known issue occurred (due to Win2012 R2), continuing."
+                    ##$preReqKnownIssueRestart = $true
                 }
                 Else
                 {
@@ -1044,12 +1050,12 @@ Function InstallLanguagePacks([xml]$xmlinput)
 }
 #EndRegion
 
-#Region Install Cumulative Update(s)
+#Region Install Update(s)
 # ===================================================================================
-# Func: Install Cumulative Updates
-# Desc: Install SharePoint Cumulative Updates (CUs) to work around slipstreaming issues
+# Func: InstallUpdates
+# Desc: Install SharePoint Updates (CUs and Service Packs) to work around slipstreaming issues
 # ===================================================================================
-Function InstallCumulativeUpdates
+Function InstallUpdates
 {
     WriteLine
     Write-Host -ForegroundColor White " - Looking for SharePoint updates to install..."
@@ -1073,35 +1079,71 @@ Function InstallCumulativeUpdates
                                   "17034" = "Error: Required patch does not apply to the machine";
                                   "17038" = "You do not have sufficient privileges to complete this installation for all users of the machine. Log on as administrator and then retry this installation";
                                   "17044" = "Installer was unable to run detection for this package"}
-    $marchPublicUpdate = Get-ChildItem "$bits\$spYear\Updates" -Name -Include "ubersrvsp2013-kb2767999-fullfile-x64-glb.exe" -ErrorAction SilentlyContinue
-    If ($marchPublicUpdate)
+    if ($spYear -eq "2010")
     {
-        Write-Host -ForegroundColor Blue "  - Installing $spYear March 2013 Public Update $marchPublicUpdate..." -NoNewline
-        $startTime = Get-Date
-        Start-Process -FilePath "$bits\$spYear\Updates\$marchPublicUpdate" -ArgumentList "/passive /norestart"
-        Show-Progress -Process $($marchPublicUpdate -replace ".exe", "") -Color Blue -Interval 5
-        $delta,$null = (New-TimeSpan -Start $startTime -End (Get-Date)).ToString() -split "\."
-        $oPatchInstallLog = Get-ChildItem -Path (Get-Item $env:TEMP).FullName | ? {$_.Name -like "opatchinstall*.log"} | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
-        # Get install result from log
-        $oPatchInstallResultMessage = $oPatchInstallLog | Select-String -SimpleMatch -Pattern "OPatchInstall: Property 'SYS.PROC.RESULT' value" | Select-Object -Last 1
-        If (!($oPatchInstallResultMessage -like "*value '0'*")) # Anything other than 0 means unsuccessful but that's not necessarily a bad thing
+        $sp2010SP1 = Get-ChildItem "$bits\$spYear\Updates" -Name -Include "officeserver2010sp1-kb2460045-x64-fullfile-en-us.exe" -ErrorAction SilentlyContinue
+        ##$sp2010June2012CU = Get-ChildItem "$bits\$spYear\Updates" -Name -Include "office2010-kb2598354-fullfile-x64-glb.exe" -ErrorAction SilentlyContinue
+        $sp2010June2013CU = Get-ChildItem "$bits\$spYear\Updates" -Name -Include "ubersrv2010-kb2817527-fullfile-x64-glb.exe" -ErrorAction SilentlyContinue
+        $sp2010SP2 = Get-ChildItem "$bits\$spYear\Updates" -Name -Include "oserversp2010-kb2687453-fullfile-x64-en-us.exe" -ErrorAction SilentlyContinue
+        # First & foremost, install SP2 if it's there
+        if ($sp2010SP2)
         {
-            $null,$oPatchInstallResultCode = $oPatchInstallResultMessage.Line -split "OPatchInstall: Property 'SYS.PROC.RESULT' value '"
-            $oPatchInstallResultCode = $oPatchInstallResultCode.TrimEnd("'")
-            # OPatchInstall: Property 'SYS.PROC.RESULT' value '17028' means the patch was not needed or installed product was newer
-            if ($oPatchInstallResultCode -eq "17028") {Write-Host -ForegroundColor White "   - Patch not required; installed product is same or newer."}
-            else {Write-Host "  - $($oPatchInstallResultCodes.$oPatchInstallResultCode)"}
+            InstallSpecifiedUpdate $sp2010SP2 "Service Pack 2"
+            # Now install any language pack service packs that are found, using the naming convention for SP2
+            $sp2010LPServicePacks = Get-ChildItem "$bits\$spYear\Updates" -Name -Include oslpksp2010*.exe -ErrorAction SilentlyContinue | Sort-Object -Descending
+            foreach ($sp2010LPServicePack in $sp2010LPServicePacks)
+            {
+                InstallSpecifiedUpdate $sp2010LPServicePack ""
+            }
         }
-        Write-Host -ForegroundColor White "  - March Public Update install completed in $delta."
+        # Otherwise, install SP1 as it is a required baseline for any post-June 2012 CUs
+        elseif ($sp2010SP1)
+        {
+            InstallSpecifiedUpdate $sp2010SP1 "Service Pack 1"
+##          if ($sp2010June2012CU)
+##          {
+##              InstallSpecifiedUpdate $sp2010June2012CU "June 2012 CU"
+##          }
+            # Now install any language pack service packs that are found, using the naming convention for SP1
+            $sp2010LPServicePacks = Get-ChildItem "$bits\$spYear\Updates" -Name -Include serverlanguagepack2010sp*.exe -ErrorAction SilentlyContinue | Sort-Object -Descending
+            foreach ($sp2010LPServicePack in $sp2010LPServicePacks)
+            {
+                InstallSpecifiedUpdate $sp2010LPServicePack "Language Pack Service Pack"
+            }
+            # Next, install the June 2013 CU if it's found in \Updates
+            if ($sp2010June2013CU)
+            {
+                InstallSpecifiedUpdate $sp2010June2013CU "June 2013 CU"
+            }
+        }
+        if ($xmlinput.Configuration.OfficeWebApps.Install -eq $true)
+        {
+            $sp2010OWAUpdates = Get-ChildItem "$bits\$spYear\Updates" -Name -Include wac*.exe -ErrorAction SilentlyContinue | Sort-Object -Descending
+            foreach ($sp2010OWAUpdate in $sp2010OWAUpdates)
+            {
+                InstallSpecifiedUpdate $sp2010OWAUpdate "Office Web Apps Update"
+            }
+            
+        }
     }
+    if ($spYear -eq "2013")
+    {
+        $marchPublicUpdate = Get-ChildItem "$bits\$spYear\Updates" -Name -Include "ubersrvsp2013-kb2767999-fullfile-x64-glb.exe" -ErrorAction SilentlyContinue
+        if ($marchPublicUpdate)
+        {
+            InstallSpecifiedUpdate $marchPublicUpdate "March 2013 Public Update"
+        }
+    }
+    # Get all CUs except the March 2013 PU for SharePoint 2013
     $cumulativeUpdates = Get-ChildItem "$bits\$spYear\Updates" -Name -Include office2010*.exe,ubersrv*.exe,ubersts*.exe -ErrorAction SilentlyContinue | Where-Object {$_ -ne "ubersrvsp2013-kb2767999-fullfile-x64-glb.exe"} | Sort-Object -Descending
     # Look for Server Cumulative Update installers
-    If ($cumulativeUpdates)
+    if ($cumulativeUpdates)
     {
         if ($spYear -eq "2013" -and !$marchPublicUpdate)
         {
             Write-Host -ForegroundColor Yellow "  - Note: the March 2013 PU package wasn't found in ..\$spYear\Updates; it may need to be installed first if it wasn't slipstreamed."
         }
+        # Now attempt to install any other CUs found in the \Updates folder
         Write-Host -ForegroundColor White "  - Installing SharePoint Cumulative Updates:"
         ForEach ($cumulativeUpdate in $cumulativeUpdates)
         {
@@ -1121,7 +1163,8 @@ Function InstallCumulativeUpdates
                 if ($oPatchInstallResultCode -eq "17028") {Write-Host -ForegroundColor White "   - Patch not required; installed product is same or newer."}
                 elseif ($oPatchInstallResultCode -eq "17031")
                 {
-                    Write-Warning "A baseline patch (e.g. March 2013 PU for SP2013, June 2012 CU for SP2010) is missing!"
+                    Write-Warning "Error 17031: Detection: Invalid baseline"
+                    Write-Warning "A baseline patch (e.g. March 2013 PU for SP2013, SP1 for SP2010) is missing!"
                     Write-Host -ForegroundColor Yellow "   - Either slipstream the missing patch first, or include the patch package in the ..\$spYear\Updates folder."
                     Pause "continue"
                 }
@@ -1130,6 +1173,11 @@ Function InstallCumulativeUpdates
             Write-Host -ForegroundColor White "   - $cumulativeUpdate install completed in $delta."
         }
         Write-Host -ForegroundColor White "  - Cumulative Update installation complete."
+    }
+    # Finally, install SP2 last in case we applied the June 2013 CU which would not have properly detected SP2...
+    if ($sp2010SP2 -and $sp2010June2013CU -and $spYear -eq "2010")
+    {
+        InstallSpecifiedUpdate $sp2010SP2 "Service Pack 2"
     }
     if (!$marchPublicUpdate -and !$cumulativeUpdates)
     {
@@ -1140,6 +1188,37 @@ Function InstallCumulativeUpdates
         Write-Host -ForegroundColor White " - Finished installing SharePoint updates."
     }
     WriteLine
+}
+# ===================================================================================
+# Func: InstallSpecifiedUpdate
+# Desc: Installs a specified SharePoint Updates (CU or Service Pack)
+# ===================================================================================
+Function InstallSpecifiedUpdate ($updateFile, $updateName)
+{
+    Write-Host -ForegroundColor Blue "  - Installing SP$spYear $updateName $updateFile..." -NoNewline
+    $startTime = Get-Date
+    Start-Process -FilePath "$bits\$spYear\Updates\$updateFile" -ArgumentList "/passive /norestart"
+    Show-Progress -Process $($updateFile -replace ".exe", "") -Color Blue -Interval 5
+    $delta,$null = (New-TimeSpan -Start $startTime -End (Get-Date)).ToString() -split "\."
+    $oPatchInstallLog = Get-ChildItem -Path (Get-Item $env:TEMP).FullName | ? {$_.Name -like "opatchinstall*.log"} | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
+    # Get install result from log
+    $oPatchInstallResultMessage = $oPatchInstallLog | Select-String -SimpleMatch -Pattern "OPatchInstall: Property 'SYS.PROC.RESULT' value" | Select-Object -Last 1
+    If (!($oPatchInstallResultMessage -like "*value '0'*")) # Anything other than 0 means unsuccessful but that's not necessarily a bad thing
+    {
+        $null,$oPatchInstallResultCode = $oPatchInstallResultMessage.Line -split "OPatchInstall: Property 'SYS.PROC.RESULT' value '"
+        $oPatchInstallResultCode = $oPatchInstallResultCode.TrimEnd("'")
+        # OPatchInstall: Property 'SYS.PROC.RESULT' value '17028' means the patch was not needed or installed product was newer
+        if ($oPatchInstallResultCode -eq "17028") {Write-Host -ForegroundColor White "   - Patch not required; installed product is same or newer."}
+        elseif ($oPatchInstallResultCode -eq "17031")
+        {
+            Write-Warning "Error 17031: Detection: Invalid baseline"
+            Write-Warning "A baseline patch (e.g. March 2013 PU for SP2013, SP1 for SP2010) is missing!"
+            Write-Host -ForegroundColor Yellow "   - Either slipstream the missing patch first, or include the patch package in the ..\$spYear\Updates folder."
+            Pause "continue"
+        }
+        else {Write-Host "  - $($oPatchInstallResultCodes.$oPatchInstallResultCode)"}
+    }
+    Write-Host -ForegroundColor White "  - $updateName install completed in $delta."
 }
 #EndRegion
 
@@ -1525,7 +1604,7 @@ Function ConfigureFarm([xml]$xmlinput)
         }
         If ($retryNum -ge 5)
         {
-            Write-Host -ForegroundColor White " - After $retryNum attempts to run PSConfig, trying GUI-based..."
+            Write-Host -ForegroundColor White " - After $retryNum retries to run PSConfig, trying GUI-based..."
             Start-Process -FilePath $PSConfigUI -NoNewWindow -Wait
         }
         Clear-Variable -Name PSConfigLastError -ErrorAction SilentlyContinue
@@ -1600,7 +1679,7 @@ Function ConfigureLanguagePacks([xml]$xmlinput)
         }
         If ($retryNum -ge 5)
         {
-            Write-Host -ForegroundColor White " - After $retryNum attempts to run PSConfig, trying GUI-based..."
+            Write-Host -ForegroundColor White " - After $retryNum retries to run PSConfig, trying GUI-based..."
             Start-Process -FilePath $PSConfigUI -NoNewWindow -Wait
         }
         Clear-Variable -Name PSConfigLastError -ErrorAction SilentlyContinue
@@ -2140,7 +2219,8 @@ Function CreateWebApplications([xml]$xmlinput)
             Add-LocalIntranetURL $webApp.URL
             WriteLine
         }
-        If (($xmlinput.Configuration.WebApplications.AddURLsToHOSTS) -eq $true)
+        # Updated so that we don't add URLs to the local hosts file of a server that's not running the Foundation Web Application service
+        If ($xmlinput.Configuration.WebApplications.AddURLsToHOSTS -eq $true -and !(($xmlinput.Configuration.Farm.Services.SelectSingleNode("FoundationWebApplication")) -and !(ShouldIProvision $xmlinput.Configuration.Farm.Services.FoundationWebApplication)))
         {AddToHOSTS}
     }
     WriteLine
@@ -2246,6 +2326,13 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
         $wa.GrantAccessToProcessIdentity("$($spservice.username)")
         Write-Host -ForegroundColor White "Done."
     }
+    if ($webApp.GrantCurrentUserFullControl -eq $true)
+    {
+        $currentUser = "$env:USERDOMAIN\$env:USERNAME"
+        $wa = Get-SPWebApplication | Where-Object {$_.DisplayName -eq $webAppName}
+        if ($wa.UseClaimsAuthentication -eq $true) {$currentUser = 'i:0#.w|' + $currentUser}
+        Set-WebAppUserPolicy $wa $currentUser "$env:USERNAME" "Full Control"
+    }
     WriteLine
     ConfigureObjectCache $webApp
 
@@ -2334,7 +2421,9 @@ Function Set-WebAppUserPolicy($wa, $userName, $displayName, $perm)
     [Microsoft.SharePoint.Administration.SPPolicyCollection]$policies = $wa.Policies
     [Microsoft.SharePoint.Administration.SPPolicy]$policy = $policies.Add($userName, $displayName)
     [Microsoft.SharePoint.Administration.SPPolicyRole]$policyRole = $wa.PolicyRoles | where {$_.Name -eq $perm}
-    If ($policyRole -ne $null) {
+    If ($policyRole -ne $null)
+    {
+        Write-Host -ForegroundColor White " - Granting $userName $perm to $($wa.Url)..."
         $policy.PolicyRoleBindings.Add($policyRole)
     }
     $wa.Update()
@@ -2749,7 +2838,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
                         $addProfileSyncCmd = @"
 Add-PsSnapin Microsoft.SharePoint.PowerShell
 Write-Host -ForegroundColor White " - Creating default Sync connection..."
-`$syncConnectionAcctPWD = (ConvertTo-SecureString -String "$($userProfile.SyncConnectionAccountPassword)" -AsPlainText -Force)
+`$syncConnectionAcctPWD = (ConvertTo-SecureString -String `'$($userProfile.SyncConnectionAccountPassword)`' -AsPlainText -Force)
 Add-SPProfileSyncConnection -ProfileServiceApplication $($profileServiceApp.Id) -ConnectionForestName $env:USERDNSDOMAIN -ConnectionDomain $syncConnectionDomain -ConnectionUserName "$syncConnectionAcct" -ConnectionSynchronizationOU "$connectionSyncOU" -ConnectionPassword `$syncConnectionAcctPWD
 If (!`$?)
 {
@@ -3352,6 +3441,19 @@ Function ConfigureClaimsToWindowsTokenService
                 {
                     UpdateProcessIdentity $claimsService
                     $claimsService.Update()
+                    # Add C2WTS account (currently the generic service account) to local admins
+                    $builtinAdminGroup = Get-AdministratorsGroup
+                    $adminGroup = ([ADSI]"WinNT://$env:COMPUTERNAME/$builtinAdminGroup,group")
+                    # This syntax comes from Ying Li (http://myitforum.com/cs2/blogs/yli628/archive/2007/08/30/powershell-script-to-add-remove-a-domain-user-to-the-local-administrators-group-on-a-remote-machine.aspx)
+                    $localAdmins = $adminGroup.psbase.invoke("Members") | ForEach-Object {$_.GetType().InvokeMember("Name", 'GetProperty', $null, $_, $null)}
+                    $spservice = Get-spserviceaccountxml $xmlinput
+                    $managedAccountGen = Get-SPManagedAccount | Where-Object {$_.UserName -eq $($spservice.username)}
+                    $managedAccountDomain,$managedAccountUser = $managedAccountGen.UserName -split "\\"
+                    If (!($localAdmins -contains $managedAccountUser))
+                    {
+                        Write-Host -ForegroundColor White " - Adding $($managedAccountGen.Username) to local Administrators..."
+                        ([ADSI]"WinNT://$env:COMPUTERNAME/$builtinAdminGroup,group").Add("WinNT://$managedAccountDomain/$managedAccountUser")
+                    }
                 }
                 $claimsService.Provision()
                 If (-not $?) {throw " - Failed to start $($claimsService.DisplayName)"}
@@ -3375,6 +3477,8 @@ Function ConfigureClaimsToWindowsTokenService
         {
             Write-Host -ForegroundColor White " - $($claimsService.DisplayName) already started."
         }
+        Write-Host -ForegroundColor White " - Setting C2WTS to depend on Cryptographic Services..."
+        Start-Process -FilePath "$env:windir\System32\sc.exe" -ArgumentList "config c2wts depend= CryptSvc" -Wait -NoNewWindow -ErrorAction SilentlyContinue
         WriteLine
     }
 }
@@ -3909,6 +4013,20 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                     New-SPServiceApplicationPool -Name $pool -Account $appPoolAccount -ErrorAction SilentlyContinue | Out-Null
                 }
 
+                # From http://mmman.itgroove.net/2012/12/search-host-controller-service-in-starting-state-sharepoint-2013-8/
+                # And http://blog.thewulph.com/?p=374
+                Write-Host -ForegroundColor White "  - Fixing registry permissions for Search Host Controller Service..." -NoNewline
+                $acl = Get-Acl HKLM:\System\CurrentControlSet\Control\ComputerName
+                $person = [System.Security.Principal.NTAccount] "WSS_WPG" # Trimmed down from the original "Users"
+                $access = [System.Security.AccessControl.RegistryRights]::FullControl
+                $inheritance = [System.Security.AccessControl.InheritanceFlags] "ContainerInherit, ObjectInherit"
+                $propagation = [System.Security.AccessControl.PropagationFlags]::None
+                $type = [System.Security.AccessControl.AccessControlType]::Allow
+                $rule = New-Object System.Security.AccessControl.RegistryAccessRule($person, $access, $inheritance, $propagation, $type)
+                $acl.AddAccessRule($rule)  
+                Set-Acl HKLM:\System\CurrentControlSet\Control\ComputerName $acl
+                Write-Host -ForegroundColor White "Done."
+
                 Write-Host -ForegroundColor White "  - Checking Search Service Instance..." -NoNewline
                 If ($searchSvc.Status -eq "Disabled")
                 {
@@ -4165,6 +4283,22 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 }
                 Else {Write-Host -ForegroundColor White "Already exists."}
 
+                # Check the Search Host Controller Service for a known issue ("stuck on starting")
+                Write-Host -ForegroundColor White "  - Checking for stuck Search Host Controller Service (known issue)..."
+                $searchHostServices = Get-SPServiceInstance | ? {$_.TypeName -eq "Search Host Controller Service"}
+                foreach ($sh in $searchHostServices)
+                {
+                    Write-Host -ForegroundColor White "   - Server: $($sh.Parent.Address)..." -NoNewline
+                    if ($sh.Status -eq "Provisioning")
+                    {
+                        Write-Host -ForegroundColor White "Re-provisioning..." -NoNewline
+                        $sh.Unprovision()
+                        $sh.Provision($true)
+                        Write-Host -ForegroundColor White "Done."
+                    }
+                    else {Write-Host -ForegroundColor White "OK."}
+                }
+                
                 # Add link to resources list
                 AddResourcesLink "Search Administration" ("searchadministration.aspx?appid=" +  $searchApp.Id)
 
@@ -5515,7 +5649,7 @@ Function Install-NetFramework ($server, $password)
         $session = New-PSSession -Name "AutoSPInstallerSession-$server" -Authentication Credssp -Credential $credential -ComputerName $server
     }
     $remoteQueryOS = Invoke-Command -ScriptBlock {Get-WmiObject Win32_OperatingSystem} -Session $session
-	If (!($remoteQueryOS.Version.Contains("6.2"))) # Only perform the stuff below if we aren't on Windows 2012
+	If (!($remoteQueryOS.Version.Contains("6.2")) -and !($remoteQueryOS.Version.Contains("6.3"))) # Only perform the stuff below if we aren't on Windows 2012 or 2012 R2
 	{
 	    Write-Host -ForegroundColor White " - Pre-installing .Net Framework feature on $server..."
 	    Invoke-Command -ScriptBlock {Import-Module ServerManager | Out-Null
@@ -5544,7 +5678,7 @@ Function Install-WindowsIdentityFoundation ($server, $password)
         $session = New-PSSession -Name "AutoSPInstallerSession-$server" -Authentication Credssp -Credential $credential -ComputerName $server
     }
     $remoteQueryOS = Invoke-Command -ScriptBlock {Get-WmiObject Win32_OperatingSystem} -Session $session
-	If (!($remoteQueryOS.Version.Contains("6.2"))) # Only perform the stuff below if we aren't on Windows 2012
+	If (!($remoteQueryOS.Version.Contains("6.2")) -and !($remoteQueryOS.Version.Contains("6.3"))) # Only perform the stuff below if we aren't on Windows 2012 or 2012 R2
 	{
 	    Write-Host -ForegroundColor White " - Checking for KB974405 (Windows Identity Foundation)..." -NoNewline
 	    $wifHotfixInstalled = Invoke-Command -ScriptBlock {Get-HotFix -Id KB974405 -ErrorAction SilentlyContinue} -Session $session

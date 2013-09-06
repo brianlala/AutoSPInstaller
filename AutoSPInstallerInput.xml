@@ -21,7 +21,7 @@
 <!-- The Environment attribute below appears at the top of the installation transcript, and will now also appear at the top of the SharePoint 2013 Central Administration top-left branding bar. It does not affect the SharePoint 2010 installation though.
      Simply leave the Environment attribute blank if you do not want to alter the branding bar in SP2013 Central Admin.
      The Version attribute is for now really just the XML schema version. -->
-<Configuration Environment="Dev" Version="3.92">
+<Configuration Environment="Dev" Version="3.93">
     <!-- The Install section controls what modifications are made to the Windows OS prior to installation and how the SharePoint installation is run.
          You can also explicitly state the SPVersion of SharePoint being installed, (in case you have binaries for both SP2010/SP2013 in your folder structure).
          Allowed values are "2010" or "2013". If you omit this, the script will attempt to determine the version anyhow, and default to 2013 if both sets of install files are present. -->
@@ -197,6 +197,8 @@
         url: URL of the root site collection in the application pool. Do not include the port number, but do set http/https correctly.
         port: Port on which the web application runs.
         UseHostHeader: true = indicates that this web app's IIS site will be configured with a host header. false = host header field in IIS will be blank
+        AddURLToLocalIntranetZone: true = indicates the suffix portion of the web application URL (e.g. *.contoso.com) will be added to Internet Explorer's Local Intranet security zone so you don't get prompted for credentials when browsing the web app URL
+        GrantCurrentUserFullControl: true = will grant the current user (i.e. the setup account) Full Control to the entire web app via the web application's policy
         databaseName: Name of the first content database.
         useClaims: false = disable claims based authentication. true = enable claims based authentication.
         useBasicAuthentication: false = only accept Kerberos/NTLM claims. true = also accept Basic authentication claims. Has no effect if useClaims is false.
@@ -209,6 +211,7 @@
                         port="80"
                         UseHostHeader="false"
                         AddURLToLocalIntranetZone="true"
+                        GrantCurrentUserFullControl="true"
                         databaseName="Content_Portal"
                         useClaims="true"
                         useBasicAuthentication="false"
@@ -262,6 +265,7 @@
                         port="8080"
                         UseHostHeader="true"
                         AddURLToLocalIntranetZone="true"
+                        GrantCurrentUserFullControl="true"
                         databaseName="Content_MySites"
                         useClaims="true"
                         useBasicAuthentication="false"
