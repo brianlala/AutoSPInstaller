@@ -52,10 +52,14 @@ $spYear = $spYears.$env:spVer
 $PSConfig = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$env:spVer\BIN\psconfig.exe"
 $PSConfigUI = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$env:spVer\BIN\psconfigui.exe"
 
+#Region External Functions
+. "$env:dp0\AutoSPInstallerFunctions.ps1"
+. "$env:dp0\AutoSPInstallerFunctionsCustom.ps1"
+#EndRegion
+
 $script:DBPrefix = $xmlinput.Configuration.Farm.Database.DBPrefix
 If (($dbPrefix -ne "") -and ($dbPrefix -ne $null)) {$script:DBPrefix += "_"}
 If ($dbPrefix -like "*localhost*") {$script:DBPrefix = $dbPrefix -replace "localhost","$env:COMPUTERNAME"}
-
 
 if ($xmlinput.Configuration.Install.RemoteInstall.Enable -eq $true)
 {
@@ -76,11 +80,6 @@ else
 
 Write-Host -ForegroundColor White " - Setting power management plan to `"High Performance`"..."
 Start-Process -FilePath "$env:SystemRoot\system32\powercfg.exe" -ArgumentList "/s 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c" -NoNewWindow
-#EndRegion
-
-#Region External Functions
-. "$env:dp0\AutoSPInstallerFunctions.ps1"
-. "$env:dp0\AutoSPInstallerFunctionsCustom.ps1"
 #EndRegion
 
 #Region Remote Install
@@ -145,7 +144,9 @@ Function Install-Remote
 #Region Prepare For Install
 Function PrepForInstall
 {
+    CheckXMLVersion $xmlinput
     CheckInput
+    Write-Host -ForegroundColor White " - Install based on: `n  - $inputFile `n  - Environment: $($xmlinput.Configuration.getAttribute(`"Environment`")) `n  - Version: $($xmlinput.Configuration.getAttribute(`"Version`"))"
     $spInstalled = (Get-SharePointInstall)
     ValidateCredentials $xmlinput
     ValidatePassphrase $xmlinput
@@ -157,7 +158,6 @@ Function PrepForInstall
 #Region Install SharePoint binaries
 Function Run-Install
 {
-    Write-Host -ForegroundColor White " - Install based on: `n  - $inputFile `n  - Environment: $($xmlinput.Configuration.getAttribute(`"Environment`")) `n  - Version: $($xmlinput.Configuration.getAttribute(`"Version`"))"
     DisableLoopbackCheck $xmlinput
     RemoveIEEnhancedSecurity $xmlinput
     AddSourcePathToLocalIntranetZone

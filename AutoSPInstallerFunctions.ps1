@@ -2,6 +2,21 @@
 # EXTERNAL FUNCTIONS
 # ===================================================================================
 
+# Check that the version of the script matches the Version (essentially the schema) of the input XML so we don't have any unexpected behavior
+Function CheckXMLVersion ([xml]$xmlinput)
+{
+    $getXMLVersion = $xmlinput.Configuration.Version
+    # The value below will increment whenever there is an update to the format of the AutoSPInstallerInput XML file
+    $scriptVersion = "3.95"
+    if ($getXMLVersion -ne $scriptVersion)
+    {
+        Write-Host -ForegroundColor Yellow " - Warning! Your versions of the XML ($getXMLVersion) and script ($scriptVersion) are mismatched."
+        Write-Host -ForegroundColor Yellow " - You should compare against the latest AutoSPInstallerInput.XML for missing/updated elements."
+        Pause "proceed if you are sure this is OK, or Ctrl-C to exit" "y"
+    }
+}
+
+
 #Region Validate Passphrase
 Function ValidatePassphrase([xml]$xmlinput)
 {
@@ -80,7 +95,10 @@ Function ValidateCredentials([xml]$xmlinput)
             # Get site collection owners #
             foreach ($siteCollection in $($webApp.SiteCollections.SiteCollection))
             {
-                $siteCollectionOwners = @($siteCollectionOwners+$siteCollection.Owner)
+                if (!([string]::IsNullOrEmpty($siteCollection.Owner)))
+                {
+                    $siteCollectionOwners = @($siteCollectionOwners+$siteCollection.Owner)
+                }
             }
         }
     }
@@ -1123,7 +1141,7 @@ Function InstallUpdates
             {
                 InstallSpecifiedUpdate $sp2010OWAUpdate "Office Web Apps Update"
             }
-            
+
         }
     }
     if ($spYear -eq "2013")
@@ -1318,7 +1336,7 @@ Function GetSecureFarmPassphrase([xml]$xmlinput)
 # ====================================================================================
 Function UpdateProcessIdentity ($serviceToUpdate)
 {
-    $spservice = Get-spserviceaccountxml $xmlinput
+    $spservice = Get-SPManagedAccountXML $xmlinput -CommonName "spservice"
     # Managed Account
     $managedAccountGen = Get-SPManagedAccount | Where-Object {$_.UserName -eq $($spservice.username)}
     if ($managedAccountGen -eq $null) { Throw " - Managed Account $($spservice.username) not found" }
@@ -1779,11 +1797,11 @@ Function AddManagedAccounts([xml]$xmlinput)
 }
 #EndRegion
 
-#Region Return SP Service Account
-Function Get-spserviceaccountxml([xml]$xmlinput)
+#Region Return SP Managed Account
+Function Get-SPManagedAccountXML([xml]$xmlinput, $commonName)
 {
-    $spservice = $xmlinput.Configuration.Farm.ManagedAccounts.ManagedAccount | Where-Object { $_.CommonName -eq "spservice" }
-    Return $spservice
+    $managedAccountXML = $xmlinput.Configuration.Farm.ManagedAccounts.ManagedAccount | Where-Object { $_.CommonName -eq $commonName }
+    Return $managedAccountXML
 }
 #EndRegion
 
@@ -1794,7 +1812,7 @@ Function Get-spserviceaccountxml([xml]$xmlinput)
 # ====================================================================================
 Function Get-HostedServicesAppPool ([xml]$xmlinput)
 {
-    $spservice = Get-spserviceaccountxml $xmlinput
+    $spservice = Get-SPManagedAccountXML $xmlinput -CommonName "spservice"
     # Managed Account
     $managedAccountGen = Get-SPManagedAccount | Where-Object {$_.UserName -eq $($spservice.username)}
     If ($managedAccountGen -eq $null) { Throw " - Managed Account $($spservice.username) not found" }
@@ -2097,13 +2115,11 @@ Function AssignCert([xml]$xmlinput)
 {
     ImportWebAdministration
     Write-Host -ForegroundColor White " - Assigning certificate to site `"https://$SSLHostHeader`:$SSLPort`""
+    # Remove the host portion of the URL and the leading dot
+    $splitSSLHostHeader = $SSLHostHeader  -split "\."
+    $topDomain = $SSLHostHeader.TrimStart($splitSSLHostHeader[0] + ".")
     # Check for sub-domains
     $numDomainLevels = ($env:USERDNSDOMAIN -split "\.").Count
-    If ($numDomainLevels -gt 2) # For example, corp.domain.net
-    {
-        # Get only the last two (domain + TLD)
-        $topDomain = $env:USERDNSDOMAIN.Split("\.")[($numDomainLevels - 2)] + "." + $env:USERDNSDOMAIN.Split("\.")[($numDomainLevels - 1)]
-    }
     # If our SSL host header is a FQDN containing the local domain (or part of it, if the local domain is a subdomain), look for an existing wildcard cert
     If ($SSLHostHeader -like "*.$env:USERDNSDOMAIN")
     {
@@ -2231,10 +2247,13 @@ Function CreateWebApplications([xml]$xmlinput)
 # ===================================================================================
 Function CreateWebApp([System.Xml.XmlElement]$webApp)
 {
-    $account = $webApp.applicationPoolAccount
+    # Look for a managed account that matches the web app type, e.g. "Portal" or "MySiteHost"
+    $webAppPoolAccount = Get-SPManagedAccountXML $xmlinput $webApp.Type
+    # If no managed account is found matching the web app type, just use the Portal managed account
+    if (!$webAppPoolAccount) {$webAppPoolAccount = Get-SPManagedAccountXML $xmlinput -CommonName "Portal"}
     $webAppName = $webApp.name
     $appPool = $webApp.applicationPool
-    $database = $dbPrefix+$webApp.databaseName
+    $database = $dbPrefix+$webApp.Database.DBName
     $dbServer = $webApp.Database.DBServer
     # Check for an existing App Pool
     $existingWebApp = Get-SPWebApplication | Where-Object { ($_.ApplicationPool).Name -eq $appPool }
@@ -2248,8 +2267,9 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
     $port = $webApp.port
     $useSSL = $false
     $installedOfficeServerLanguages = (Get-Item "HKLM:\Software\Microsoft\Office Server\$env:spVer.0\InstalledLanguages").GetValueNames() | ? {$_ -ne ""}
-    If ($url -like "https://*") {$useSSL = $true; $hostHeader = $url -replace "https://",""}
-    Else {$hostHeader = $url -replace "http://",""}
+    # Strip out any protocol value
+    If ($url -like "https://*") {$useSSL = $true}
+    $hostHeader = $url -replace "http://","" -replace "https://",""
     # Set the directory path for the web app to something a bit more friendly
     ImportWebAdministration
     # Get the default root location for web apps
@@ -2292,7 +2312,10 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
     {
         $appPoolAccountSwitch = ""
     }
-    else {$appPoolAccountSwitch = @{ApplicationPoolAccount = $account}}
+    else
+    {
+        $appPoolAccountSwitch = @{ApplicationPoolAccount = $($webAppPoolAccount.username)}
+    }
     $getSPWebApplication = Get-SPWebApplication | Where-Object {$_.DisplayName -eq $webAppName}
     If ($getSPWebApplication -eq $null)
     {
@@ -2320,7 +2343,7 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
         (ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.AccessService -eq $true) -or `
         (ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.PerformancePointService -eq $true))
     {
-        $spservice = Get-spserviceaccountxml $xmlinput
+        $spservice = Get-SPManagedAccountXML $xmlinput -CommonName "spservice"
         Write-Host -ForegroundColor White " - Granting $($spservice.username) rights to `"$webAppName`"..." -NoNewline
         $wa = Get-SPWebApplication | Where-Object {$_.DisplayName -eq $webAppName}
         $wa.GrantAccessToProcessIdentity("$($spservice.username)")
@@ -2340,8 +2363,24 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
     {
         $siteCollectionName = $siteCollection.name
         $siteURL = $siteCollection.siteURL
+        if (!([string]::IsNullOrEmpty($($siteCollection.CustomDatabase)))) # Check if we have specified a non-default content database for this site collection
+        {
+            $siteDatabase = $dbPrefix+$siteCollection.CustomDatabase
+        }
+        else # Just use the first, default content database for the web application
+        {
+            $siteDatabase = $database
+        }
         $template = $siteCollection.template
-        $ownerAlias = $siteCollection.Owner
+        # If an OwnerAlias has been specified, make it the primary, and the currently logged-in account the secondary. Otherwise, make the app pool account for the web app the primary owner
+        if (!([string]::IsNullOrEmpty($($siteCollection.Owner))))
+        {
+            $ownerAlias = $siteCollection.Owner
+        }
+        else
+        {
+            $ownerAlias = $webAppPoolAccount.username
+        }
         $LCID = $siteCollection.LCID
         $siteCollectionLocale = $siteCollection.Locale
         $siteCollectionTime24 = $siteCollection.Time24
@@ -2357,9 +2396,9 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
             $hostHeaderWebAppSwitch = @{HostHeaderWebApplication = $($webApp.url)+":"+$($webApp.port)}
         }
         else {$hostHeaderWebAppSwitch = ""}
+        Write-Host -ForegroundColor White " - Checking for Site Collection `"$siteURL`"..."
         If (($getSPSiteCollection -eq $null) -and ($siteURL -ne $null))
         {
-            Write-Host -ForegroundColor White " - Creating Site Collection `"$siteURL`"..."
             # Verify that the Language we're trying to create the site in is currently installed on the server
             $culture = [System.Globalization.CultureInfo]::GetCultureInfo(([convert]::ToInt32($LCID)))
             $cultureDisplayName = $culture.DisplayName
@@ -2369,7 +2408,14 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
             }
             Else
             {
-                $site = New-SPSite -Url $siteURL -OwnerAlias $ownerAlias -SecondaryOwnerAlias $env:USERDOMAIN\$env:USERNAME -ContentDatabase $database -Description $siteCollectionName -Name $siteCollectionName -Language $LCID @templateSwitch @hostHeaderWebAppSwitch -ErrorAction Stop
+                $siteDatabaseExists = Get-SPContentDatabase -Identity $siteDatabase -ErrorAction SilentlyContinue
+                if (!$siteDatabaseExists)
+                {
+                    Write-Host -ForegroundColor White " - Creating new content database `"$siteDatabase`"..."
+                    New-SPContentDatabase -Name $siteDatabase -WebApplication (Get-SPWebApplication $webApp.url) | Out-Null
+                }
+                Write-Host -ForegroundColor White " - Creating Site Collection `"$siteURL`"..."
+                $site = New-SPSite -Url $siteURL -OwnerAlias $ownerAlias -SecondaryOwner $env:USERDOMAIN\$env:USERNAME -ContentDatabase $siteDatabase -Description $siteCollectionName -Name $siteCollectionName -Language $LCID @templateSwitch @hostHeaderWebAppSwitch -ErrorAction Stop
 
                 # Add the Portal Site Connection to the web app, unless of course the current web app *is* the portal
                 # Inspired by http://www.toddklindt.com/blog/Lists/Posts/Post.aspx?ID=264
@@ -2401,6 +2447,7 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
             if ($xmlinput.Configuration.WebApplications.AddURLsToHOSTS)
             {
                 # Add the hostname of this host header-based site collection to the local HOSTS so it's immediately resolvable locally
+                # Strip out any protocol and/or port values
                 $hostname,$null = $siteURL -replace "http://","" -replace "https://","" -split ":"
                 AddToHosts $hostname
             }
@@ -2504,19 +2551,19 @@ Function SetupManagedPaths([System.Xml.XmlElement]$webApp)
         {
             If ($managedPath.Delete -eq "true")
             {
-                Write-Host -ForegroundColor White " - Deleting managed path `"$($managedPath.RelativeUrl)`" at `"$url`""
+                Write-Host -ForegroundColor White "  - Deleting managed path `"$($managedPath.RelativeUrl)`" at `"$url`""
                 Remove-SPManagedPath -Identity $managedPath.RelativeUrl -WebApplication $url -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
             }
             Else
             {
                 If ($managedPath.Explicit -eq "true")
                 {
-                    Write-Host -ForegroundColor White " - Setting up explicit managed path `"$($managedPath.RelativeUrl)`" at `"$url`""
+                    Write-Host -ForegroundColor White "  - Setting up explicit managed path `"$($managedPath.RelativeUrl)`" at `"$url`""
                     New-SPManagedPath -RelativeUrl $managedPath.RelativeUrl -WebApplication $url -Explicit -ErrorAction SilentlyContinue | Out-Null
                 }
                 Else
                 {
-                    Write-Host -ForegroundColor White " - Setting up managed path `"$($managedPath.RelativeUrl)`" at `"$url`""
+                    Write-Host -ForegroundColor White "  - Setting up managed path `"$($managedPath.RelativeUrl)`" at `"$url`""
                     New-SPManagedPath -RelativeUrl $managedPath.RelativeUrl -WebApplication $url -ErrorAction SilentlyContinue | Out-Null
                 }
             }
@@ -2538,29 +2585,34 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
     Try
     {
         $userProfile = $xmlinput.Configuration.ServiceApps.UserProfileServiceApp
-        $mySiteWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.type -eq "MySiteHost"}
-        $mySiteName = $mySiteWebApp.name
-        $mySiteURL = $mySiteWebApp.url
-        $mySitePort = $mySiteWebApp.port
-        $mySiteDBServer = $mySiteWebApp.Database.DBServer
-        # If we haven't specified a DB Server then just use the default used by the Farm
-        If ([string]::IsNullOrEmpty($mySiteDBServer))
+        $mySiteWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "MySiteHost"}
+        # If we have asked to create a MySite Host web app, use that as the MySite host location
+        if ($mySiteWebApp)
         {
-            $mySiteDBServer = $xmlinput.Configuration.Farm.Database.DBServer
+            $mySiteName = $mySiteWebApp.name
+            $mySiteURL = $mySiteWebApp.url
+            $mySitePort = $mySiteWebApp.port
+            $mySiteDBServer = $mySiteWebApp.Database.DBServer
+            # If we haven't specified a DB Server then just use the default used by the Farm
+            If ([string]::IsNullOrEmpty($mySiteDBServer))
+            {
+                $mySiteDBServer = $xmlinput.Configuration.Farm.Database.DBServer
+            }
+            $mySiteDB = $dbPrefix+$mySiteWebApp.Database.DBName
+            $mySiteAppPoolAcct = Get-SPManagedAccountXML $xmlinput -CommonName "MySiteHost"
         }
-        $mySiteDB = $dbPrefix+$mySiteWebApp.databaseName
-        $mySiteAppPoolAcct = $mySiteWebApp.applicationPoolAccount
         $portalWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "Portal"}
-        $portalAppPoolAcct = $portalWebApp.applicationPoolAccount
+        $portalAppPoolAcct = Get-SPManagedAccountXML $xmlinput -CommonName "Portal"
         $farmAcct = $xmlinput.Configuration.Farm.Account.Username
         $farmAcctPWD = $xmlinput.Configuration.Farm.Account.Password
-        $contentAccessAcct = $xmlinput.Configuration.ServiceApps.EnterpriseSearchService.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication.ContentAccessAccount
+        # Get the content access account of the first Search Service Application in the XML
+        $contentAccessAcct = $xmlinput.Configuration.ServiceApps.EnterpriseSearchService.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication[0].ContentAccessAccount
         If (($farmAcctPWD -ne "") -and ($farmAcctPWD -ne $null)) {$farmAcctPWD = (ConvertTo-SecureString $farmAcctPWD -AsPlainText -force)}
         $mySiteTemplate = $mySiteWebApp.SiteCollections.SiteCollection.Template
         $mySiteLCID = $mySiteWebApp.SiteCollections.SiteCollection.LCID
         $userProfileServiceName = $userProfile.Name
         $userProfileServiceProxyName = $userProfile.ProxyName
-        $spservice = Get-spserviceaccountxml $xmlinput
+        $spservice = Get-SPManagedAccountXML $xmlinput -CommonName "spservice"
         If($userProfileServiceName -eq $null) {$userProfileServiceName = "User Profile Service Application"}
         If($userProfileServiceProxyName -eq $null) {$userProfileServiceProxyName = $userProfileServiceName}
         If (!$farmCredential) {[System.Management.Automation.PsCredential]$farmCredential = GetFarmCredentials $xmlinput}
@@ -2609,26 +2661,26 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
             # Create a Profile Service Application
             If ((Get-SPServiceApplication | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Administration.UserProfileApplication"}) -eq $null)
             {
-                # Create MySites Web Application
+                # Create MySites Web Application if it doesn't already exist, and we've specified to create one
                 $getSPWebApplication = Get-SPWebApplication | Where-Object {$_.DisplayName -eq $mySiteName}
-                If ($getSPWebApplication -eq $null)
+                If ($getSPWebApplication -eq $null -and ($mySiteWebApp))
                 {
                     Write-Host -ForegroundColor White " - Creating Web App `"$mySiteName`"..."
-                    New-SPWebApplication -Name $mySiteName -ApplicationPoolAccount $mySiteAppPoolAcct -ApplicationPool $mySiteAppPool -DatabaseServer $mySiteDBServer -DatabaseName $mySiteDB @hostHeaderSwitch -Url $mySiteURL -Port $mySitePort -SecureSocketsLayer:$mySiteUseSSL @pathSwitch | Out-Null
+                    New-SPWebApplication -Name $mySiteName -ApplicationPoolAccount $($mySiteAppPoolAcct.username) -ApplicationPool $mySiteAppPool -DatabaseServer $mySiteDBServer -DatabaseName $mySiteDB @hostHeaderSwitch -Url $mySiteURL -Port $mySitePort -SecureSocketsLayer:$mySiteUseSSL @pathSwitch | Out-Null
                 }
                 Else
                 {
-                    Write-Host -ForegroundColor White " - Web app `"$mySiteName`" already provisioned."
+                    Write-Host -ForegroundColor White " - My Site host already provisioned."
                 }
 
                 # Create MySites Site Collection
-                If ((Get-SPContentDatabase | Where-Object {$_.Name -eq $mySiteDB})-eq $null)
+                If ((Get-SPContentDatabase | Where-Object {$_.Name -eq $mySiteDB})-eq $null -and ($mySiteWebApp))
                 {
                     Write-Host -ForegroundColor White " - Creating My Sites content DB..."
                     $newMySitesDB = New-SPContentDatabase -DatabaseServer $mySiteDBServer -Name $mySiteDB -WebApplication "$mySiteURL`:$mySitePort"
                     If (-not $?) { Throw " - Failed to create My Sites content DB" }
                 }
-                If (!(Get-SPSite -Limit ALL | Where-Object {(($_.Url -like "$mySiteURL*") -and ($_.Port -eq "$mySitePort"))}))
+                If (!(Get-SPSite -Limit ALL | Where-Object {(($_.Url -like "$mySiteURL*") -and ($_.Port -eq "$mySitePort"))}) -and ($mySiteWebApp))
                 {
                     Write-Host -ForegroundColor White " - Creating My Sites site collection $mySiteURL`:$mySitePort..."
                     # Verify that the Language we're trying to create the site in is currently installed on the server
@@ -2646,7 +2698,8 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
                         # Assign SSL certificate, if required
                         If ($mySiteUseSSL)
                         {
-                            $SSLHostHeader = $mySiteHostHeader
+                            # Strip out any protocol and/or port values
+                            $SSLHostHeader,$null = $mySiteHostLocation -replace "http://","" -replace "https://","" -split ":"
                             $SSLPort = $mySitePort
                             $SSLSiteName = $mySiteName
                             AssignCert
@@ -2707,8 +2760,8 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
                 # Create variables that contains the claims principals for current (Setup) user, genral service account, MySite App Pool, Portal App Pool and Content Access accounts
                 $currentUserAcctPrincipal = New-SPClaimsPrincipal -Identity $env:USERDOMAIN\$env:USERNAME -IdentityType WindowsSamAccountName
                 $spServiceAcctPrincipal = New-SPClaimsPrincipal -Identity $($spservice.username) -IdentityType WindowsSamAccountName
-                If ($mySiteAppPoolAcct) {$mySiteAppPoolAcctPrincipal = New-SPClaimsPrincipal -Identity $mySiteAppPoolAcct -IdentityType WindowsSamAccountName}
-                If ($portalAppPoolAcct) {$portalAppPoolAcctPrincipal = New-SPClaimsPrincipal -Identity $portalAppPoolAcct -IdentityType WindowsSamAccountName}
+                If ($mySiteAppPoolAcct) {$mySiteAppPoolAcctPrincipal = New-SPClaimsPrincipal -Identity $($mySiteAppPoolAcct.username) -IdentityType WindowsSamAccountName}
+                If ($portalAppPoolAcct) {$portalAppPoolAcctPrincipal = New-SPClaimsPrincipal -Identity $($portalAppPoolAcct.username) -IdentityType WindowsSamAccountName}
                 If ($contentAccessAcct) {$contentAccessAcctPrincipal = New-SPClaimsPrincipal -Identity $contentAccessAcct -IdentityType WindowsSamAccountName}
 
                 # Give 'Full Control' permissions to the current (Setup) user, general service account, MySite App Pool, Portal App Pool account and content access account claims principals
@@ -2732,12 +2785,12 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
                     # Grant the Portal App Pool account rights to the Profile and Social DBs
                     $profileDB = $dbPrefix+$userProfile.Database.ProfileDB
                     $socialDB = $dbPrefix+$userProfile.Database.SocialDB
-                    Write-Host -ForegroundColor White " - Granting $portalAppPoolAcct rights to $mySiteDB..."
-                    Get-SPDatabase | ? {$_.Name -eq $mySiteDB} | Add-SPShellAdmin -UserName $portalAppPoolAcct
-                    Write-Host -ForegroundColor White " - Granting $portalAppPoolAcct rights to $profileDB..."
-                    Get-SPDatabase | ? {$_.Name -eq $profileDB} | Add-SPShellAdmin -UserName $portalAppPoolAcct
-                    Write-Host -ForegroundColor White " - Granting $portalAppPoolAcct rights to $socialDB..."
-                    Get-SPDatabase | ? {$_.Name -eq $socialDB} | Add-SPShellAdmin -UserName $portalAppPoolAcct
+                    Write-Host -ForegroundColor White " - Granting $($portalAppPoolAcct.username) rights to $mySiteDB..."
+                    Get-SPDatabase | ? {$_.Name -eq $mySiteDB} | Add-SPShellAdmin -UserName $($portalAppPoolAcct.username)
+                    Write-Host -ForegroundColor White " - Granting $($portalAppPoolAcct.username) rights to $profileDB..."
+                    Get-SPDatabase | ? {$_.Name -eq $profileDB} | Add-SPShellAdmin -UserName $($portalAppPoolAcct.username)
+                    Write-Host -ForegroundColor White " - Granting $($portalAppPoolAcct.username) rights to $socialDB..."
+                    Get-SPDatabase | ? {$_.Name -eq $socialDB} | Add-SPShellAdmin -UserName $($portalAppPoolAcct.username)
                 }
                 Write-Host -ForegroundColor White " - Enabling the Activity Feed Timer Job.."
                 If ($profileServiceApp) {Get-SPTimerJob | ? {$_.TypeName -eq "Microsoft.Office.Server.ActivityFeed.ActivityFeedUPAJob"} | Enable-SPTimerJob}
@@ -2882,9 +2935,29 @@ Function CreateUPSAsAdmin([xml]$xmlinput)
 {
     Try
     {
-        $mySiteWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.type -eq "MySiteHost"}
-        $mySiteURL = $mySiteWebApp.url
-        $mySitePort = $mySiteWebApp.port
+        $mySiteWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "MySiteHost"}
+        $mySiteManagedPath = $userProfile.MySiteManagedPath
+        # If we have asked to create a MySite Host web app, use that as the MySite host location
+        if ($mySiteWebApp)
+        {
+            $mySiteURL = $mySiteWebApp.url
+            $mySitePort = $mySiteWebApp.port
+            $mySiteHostLocation = $mySiteURL+":"+$mySitePort
+        }
+        else # Use the value provided in the $userProfile node
+        {
+            $mySiteHostLocation = $userProfile.MySiteHostLocation
+        }
+        if ([string]::IsNullOrEmpty($mySiteManagedPath))
+        {
+            # Don't specify the MySiteManagedPath switch if it was left blank. This will effectively use the default path of personal/sites
+            $mySiteManagedPathSwitch = ""
+        }
+        else
+        {
+            # Attempt to use the path we specified in the XML
+            $mySiteManagedPathSwitch = "-MySiteManagedPath `"$mySiteManagedPath`"" # This format required to parse properly in the script block below
+        }
         $farmAcct = $xmlinput.Configuration.Farm.Account.Username
         $userProfileServiceName = $userProfile.Name
         $dbServer = $userProfile.Database.DBServer
@@ -2906,7 +2979,7 @@ Function CreateUPSAsAdmin([xml]$xmlinput)
         # Write the script block, with expanded variables to a temporary script file that the Farm Account can get at
         Write-Output "Write-Host -ForegroundColor White `"Creating $userProfileServiceName as $farmAcct...`"" | Out-File $scriptFile -Width 400
         Write-Output "Add-PsSnapin Microsoft.SharePoint.PowerShell" | Out-File $scriptFile -Width 400 -Append
-        Write-Output "`$newProfileServiceApp = New-SPProfileServiceApplication -Name `"$userProfileServiceName`" -ApplicationPool `"$($applicationPool.Name)`" -ProfileDBServer $profileDBServer -ProfileDBName $profileDB -ProfileSyncDBServer $syncDBServer -ProfileSyncDBName $syncDB -SocialDBServer $socialDBServer -SocialDBName $socialDB -MySiteHostLocation `"$mySiteURL`:$mySitePort`"" | Out-File $scriptFile -Width 400 -Append
+        Write-Output "`$newProfileServiceApp = New-SPProfileServiceApplication -Name `"$userProfileServiceName`" -ApplicationPool `"$($applicationPool.Name)`" -ProfileDBServer $profileDBServer -ProfileDBName $profileDB -ProfileSyncDBServer $syncDBServer -ProfileSyncDBName $syncDB -SocialDBServer $socialDBServer -SocialDBName $socialDB -MySiteHostLocation $mySiteHostLocation $mySiteManagedPathSwitch" | Out-File $scriptFile -Width 400 -Append
         Write-Output "If (-not `$?) {Write-Error `" - Failed to create $userProfileServiceName`"; Write-Host `"Press any key to exit...`"; `$null = `$host.UI.RawUI.ReadKey`(`"NoEcho,IncludeKeyDown`"`)}" | Out-File $scriptFile -Width 400 -Append
         # Grant the current install account rights to the newly-created Profile DB - needed since it's going to be running PowerShell commands against it
         Write-Output "`$profileDBId = Get-SPDatabase | ? {`$_.Name -eq `"$profileDB`"}" | Out-File $scriptFile -Width 400 -Append
@@ -3446,7 +3519,7 @@ Function ConfigureClaimsToWindowsTokenService
                     $adminGroup = ([ADSI]"WinNT://$env:COMPUTERNAME/$builtinAdminGroup,group")
                     # This syntax comes from Ying Li (http://myitforum.com/cs2/blogs/yli628/archive/2007/08/30/powershell-script-to-add-remove-a-domain-user-to-the-local-administrators-group-on-a-remote-machine.aspx)
                     $localAdmins = $adminGroup.psbase.invoke("Members") | ForEach-Object {$_.GetType().InvokeMember("Name", 'GetProperty', $null, $_, $null)}
-                    $spservice = Get-spserviceaccountxml $xmlinput
+                    $spservice = Get-SPManagedAccountXML $xmlinput -CommonName "spservice"
                     $managedAccountGen = Get-SPManagedAccount | Where-Object {$_.UserName -eq $($spservice.username)}
                     $managedAccountDomain,$managedAccountUser = $managedAccountGen.UserName -split "\\"
                     If (!($localAdmins -contains $managedAccountUser))
@@ -3546,7 +3619,7 @@ Function ConfigureFoundationSearch ([xml]$xmlinput)
         Try
         {
             $foundationSearchService = (Get-SPFarm).Services | where {$_.Name -eq "SPSearch4"}
-            $spservice = Get-spserviceaccountxml $xmlinput
+            $spservice = Get-SPManagedAccountXML $xmlinput -CommonName "spservice"
             UpdateProcessIdentity $foundationSearchService
         }
         Catch
@@ -3571,7 +3644,7 @@ Function ConfigureTracing ([xml]$xmlinput)
     if (!(Get-SPTimerJob -Identity "windows-service-credentials-SPTraceV4"))
     {
         WriteLine
-        $spservice = Get-spserviceaccountxml $xmlinput
+        $spservice = Get-SPManagedAccountXML $xmlinput -CommonName "spservice"
         $spTraceV4 = (Get-SPFarm).Services | where {$_.Name -eq "SPTraceV4"}
         $appPoolAcctDomain,$appPoolAcctUser = $spservice.username -Split "\\"
         Write-Host -ForegroundColor White " - Applying service account $($spservice.username) to service SPTraceV4..."
@@ -3632,20 +3705,9 @@ Function ConfigureDistributedCacheService ([xml]$xmlinput)
     if ((!(Get-SPTimerJob -Identity "windows-service-credentials-AppFabricCachingService")) -and ($env:spVer -eq "15"))
     {
         WriteLine
-        $spservice = Get-spserviceaccountxml $xmlinput
+        $spservice = Get-SPManagedAccountXML $xmlinput -CommonName "spservice"
         $distributedCachingSvc = (Get-SPFarm).Services | where {$_.Name -eq "AppFabricCachingService"}
-        $appPoolAcctDomain,$appPoolAcctUser = $spservice.username -Split "\\"
-        Write-Host -ForegroundColor White " - Applying service account $($spservice.username) to service AppFabricCachingService..."
-        $managedAccountGen = Get-SPManagedAccount | Where-Object {$_.UserName -eq $($spservice.username)}
-        Try
-        {
-            UpdateProcessIdentity $distributedCachingSvc
-        }
-        Catch
-        {
-            Write-Output $_
-            Write-Warning "An error occurred updating the service account for service AppFabricCachingService."
-        }
+        # Check if we should disable the Distributed Cache service on the local server
         # Ensure the node exists in the XML first as we don't want to inadvertently disable the service if it wasn't explicitly specified
         if (($xmlinput.Configuration.Farm.Services.SelectSingleNode("DistributedCache")) -and !(ShouldIProvision $xmlinput.Configuration.Farm.Services.DistributedCache))
         {
@@ -3660,6 +3722,22 @@ Function ConfigureDistributedCacheService ([xml]$xmlinput)
             Write-Host -ForegroundColor White "Done."
             }
             else {Write-Host -ForegroundColor White "Already stopped."}
+        }
+        # Otherwise, set it to run under a different account
+        else
+        {
+            $appPoolAcctDomain,$appPoolAcctUser = $spservice.username -Split "\\"
+            Write-Host -ForegroundColor White " - Applying service account $($spservice.username) to service AppFabricCachingService..."
+            $managedAccountGen = Get-SPManagedAccount | Where-Object {$_.UserName -eq $($spservice.username)}
+            Try
+            {
+                UpdateProcessIdentity $distributedCachingSvc
+            }
+            Catch
+            {
+                Write-Output $_
+                Write-Warning "An error occurred updating the service account for service AppFabricCachingService."
+            }
         }
         WriteLine
     }
@@ -3680,6 +3758,8 @@ Function ConfigureDistributedCacheService ([xml]$xmlinput)
 
 function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
 {
+    $searchServiceAccount = Get-SPManagedAccountXML $xmlinput -CommonName "SearchService"
+    $secSearchServicePassword = ConvertTo-SecureString -String $searchServiceAccount.Password -AsPlainText -Force
     If (ShouldIProvision $xmlinput.Configuration.ServiceApps.EnterpriseSearchService -eq $true)
     {
         WriteLine
@@ -3689,13 +3769,24 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
         $portalWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "Portal"}
         $portalURL = $portalWebApp.URL
         $portalPort = $portalWebApp.Port
-        $mySiteWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "MySiteHost"}
-        $mySiteURL = $mySiteWebApp.URL
-        $mySitePort = $mySiteWebApp.Port
-        If ($mySiteURL -like "https://*") {$mySiteHostHeader = $mySiteURL -replace "https://",""}
-        Else {$mySiteHostHeader = $mySiteURL -replace "http://",""}
-        $secSearchServicePassword = ConvertTo-SecureString -String $svcConfig.Password -AsPlainText -Force
-        $secContentAccessAcctPWD = ConvertTo-SecureString -String $svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication.ContentAccessAccountPassword -AsPlainText -Force
+        if ($xmlinput.Configuration.ServiceApps.UserProfileServiceApp.Provision -ne $false) # We didn't use ShouldIProvision here as we want to know if UPS is being provisioned in this farm, not just on this server
+        {
+            $mySiteWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "MySiteHost"}
+            # If we have asked to create a MySite Host web app, use that as the MySite host location
+            if ($mySiteWebApp)
+            {
+                $mySiteURL = $mySiteWebApp.URL
+                $mySitePort = $mySiteWebApp.Port
+                $mySiteHostLocation = $mySiteURL+":"+$mySitePort
+            }
+            else # Use the value provided in the $userProfile node
+            {
+                $mySiteHostLocation = $xmlinput.Configuration.ServiceApps.UserProfileServiceApp.MySiteHostLocation
+            }
+            # Strip out any protocol values
+            $mySiteHostHeaderAndPort,$null = $mySiteHostLocation -replace "http://","" -replace "https://","" -split "/"
+        }
+
         $dataDir = $xmlinput.Configuration.Install.DataDir
         # Set it to the default value if it's not specified in $xmlinput
         if ([string]::IsNullOrEmpty($dataDir)) {$dataDir = "$env:ProgramFiles\Microsoft Office Servers\$env:spVer.0\Data"}
@@ -3725,7 +3816,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
           -ContactEmail $svcConfig.ContactEmail -ConnectionTimeout $svcConfig.ConnectionTimeout `
           -AcknowledgementTimeout $svcConfig.AcknowledgementTimeout -ProxyType $svcConfig.ProxyType `
           -IgnoreSSLWarnings $svcConfig.IgnoreSSLWarnings -InternetIdentity $svcConfig.InternetIdentity -PerformanceLevel $svcConfig.PerformanceLevel `
-          -ServiceAccount $svcConfig.Account -ServicePassword $secSearchServicePassword
+          -ServiceAccount $searchServiceAccount.Username -ServicePassword $secSearchServicePassword
         If ($?) {Write-Host -ForegroundColor White "Done."}
 
 
@@ -3741,6 +3832,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 {
                     $dbServer = $xmlinput.Configuration.Farm.Database.DBServer
                 }
+                $secContentAccessAcctPWD = ConvertTo-SecureString -String $appConfig.ContentAccessAccountPassword -AsPlainText -Force
                 # Try and get the application pool if it already exists
                 $pool = Get-ApplicationPool $appConfig.ApplicationPool
                 $adminPool = Get-ApplicationPool $appConfig.AdminComponent.ApplicationPool
@@ -3801,7 +3893,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                     Else {Write-Host -ForegroundColor White " - Administration component already initialized."}
                 }
                 # Update the default Content Access Account
-                Update-SearchContentAccessAccount $($appconfig.Name) $searchApp $($svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication.ContentAccessAccount) $secContentAccessAcctPWD
+                Update-SearchContentAccessAccount $($appconfig.Name) $searchApp $($appConfig.ContentAccessAccount) $secContentAccessAcctPWD
 
 
                 $crawlTopology = Get-SPEnterpriseSearchCrawlTopology -SearchApplication $searchApp | where {$_.CrawlComponents.Count -gt 0 -or $_.State -eq "Inactive"}
@@ -3978,6 +4070,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 {
                     $dbServer = $xmlinput.Configuration.Farm.Database.DBServer
                 }
+                $secContentAccessAcctPWD = ConvertTo-SecureString -String $appConfig.ContentAccessAccountPassword -AsPlainText -Force
                 $installAdminComponent = (($appConfig.AdminComponent.Server | where {MatchComputerName $_.Name $env:COMPUTERNAME}) -ne $null)
                 $installCrawlComponent = (($appConfig.CrawlComponent.Server | where {MatchComputerName $_.Name $env:COMPUTERNAME}) -ne $null)
                 $installQueryComponent = (($appConfig.QueryComponent.Server | where {MatchComputerName $_.Name $env:COMPUTERNAME}) -ne $null)
@@ -3988,7 +4081,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
 
                 $pool = Get-ApplicationPool $appConfig.ApplicationPool
                 $adminPool = Get-ApplicationPool $appConfig.AdminComponent.ApplicationPool
-                $appPoolUserName = $svcConfig.Account
+                $appPoolUserName = $searchServiceAccount.Username
 
                 $saAppPool = Get-SPServiceApplicationPool -Identity $pool -ErrorAction SilentlyContinue
                 if($saAppPool -eq $null)
@@ -4023,7 +4116,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 $propagation = [System.Security.AccessControl.PropagationFlags]::None
                 $type = [System.Security.AccessControl.AccessControlType]::Allow
                 $rule = New-Object System.Security.AccessControl.RegistryAccessRule($person, $access, $inheritance, $propagation, $type)
-                $acl.AddAccessRule($rule)  
+                $acl.AddAccessRule($rule)
                 Set-Acl HKLM:\System\CurrentControlSet\Control\ComputerName $acl
                 Write-Host -ForegroundColor White "Done."
 
@@ -4076,7 +4169,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 Else {Write-Host -ForegroundColor White "Already exists."}
 
                 # Update the default Content Access Account
-                Update-SearchContentAccessAccount $($appConfig.Name) $searchApp $($svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication.ContentAccessAccount) $secContentAccessAcctPWD
+                Update-SearchContentAccessAccount $($appConfig.Name) $searchApp $($appConfig.ContentAccessAccount) $secContentAccessAcctPWD
 
                 # If the index location isn't already set to either the default location or our custom-specified location, set the default location for the search service instance
                 if ($indexLocation -ne "$dataDir\Office Server\Applications" -or $indexLocation -ne $searchSvc.DefaultIndexLocation)
@@ -4298,11 +4391,9 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                     }
                     else {Write-Host -ForegroundColor White "OK."}
                 }
-                
-                # Add link to resources list
-                AddResourcesLink "Search Administration" ("searchadministration.aspx?appid=" +  $searchApp.Id)
 
-                Write-Host -ForegroundColor White " - Search Service Application successfully provisioned."
+                # Add link to resources list
+                AddResourcesLink $appConfig.Name ("searchadministration.aspx?appid=" +  $searchApp.Id)
 
                 function SetSearchCenterUrl ($searchCenterURL, $searchApp)
                 {
@@ -4314,11 +4405,12 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 If (!([string]::IsNullOrEmpty($appConfig.SearchCenterUrl)))
                 {
                     # Set the SP2013 Search Center URL per http://blogs.technet.com/b/speschka/archive/2012/10/29/how-to-configure-the-global-search-center-url-for-sharepoint-2013-using-powershell.aspx
-                    Write-Host -ForegroundColor White " - Setting the Global Search Center URL to $($appConfig.SearchCenterURL)..."
+                    Write-Host -ForegroundColor White "  - Setting the Global Search Center URL to $($appConfig.SearchCenterURL)..."
                     while ($done -ne $true)
                     {
                         try
                         {
+                            # Get the #searchApp object again to prevent conflicts
                             $searchApp = Get-SPEnterpriseSearchServiceApplication -Identity $appConfig.Name
                             SetSearchCenterUrl $appConfig.SearchCenterURL $searchApp
                             if ($?)
@@ -4338,7 +4430,9 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                         }
                     }
                 }
-                Else {Write-Host -ForegroundColor Yellow " - SearchCenterUrl was not specified, skipping."}
+                Else {Write-Host -ForegroundColor Yellow "  - SearchCenterUrl was not specified, skipping."}
+                Write-Host -ForegroundColor White " - Search Service Application successfully provisioned."
+
                 WriteLine
             }
         }
@@ -4368,12 +4462,13 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 $crawlStartAddresses += ","+$($siteCollectionConfig.siteUrl)
             }
         }
-        If ($mySiteURL -and $mySitePort -and $mySiteHostHeader)
+
+        If ($mySiteHostHeaderAndPort)
         {
-        	# Need to set the correct sps (People Search) URL protocol in case My Sites are SSL-bound
-        	If ($mySiteURL -like "https*") {$peopleSearchProtocol = "sps3s://"}
+        	# Need to set the correct sps (People Search) URL protocol in case the web app that hosts My Sites is SSL-bound
+        	If ($mySiteHostLocation -like "https*") {$peopleSearchProtocol = "sps3s://"}
         	Else {$peopleSearchProtocol = "sps3://"}
-        	$crawlStartAddresses += ","+$peopleSearchProtocol+$mySiteHostHeader+":"+$mySitePort
+        	$crawlStartAddresses += ","+$peopleSearchProtocol+$mySiteHostHeaderAndPort
         }
         Write-Host -ForegroundColor White " - Setting up crawl addresses for default content source..." -NoNewline
         Get-SPEnterpriseSearchServiceApplication | Get-SPEnterpriseSearchCrawlContentSource | Set-SPEnterpriseSearchCrawlContentSource -StartAddresses $crawlStartAddresses
@@ -4399,17 +4494,15 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
     {
         WriteLine
         #Set the service account to something other than Local System to avoid Health Analyzer warnings
-        $svcConfig = $xmlinput.Configuration.ServiceApps.EnterpriseSearchService
-        $secSearchServicePassword = ConvertTo-SecureString -String $svcConfig.Password -AsPlainText -Force
-        If (($svcConfig.Account) -and ($secSearchServicePassword))
+        If (($searchServiceAccount.Username) -and ($secSearchServicePassword))
         {
             # Use the values for Search Service account and password, if they've been defined
-            $username = $svcConfig.Account
+            $username = $searchServiceAccount.Username
             $password = $secSearchServicePassword
         }
         Else
         {
-            $spservice = Get-spserviceaccountxml $xmlinput
+            $spservice = Get-SPManagedAccountXML $xmlinput -CommonName "spservice"
             $username = $spservice.username
             $password = ConvertTo-SecureString "$($spservice.password)" -AsPlaintext -Force
         }
@@ -4497,21 +4590,21 @@ Function Get-ApplicationPool([System.Xml.XmlElement]$appPoolConfig) {
     $pool = Get-SPServiceApplicationPool -Identity $appPoolConfig.Name -ErrorVariable err -ErrorAction SilentlyContinue
     If ($err) {
         # The application pool does not exist so create.
-        Write-Host -ForegroundColor White " - Getting $($appPoolConfig.Account) account for application pool..."
-        $managedAccountSearch = (Get-SPManagedAccount -Identity $appPoolConfig.Account -ErrorVariable err -ErrorAction SilentlyContinue)
+        Write-Host -ForegroundColor White "  - Getting $($searchServiceAccount.Username) account for application pool..."
+        $managedAccountSearch = (Get-SPManagedAccount -Identity $searchServiceAccount.Username -ErrorVariable err -ErrorAction SilentlyContinue)
         If ($err) {
-            If (($appPoolConfig.Password -ne "") -and ($appPoolConfig.Password -ne $null))
+            If (!([string]::IsNullOrEmpty($searchServiceAccount.Password)))
             {
-                $appPoolConfigPWD = (ConvertTo-SecureString $appPoolConfig.Password -AsPlainText -force)
-                $accountCred = New-Object System.Management.Automation.PsCredential $appPoolConfig.Account,$appPoolConfigPWD
+                $appPoolConfigPWD = (ConvertTo-SecureString $searchServiceAccount.Password -AsPlainText -force)
+                $accountCred = New-Object System.Management.Automation.PsCredential $searchServiceAccount.Username,$appPoolConfigPWD
             }
             Else
             {
-                $accountCred = Get-Credential $appPoolConfig.Account
+                $accountCred = Get-Credential $searchServiceAccount.Username
             }
             $managedAccountSearch = New-SPManagedAccount -Credential $accountCred
         }
-        Write-Host -ForegroundColor White " - Creating $($appPoolConfig.Name)..."
+        Write-Host -ForegroundColor White "  - Creating $($appPoolConfig.Name)..."
         $pool = New-SPServiceApplicationPool -Name $($appPoolConfig.Name) -Account $managedAccountSearch
     }
     Return $pool
@@ -5900,10 +5993,10 @@ Function Add-SQLAlias()
     )
 
 	If ((MatchComputerName $SQLInstance $env:COMPUTERNAME) -or ($SQLInstance.StartsWith($env:ComputerName +"\"))) {
-		$protocol = "dbmslpcn"
+		$protocol = "dbmslpcn" # Shared Memory
 	}
 	else {
-		$protocol = "DBMSSOCN"
+		$protocol = "DBMSSOCN" # TCP/IP
 	}
 
     $serverAliasConnection="$protocol,$SQLInstance"
@@ -6287,6 +6380,7 @@ Function GetFromNode([System.Xml.XmlElement]$node, [string] $item)
     }
     Return $value;
 }
+
 #EndRegion
 
 #Region Manage HOSTS & URLs
@@ -6345,10 +6439,11 @@ Function Add-LocalIntranetURL ($url)
 {
     If (($url -like "*.*") -and (($webApp.AddURLToLocalIntranetZone) -eq $true))
     {
-        $url = $url -replace "https://",""
-        $url = $url -replace "http://",""
+        # Strip out any protocol value
+        $url = $url -replace "http://","" -replace "https://",""
         $splitURL = $url -split "\."
-        $urlDomain = $splitURL[-2] + "." + $splitURL[-1]
+        # Remove the host portion of the URL and the leading dot
+        $urlDomain = $url.TrimStart($splitURL[0] + ".")
         Write-Host -ForegroundColor White " - Adding *.$urlDomain to local Intranet security zone..."
         New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ZoneMap\Domains" -Name $urlDomain -ItemType Leaf -Force | Out-Null
         New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ZoneMap\Domains\$urlDomain" -Name '*' -value "1" -PropertyType dword -Force | Out-Null
@@ -6445,7 +6540,6 @@ Function WriteLine
 # ====================================================================================
 Function Show-Progress ($process, $color, $interval)
 {
-    $indicators = @("/","-","\","|")
     While (Get-Process -Name $process -ErrorAction SilentlyContinue)
     {
         Write-Host -ForegroundColor $color "." -NoNewline
