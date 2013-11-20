@@ -7,7 +7,7 @@ Function CheckXMLVersion ([xml]$xmlinput)
 {
     $getXMLVersion = $xmlinput.Configuration.Version
     # The value below will increment whenever there is an update to the format of the AutoSPInstallerInput XML file
-    $scriptVersion = "3.95"
+    $scriptVersion = "3.96"
     if ($getXMLVersion -ne $scriptVersion)
     {
         Write-Host -ForegroundColor Yellow " - Warning! Your versions of the XML ($getXMLVersion) and script ($scriptVersion) are mismatched."
@@ -182,28 +182,36 @@ Function DisableCRLCheck([xml]$xmlinput)
         New-PSDrive -Name HKU -PSProvider Registry -Root HKEY_USERS -ErrorAction SilentlyContinue | Out-Null
         New-ItemProperty -Path "HKU:\.DEFAULT\Software\Microsoft\Windows\CurrentVersion\WinTrust\Trust Providers\Software Publishing" -Name State -PropertyType DWord -Value 146944 -Force | Out-Null
         New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\WinTrust\Trust Providers\Software Publishing" -Name State -PropertyType DWord -Value 146944 -Force | Out-Null
-        Write-Host -ForegroundColor White "  - Machine.config..."
+        Write-Host -ForegroundColor White "  - Machine.config files..."
+        [array]$frameworkVersions = "v2.0.50727","v4.0.30319" # For .Net 2.0 and .Net 4.0
         ForEach($bitsize in ("","64"))
         {
-            # Added a check below for $xml because on Windows Server 2012 machines, the path to $xml doesn't exist until the .Net Framework is installed, so the steps below were failing
-            $xml = [xml](Get-Content "$env:windir\Microsoft.NET\Framework$bitsize\v2.0.50727\CONFIG\Machine.config" -ErrorAction SilentlyContinue)
-            if ($xml)
+            foreach ($frameworkVersion in $frameworkVersions)
             {
-                If (!$xml.DocumentElement.SelectSingleNode("runtime")) {
-                    $runtime = $xml.CreateElement("runtime")
-                    $xml.DocumentElement.AppendChild($runtime) | Out-Null
+                # Added a check below for $xml because on Windows Server 2012 machines, the path to $xml doesn't exist until the .Net Framework is installed, so the steps below were failing
+                $xml = [xml](Get-Content "$env:windir\Microsoft.NET\Framework$bitsize\$frameworkVersion\CONFIG\Machine.config" -ErrorAction SilentlyContinue)
+                if ($xml)
+                {
+                    if ($bitsize -eq "64") {Write-Host -ForegroundColor White "   - $frameworkVersion..." -NoNewline}
+                    If (!$xml.DocumentElement.SelectSingleNode("runtime"))
+                    {
+                        $runtime = $xml.CreateElement("runtime")
+                        $xml.DocumentElement.AppendChild($runtime) | Out-Null
+                    }
+                    If (!$xml.DocumentElement.SelectSingleNode("runtime/generatePublisherEvidence"))
+                    {
+                        $gpe = $xml.CreateElement("generatePublisherEvidence")
+                        $xml.DocumentElement.SelectSingleNode("runtime").AppendChild($gpe) | Out-Null
+                    }
+                    $xml.DocumentElement.SelectSingleNode("runtime/generatePublisherEvidence").SetAttribute("enabled","false") | Out-Null
+                    $xml.Save("$env:windir\Microsoft.NET\Framework$bitsize\$frameworkVersion\CONFIG\Machine.config")
+                    if ($bitsize -eq "64") {Write-Host -ForegroundColor White "Done."}
                 }
-                If (!$xml.DocumentElement.SelectSingleNode("runtime/generatePublisherEvidence")) {
-                    $gpe = $xml.CreateElement("generatePublisherEvidence")
-                    $xml.DocumentElement.SelectSingleNode("runtime").AppendChild($gpe) | Out-Null
+                else
+                {
+                    if ($bitsize -eq "") {$bitsize = "32"}
+                    Write-Warning "$bitsize-bit machine.config not found - could not disable CRL check."
                 }
-                $xml.DocumentElement.SelectSingleNode("runtime/generatePublisherEvidence").SetAttribute("enabled","false") | Out-Null
-                $xml.Save("$env:windir\Microsoft.NET\Framework$bitsize\v2.0.50727\CONFIG\Machine.config")
-            }
-            else
-            {
-                if ($bitsize -eq "") {$bitsize = "32"}
-                Write-Warning "$bitsize-bit machine.config not found - could not disable CRL check."
             }
         }
         Write-Host -ForegroundColor White " - Done."
@@ -264,8 +272,11 @@ Function CheckConfigFiles([xml]$xmlinput)
             throw " - The Product ID (PIDKey) is missing or badly formatted.`n - Check the value of <PIDKey> in `"$(Split-Path -Path $inputFile -Leaf)`" and try again."
         }
         $officeServerPremium = $xmlinput.Configuration.Install.SKU -replace "Enterprise","1" -replace "Standard","0"
+        $installDir = $xmlinput.Configuration.Install.InstallDir
+        # Set $installDir to the default value if it's not specified in $xmlinput
+        if ([string]::IsNullOrEmpty($installDir)) {$installDir = "%PROGRAMFILES%\Microsoft Office Servers\"}
         $dataDir = $xmlinput.Configuration.Install.DataDir
-        # Set it to the default value if it's not specified in $xmlinput
+        # Set $dataDir to the default value if it's not specified in $xmlinput
         if ([string]::IsNullOrEmpty($dataDir)) {$dataDir = "%PROGRAMFILES%\Microsoft Office Servers\$env:spVer.0\Data"}
         $xmlConfig = @"
 <Configuration>
@@ -279,7 +290,7 @@ Function CheckConfigFiles([xml]$xmlinput)
   <ARP ARPCOMMENTS="Installed with AutoSPInstaller (http://autospinstaller.com)" ARPCONTACT="brian@autospinstaller.com" />
   <Logging Type="verbose" Path="%temp%" Template="SharePoint Server Setup(*).log"/>
   <Display Level="basic" CompletionNotice="No" AcceptEula="Yes"/>
-  <INSTALLLOCATION Value="%PROGRAMFILES%\Microsoft Office Servers\" />
+  <INSTALLLOCATION Value="$installDir"/>
   <DATADIR Value="$dataDir"/>
   <PIDKEY Value="$pidKey"/>
   <Setting Id="SERVERROLE" Value="APPLICATION"/>
@@ -332,6 +343,50 @@ Function CheckConfigFiles([xml]$xmlinput)
             $script:configFileOWA = Join-Path -Path (Get-Item $env:TEMP).FullName -ChildPath $($xmlinput.Configuration.OfficeWebApps.ConfigFile)
             Write-Host -ForegroundColor White " - Writing $($xmlinput.Configuration.OfficeWebApps.ConfigFile) to $((Get-Item $env:TEMP).FullName)..."
             Set-Content -Path "$configFileOWA" -Force -Value $xmlConfigOWA
+        }
+    }
+    #EndRegion
+
+    #Region Project Server config file
+    if ($xmlinput.Configuration.ProjectServer.Install -eq $true)
+    {
+        if (Test-Path -Path (Join-Path -Path $env:dp0 -ChildPath $($xmlinput.Configuration.ProjectServer.ConfigFile)))
+        {
+            # Just use the existing config file we found
+            $script:configFileProjectServer = Join-Path -Path $env:dp0 -ChildPath $($xmlinput.Configuration.ProjectServer.ConfigFile)
+            Write-Host -ForegroundColor White " - Using existing ProjectServer config file:`n - $configFileProjectServer"
+        }
+        else
+        {
+            # Write out a new config file based on defaults and the values provided in $inputFile
+            $pidKeyProjectServer = $xmlinput.Configuration.ProjectServer.PIDKeyProjectServer
+            # Do a rudimentary check on the presence and format of the product key
+            if ($pidKeyProjectServer -notlike "?????-?????-?????-?????-?????")
+            {
+                throw " - The Project Server Product ID (PIDKey) is missing or badly formatted.`n - Check the value of <PIDKeyProjectServer> in `"$(Split-Path -Path $inputFile -Leaf)`" and try again."
+            }
+            $xmlConfigProjectServer = @"
+<Configuration>
+    <Package Id="sts">
+      <Setting Id="LAUNCHEDFROMSETUPSTS" Value="Yes"/>
+    </Package>
+      <Package Id="PJSRVWFE">
+        <Setting Id="PSERVER" Value="1"/>
+      </Package>
+    <ARP ARPCOMMENTS="Installed with AutoSPInstaller (http://autospinstaller.com)" ARPCONTACT="brian@autospinstaller.com" />
+    <Logging Type="verbose" Path="%temp%" Template="Project Server Setup(*).log"/>
+    <Display Level="basic" CompletionNotice="No" AcceptEula="Yes"/>
+	<Setting Id="SERVERROLE" Value="APPLICATION"/>
+	<PIDKEY Value="$pidKeyProjectServer"/>
+	<Setting Id="USINGUIINSTALLMODE" Value="1"/>
+	<Setting Id="SETUPTYPE" Value="CLEAN_INSTALL"/>
+	<Setting Id="SETUP_REBOOT" Value="Never"/>
+	<Setting Id="AllowWindowsClientInstall" Value="True"/>
+</Configuration>
+"@
+            $script:configFileProjectServer = Join-Path -Path (Get-Item $env:TEMP).FullName -ChildPath $($xmlinput.Configuration.ProjectServer.ConfigFile)
+            Write-Host -ForegroundColor White " - Writing $($xmlinput.Configuration.ProjectServer.ConfigFile) to $((Get-Item $env:TEMP).FullName)..."
+            Set-Content -Path "$configFileProjectServer" -Force -Value $xmlConfigProjectServer
         }
     }
     #EndRegion
@@ -937,6 +992,87 @@ Function InstallOfficeWebApps2010([xml]$xmlinput)
 }
 #EndRegion
 
+#Region Install Project Server
+# ===================================================================================
+# Func: InstallProjectServer
+# Desc: Installs the Project Server binaries in unattended mode
+# ===================================================================================
+Function InstallProjectServer([xml]$xmlinput)
+{
+If ($xmlinput.Configuration.ProjectServer.Install -eq $true)
+    {
+        WriteLine
+        # Create a hash table with major version to product year mappings
+        $spYears = @{"14" = "2010"; "15" = "2013"}
+        $spYear = $spYears.$env:spVer
+        # There has to be a better way to check whether Project Server is installed...
+        $projectServerInstalled = Test-Path -Path "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$env:spVer\CONFIG\BIN\Microsoft.ProjectServer.dll"
+        If ($projectServerInstalled)
+        {
+            Write-Host -ForegroundColor White " - Project Server $spYear binaries appear to be already installed - skipping installation."
+        }
+        Else
+        {
+            # Install Project Server Binaries
+            If (Test-Path "$bits\$spYear\ProjectServer\setup.exe")
+            {
+                Write-Host -ForegroundColor Blue " - Installing Project Server $spYear binaries..." -NoNewline
+                $startTime = Get-Date
+                Start-Process "$bits\$spYear\ProjectServer\setup.exe" -ArgumentList "/config `"$configFileProjectServer`"" -WindowStyle Minimized
+                Show-Progress -Process setup -Color Blue -Interval 5
+                $delta,$null = (New-TimeSpan -Start $startTime -End (Get-Date)).ToString() -split "\."
+                Write-Host -ForegroundColor White " - Project Server $spYear setup completed in $delta."
+                If (-not $?)
+                {
+                    Throw " - Error $LASTEXITCODE occurred running $bits\$spYear\ProjectServer\setup.exe"
+                }
+
+                # Parsing most recent Project Server Setup log for errors or restart requirements, since $LASTEXITCODE doesn't seem to work...
+                $setupLog = Get-ChildItem -Path (Get-Item $env:TEMP).FullName | ? {$_.Name -like "Project Server Setup*"} | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
+                If ($setupLog -eq $null)
+                {
+                    Throw " - Could not find Project Server Setup log file!"
+                }
+
+                # Get error(s) from log
+                $setupLastError = $setupLog | Select-String -SimpleMatch -Pattern "Error:" | Select-Object -Last 1
+                $setupSuccess = $setupLog | Select-String -SimpleMatch -Pattern "Successfully installed package: pserver"
+                if (!$setupSuccess) {$setupSuccess = $setupLog | Select-String -SimpleMatch -Pattern "Successfully configured package: pserver"} # In case we are just configuring pre-installed or partially-installed product
+                If ($setupLastError -and !$setupSuccess)
+                {
+                    Write-Warning $setupLastError.Line
+                    Invoke-Item -Path "$((Get-Item $env:TEMP).FullName)\$setupLog"
+                    Throw " - Review the log file and try to correct any error conditions."
+                }
+                # Look for restart requirement in log, but only if we installed fresh vs. just configuring
+                if ($setupSuccess -like "*installed*")
+                {
+                    $setupRestartNotNeeded = $setupLog | select-string -SimpleMatch -Pattern "System reboot is not pending."
+                    If (!$setupRestartNotNeeded)
+                    {
+                        Throw " - Project Server setup requires a restart. Run the script again after restarting to continue."
+                    }
+                }
+                Write-Host -ForegroundColor Blue " - Waiting for SharePoint Products and Technologies Wizard to launch..." -NoNewline
+                While ((Get-Process |?{$_.ProcessName -like "psconfigui*"}) -eq $null)
+                {
+                    Write-Host -ForegroundColor Blue "." -NoNewline
+                    Start-Sleep 1
+                }
+                Write-Host -ForegroundColor Blue "Done."
+                Write-Host -ForegroundColor White " - Exiting Products and Technologies Wizard - using Powershell instead!"
+                Stop-Process -Name psconfigui
+            }
+            Else
+            {
+                Throw " - Install path $bits\$spYear\ProjectServer not found!!"
+            }
+        }
+        WriteLine
+    }
+}
+#EndRegion
+
 #Region Configure Office Web Apps 2010
 Function ConfigureOfficeWebApps([xml]$xmlinput)
 {
@@ -986,8 +1122,8 @@ Function InstallLanguagePacks([xml]$xmlinput)
     $spYear = $spYears.$env:spVer
     #Get installed languages from registry (HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Office Server\$env:spVer.0\InstalledLanguages)
     $installedOfficeServerLanguages = (Get-Item "HKLM:\Software\Microsoft\Office Server\$env:spVer.0\InstalledLanguages").GetValueNames() | ? {$_ -ne ""}   # Look for extracted language packs
-    $extractedLanguagePacks = (Get-ChildItem "$bits\$spYear\LanguagePacks" -Name -Include "??-??" -ErrorAction SilentlyContinue)
-    $serverLanguagePacks = (Get-ChildItem "$bits\$spYear\LanguagePacks" -Name -Include ServerLanguagePack_*.exe -ErrorAction SilentlyContinue)
+    $extractedLanguagePacks = (Get-ChildItem -Path "$bits\$spYear\LanguagePacks" -Name -Include "??-??" -ErrorAction SilentlyContinue)
+    $serverLanguagePacks = (Get-ChildItem -Path "$bits\$spYear\LanguagePacks" -Name -Include ServerLanguagePack_*.exe -ErrorAction SilentlyContinue)
     If ($extractedLanguagePacks)
     {
         Write-Host -ForegroundColor White " - Installing SharePoint Language Packs:"
@@ -1025,13 +1161,13 @@ Function InstallLanguagePacks([xml]$xmlinput)
                 Write-Host -ForegroundColor White " - Language pack $languagePack setup completed in $delta."
                 $language = (($languagePack -replace "ServerLanguagePack_","") -replace ".exe","")
                 # Install Foundation Language Pack SP1, then Server Language Pack SP1, if found
-                If (Get-ChildItem "$bits\$spYear\LanguagePacks" -Name -Include spflanguagepack2010sp1-kb2460059-x64-fullfile-$language.exe -ErrorAction SilentlyContinue)
+                If (Get-ChildItem -Path "$bits\$spYear\LanguagePacks" -Name -Include spflanguagepack2010sp1-kb2460059-x64-fullfile-$language.exe -ErrorAction SilentlyContinue)
                 {
                     Write-Host -ForegroundColor Blue " - Installing Foundation language pack SP1 for $language..." -NoNewline
                     Start-Process -WorkingDirectory "$bits\$spYear\LanguagePacks\" -FilePath "spflanguagepack2010sp1-kb2460059-x64-fullfile-$language.exe" -ArgumentList "/quiet /norestart"
                     Show-Progress -Process spflanguagepack2010sp1-kb2460059-x64-fullfile-$language -Color Blue -Interval 5
                     # Install Server Language Pack SP1, if found
-                    If (Get-ChildItem "$bits\$spYear\LanguagePacks" -Name -Include serverlanguagepack2010sp1-kb2460056-x64-fullfile-$language.exe -ErrorAction SilentlyContinue)
+                    If (Get-ChildItem -Path "$bits\$spYear\LanguagePacks" -Name -Include serverlanguagepack2010sp1-kb2460056-x64-fullfile-$language.exe -ErrorAction SilentlyContinue)
                     {
                         Write-Host -ForegroundColor Blue " - Installing Server language pack SP1 for $language..." -NoNewline
                         Start-Process -WorkingDirectory "$bits\$spYear\LanguagePacks\" -FilePath "serverlanguagepack2010sp1-kb2460056-x64-fullfile-$language.exe" -ArgumentList "/quiet /norestart"
@@ -1099,34 +1235,53 @@ Function InstallUpdates
                                   "17044" = "Installer was unable to run detection for this package"}
     if ($spYear -eq "2010")
     {
-        $sp2010SP1 = Get-ChildItem "$bits\$spYear\Updates" -Name -Include "officeserver2010sp1-kb2460045-x64-fullfile-en-us.exe" -ErrorAction SilentlyContinue
-        ##$sp2010June2012CU = Get-ChildItem "$bits\$spYear\Updates" -Name -Include "office2010-kb2598354-fullfile-x64-glb.exe" -ErrorAction SilentlyContinue
-        $sp2010June2013CU = Get-ChildItem "$bits\$spYear\Updates" -Name -Include "ubersrv2010-kb2817527-fullfile-x64-glb.exe" -ErrorAction SilentlyContinue
-        $sp2010SP2 = Get-ChildItem "$bits\$spYear\Updates" -Name -Include "oserversp2010-kb2687453-fullfile-x64-en-us.exe" -ErrorAction SilentlyContinue
+        $sp2010SP1 = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include "officeserver2010sp1-kb2460045-x64-fullfile-en-us.exe" -Recurse -ErrorAction SilentlyContinue
+        # In case we find more than one (e.g. in subfolders), grab the first one
+        if ($sp2010SP1 -is [system.array]) {$sp2010SP1 = $sp2010SP1[0]}
+        $sp2010June2013CU = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include "ubersrv2010-kb2817527-fullfile-x64-glb.exe" -Recurse -ErrorAction SilentlyContinue
+        # In case we find more than one (e.g. in subfolders), grab the first one
+        if ($sp2010June2013CU -is [system.array]) {$sp2010June2013CU = $sp2010June2013CU[0]}
+        $sp2010SP2 = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include "oserversp2010-kb2687453-fullfile-x64-en-us.exe" -Recurse -ErrorAction SilentlyContinue
+        # In case we find more than one (e.g. in subfolders), grab the first one
+        if ($sp2010SP2 -is [system.array]) {$sp2010SP2 = $sp2010SP2[0]}
+        # Get installed SharePoint languages, so we can determine which language pack updates to apply
+        $installedOfficeServerLanguages = (Get-Item "HKLM:\Software\Microsoft\Office Server\$env:spVer.0\InstalledLanguages").GetValueNames() | ? {$_ -ne ""}
         # First & foremost, install SP2 if it's there
         if ($sp2010SP2)
         {
             InstallSpecifiedUpdate $sp2010SP2 "Service Pack 2"
             # Now install any language pack service packs that are found, using the naming convention for SP2
-            $sp2010LPServicePacks = Get-ChildItem "$bits\$spYear\Updates" -Name -Include oslpksp2010*.exe -ErrorAction SilentlyContinue | Sort-Object -Descending
-            foreach ($sp2010LPServicePack in $sp2010LPServicePacks)
+            $sp2010LPServicePacks = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include oslpksp2010*.exe -Recurse -ErrorAction SilentlyContinue | Sort-Object -Descending
+            # But only if they match a currently-installed SharePoint language
+            foreach ($installedOfficeServerLanguage in $installedOfficeServerLanguages)
             {
-                InstallSpecifiedUpdate $sp2010LPServicePack ""
+                [array]$sp2010LPServicePacksToInstall += $sp2010LPServicePacks | Where-Object {$_ -like "*$installedOfficeServerLanguage*"}
+            }
+            if ($sp2010LPServicePacksToInstall)
+            {
+                foreach ($sp2010LPServicePack in $sp2010LPServicePacksToInstall)
+                {
+                    InstallSpecifiedUpdate $sp2010LPServicePack "Language Pack Service Pack"
+                }
             }
         }
         # Otherwise, install SP1 as it is a required baseline for any post-June 2012 CUs
         elseif ($sp2010SP1)
         {
             InstallSpecifiedUpdate $sp2010SP1 "Service Pack 1"
-##          if ($sp2010June2012CU)
-##          {
-##              InstallSpecifiedUpdate $sp2010June2012CU "June 2012 CU"
-##          }
             # Now install any language pack service packs that are found, using the naming convention for SP1
-            $sp2010LPServicePacks = Get-ChildItem "$bits\$spYear\Updates" -Name -Include serverlanguagepack2010sp*.exe -ErrorAction SilentlyContinue | Sort-Object -Descending
-            foreach ($sp2010LPServicePack in $sp2010LPServicePacks)
+            $sp2010LPServicePacks = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include serverlanguagepack2010sp*.exe -Recurse -ErrorAction SilentlyContinue | Sort-Object -Descending
+            # But only if they match a currently-installed SharePoint language
+            foreach ($installedOfficeServerLanguage in $installedOfficeServerLanguages)
             {
-                InstallSpecifiedUpdate $sp2010LPServicePack "Language Pack Service Pack"
+                [array]$sp2010LPServicePacksToInstall += $sp2010LPServicePacks | Where-Object {$_ -like "*$installedOfficeServerLanguage*"}
+            }
+            if ($sp2010LPServicePacksToInstall)
+            {
+                foreach ($sp2010LPServicePack in $sp2010LPServicePacksToInstall)
+                {
+                    InstallSpecifiedUpdate $sp2010LPServicePack "Language Pack Service Pack"
+                }
             }
             # Next, install the June 2013 CU if it's found in \Updates
             if ($sp2010June2013CU)
@@ -1136,7 +1291,7 @@ Function InstallUpdates
         }
         if ($xmlinput.Configuration.OfficeWebApps.Install -eq $true)
         {
-            $sp2010OWAUpdates = Get-ChildItem "$bits\$spYear\Updates" -Name -Include wac*.exe -ErrorAction SilentlyContinue | Sort-Object -Descending
+            $sp2010OWAUpdates = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include wac*.exe -Recurse -ErrorAction SilentlyContinue | Sort-Object -Descending
             foreach ($sp2010OWAUpdate in $sp2010OWAUpdates)
             {
                 InstallSpecifiedUpdate $sp2010OWAUpdate "Office Web Apps Update"
@@ -1146,14 +1301,30 @@ Function InstallUpdates
     }
     if ($spYear -eq "2013")
     {
-        $marchPublicUpdate = Get-ChildItem "$bits\$spYear\Updates" -Name -Include "ubersrvsp2013-kb2767999-fullfile-x64-glb.exe" -ErrorAction SilentlyContinue
+        if ($xmlinput.Configuration.ProjectServer.Install -eq $true)
+        {
+            # Look for a Project Server March PU
+            $marchPublicUpdate = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include "ubersrvprjsp2013-kb2768001-fullfile-x64-glb.exe" -Recurse -ErrorAction SilentlyContinue
+        }
+        else
+        {
+            # Look for the SharePoint Server March PU
+            $marchPublicUpdate = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include "ubersrvsp2013-kb2767999-fullfile-x64-glb.exe" -Recurse -ErrorAction SilentlyContinue
+        }
         if ($marchPublicUpdate)
         {
+            # In case we find more than one (e.g. in subfolders), grab the first one
+            if ($marchPublicUpdate -is [system.array]) {$marchPublicUpdate = $marchPublicUpdate[0]}
             InstallSpecifiedUpdate $marchPublicUpdate "March 2013 Public Update"
         }
     }
-    # Get all CUs except the March 2013 PU for SharePoint 2013
-    $cumulativeUpdates = Get-ChildItem "$bits\$spYear\Updates" -Name -Include office2010*.exe,ubersrv*.exe,ubersts*.exe -ErrorAction SilentlyContinue | Where-Object {$_ -ne "ubersrvsp2013-kb2767999-fullfile-x64-glb.exe"} | Sort-Object -Descending
+    # Get all CUs except the March 2013 PU for SharePoint / Project Server 2013 and the June 2013 CU for SharePoint 2010
+    $cumulativeUpdates = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include office2010*.exe,ubersrv*.exe,ubersts*.exe -Recurse -ErrorAction SilentlyContinue | Where-Object {$_ -notlike "*ubersrvsp2013-kb2767999-fullfile-x64-glb.exe" -and $_ -notlike "*ubersrvprjsp2013-kb2768001-fullfile-x64-glb.exe" -and $_ -notlike "*ubersrv2010-kb2817527-fullfile-x64-glb.exe"} | Sort-Object -Descending
+    # Filter out Project Server updates if we aren't installing Project Server
+    if ($xmlinput.Configuration.ProjectServer.Install -ne $true)
+    {
+        $cumulativeUpdates = $cumulativeUpdates | Where-Object {$_ -notlike "*prj*.exe"}
+    }
     # Look for Server Cumulative Update installers
     if ($cumulativeUpdates)
     {
@@ -1165,10 +1336,12 @@ Function InstallUpdates
         Write-Host -ForegroundColor White "  - Installing SharePoint Cumulative Updates:"
         ForEach ($cumulativeUpdate in $cumulativeUpdates)
         {
-            Write-Host -ForegroundColor Blue "   - Installing $cumulativeUpdate..." -NoNewline
+            # Get the file name only, in case $cumulativeUpdate includes part of a path (e.g. is in a subfolder)
+            $splitCumulativeUpdate = Split-Path -Path $cumulativeUpdate -Leaf
+            Write-Host -ForegroundColor Blue "   - Installing $splitCumulativeUpdate..." -NoNewline
             $startTime = Get-Date
             Start-Process -FilePath "$bits\$spYear\Updates\$cumulativeUpdate" -ArgumentList "/passive /norestart"
-            Show-Progress -Process $($cumulativeUpdate -replace ".exe", "") -Color Blue -Interval 5
+            Show-Progress -Process $($splitCumulativeUpdate -replace ".exe", "") -Color Blue -Interval 5
             $delta,$null = (New-TimeSpan -Start $startTime -End (Get-Date)).ToString() -split "\."
             $oPatchInstallLog = Get-ChildItem -Path (Get-Item $env:TEMP).FullName | ? {$_.Name -like "opatchinstall*.log"} | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
             # Get install result from log
@@ -1188,7 +1361,7 @@ Function InstallUpdates
                 }
                 else {Write-Host "   - $($oPatchInstallResultCodes.$oPatchInstallResultCode)"}
             }
-            Write-Host -ForegroundColor White "   - $cumulativeUpdate install completed in $delta."
+            Write-Host -ForegroundColor White "   - $splitCumulativeUpdate install completed in $delta."
         }
         Write-Host -ForegroundColor White "  - Cumulative Update installation complete."
     }
@@ -1199,7 +1372,7 @@ Function InstallUpdates
     }
     if (!$marchPublicUpdate -and !$cumulativeUpdates)
     {
-        Write-Host -ForegroundColor White " - No updates found in $bits\$spYear\Updates, skipping."
+        Write-Host -ForegroundColor White " - No other updates found in $bits\$spYear\Updates, proceeding..."
     }
     else
     {
@@ -1213,10 +1386,12 @@ Function InstallUpdates
 # ===================================================================================
 Function InstallSpecifiedUpdate ($updateFile, $updateName)
 {
-    Write-Host -ForegroundColor Blue "  - Installing SP$spYear $updateName $updateFile..." -NoNewline
+    # Get the file name only, in case $updateFile includes part of a path (e.g. is in a subfolder)
+    $splitUpdateFile = Split-Path -Path $updateFile -Leaf
+    Write-Host -ForegroundColor Blue "  - Installing SP$spYear $updateName $splitUpdateFile..." -NoNewline
     $startTime = Get-Date
     Start-Process -FilePath "$bits\$spYear\Updates\$updateFile" -ArgumentList "/passive /norestart"
-    Show-Progress -Process $($updateFile -replace ".exe", "") -Color Blue -Interval 5
+    Show-Progress -Process $($splitUpdateFile -replace ".exe", "") -Color Blue -Interval 5
     $delta,$null = (New-TimeSpan -Start $startTime -End (Get-Date)).ToString() -split "\."
     $oPatchInstallLog = Get-ChildItem -Path (Get-Item $env:TEMP).FullName | ? {$_.Name -like "opatchinstall*.log"} | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
     # Get install result from log
@@ -1414,7 +1589,7 @@ Function Run-PSConfig
 Function Check-PSConfig
 {
     $PSConfigLogLocation = $((Get-SPDiagnosticConfig).LogLocation) -replace "%CommonProgramFiles%","$env:CommonProgramFiles"
-    $PSConfigLog = get-childitem $PSConfigLogLocation | ? {$_.Name -like "PSCDiagnostics*"} | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
+    $PSConfigLog = Get-ChildItem -Path $PSConfigLogLocation | ? {$_.Name -like "PSCDiagnostics*"} | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
     If ($PSConfigLog -eq $null)
     {
         Throw " - Could not find PSConfig log file!"
@@ -1435,30 +1610,37 @@ Function Check-PSConfig
 # ===================================================================================
 Function CreateCentralAdmin([xml]$xmlinput)
 {
-    If (ShouldIProvision $xmlinput.Configuration.Farm.CentralAdmin -eq $true)
+    # Get all Central Admin service instances in the farm
+    $centralAdminServices = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.SharePoint.Administration.SPWebServiceInstance" -and $_.Name -eq "WSS_Administration"}
+    # Get those Central Admin services that are Online
+    $centralAdminServicesOnline = $centralAdminServices | ? {$_.Status -eq "Online"}
+    # Get the local Central Admin service
+    $localCentralAdminService = $centralAdminServices | ? {MatchComputerName $_.Server.Address $env:COMPUTERNAME}
+    If ((ShouldIProvision $xmlinput.Configuration.Farm.CentralAdmin -eq $true) -and ($localCentralAdminService.Status -ne "Online"))
     {
         Try
         {
-            $centralAdminPort = $xmlinput.Configuration.Farm.CentralAdmin.Port
             # Check if there is already a Central Admin provisioned in the farm; if not, create one
-            If (!(Get-SPWebApplication -IncludeCentralAdministration | ? {$_.Url -like "*:$centralAdminPort*"}))
+            If (!(Get-SPWebApplication -IncludeCentralAdministration | ? {$_.IsAdministrationWebApplication}) -or $centralAdminServicesOnline.Count -lt 1)
             {
                 # Create Central Admin for farm
                 Write-Host -ForegroundColor White " - Creating Central Admin site..."
+                $centralAdminPort = $xmlinput.Configuration.Farm.CentralAdmin.Port
                 $newCentralAdmin = New-SPCentralAdministration -Port $centralAdminPort -WindowsAuthProvider "NTLM" -ErrorVariable err
                 If (-not $?) {Throw " - Error creating central administration application"}
                 Write-Host -ForegroundColor Blue " - Waiting for Central Admin site..." -NoNewline
-                $centralAdmin = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.Url -like "*$($env:COMPUTERNAME):$centralAdminPort*"}
-                While ($centralAdmin.Status -ne "Online")
+                While ($localCentralAdminService.Status -ne "Online")
                 {
                     Write-Host -ForegroundColor Blue "." -NoNewline
                     Start-Sleep 1
-                    $centralAdmin = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.Url -like "*$($env:COMPUTERNAME):$centralAdminPort*"}
+                    $centralAdminServices = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.SharePoint.Administration.SPWebServiceInstance" -and $_.Name -eq "WSS_Administration"}
+                    $localCentralAdminService = $centralAdminServices | ? {MatchComputerName $_.Server.Address $env:COMPUTERNAME}
                 }
-                Write-Host -BackgroundColor Blue -ForegroundColor Black $($centralAdmin.Status)
+                Write-Host -BackgroundColor Blue -ForegroundColor Black $($localCentralAdminService.Status)
                 If ($xmlinput.Configuration.Farm.CentralAdmin.UseSSL -eq $true)
                 {
                     Write-Host -ForegroundColor White " - Enabling SSL for Central Admin..."
+                    $centralAdmin = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.IsAdministrationWebApplication}
                     $SSLHostHeader = $env:COMPUTERNAME
                     $SSLPort = $centralAdminPort
                     $SSLSiteName = $centralAdmin.DisplayName
@@ -1466,7 +1648,8 @@ Function CreateCentralAdmin([xml]$xmlinput)
                     AssignCert
                 }
             }
-            Else #Create a Central Admin site locally, with an AAM to the existing Central Admin
+            # Otherwise create a Central Admin site locally, with an AAM to the existing Central Admin
+            Else
             {
                 Write-Host -ForegroundColor White " - Creating local Central Admin site..."
                 $newCentralAdmin = New-SPCentralAdministration
@@ -1570,19 +1753,21 @@ Function ConfigureFarm([xml]$xmlinput)
             Write-Host -ForegroundColor White " - Installing Features..."
             $features = Install-SPFeature -AllExistingFeatures -Force
         }
-        # Detect if Central Admin URL already exists, i.e. if Central Admin web app is already provisioned on the local computer
-        $centralAdminPort = $xmlinput.Configuration.Farm.CentralAdmin.Port
-        $centralAdmin = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.Status -eq "Online"} | ? {$_.Url -like "*$($env:COMPUTERNAME):$centralAdminPort*"}
-
-        # Provision CentralAdmin if indicated in AutoSPInstallerInput.xml and the CA web app doesn't already exist
-        If ((ShouldIProvision $xmlinput.Configuration.Farm.CentralAdmin -eq $true) -and (!($centralAdmin))) {CreateCentralAdmin $xmlinput}
+        ### Detect if Central Admin URL already exists, i.e. if Central Admin web app is already provisioned on the local computer
+        ##$centralAdminPort = $xmlinput.Configuration.Farm.CentralAdmin.Port
+        ##$centralAdmin = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.Url -like "*$($env:COMPUTERNAME)*" -and $_.IsAdministrationWebApplication}
+        ### Provision CentralAdmin if indicated in AutoSPInstallerInput.xml and the CA web app doesn't already exist
+        ##If (ShouldIProvision $xmlinput.Configuration.Farm.CentralAdmin -eq $true) ## -and (!($centralAdmin)))
+        ##{
+            CreateCentralAdmin $xmlinput
+        ##}
         # Update Central Admin branding text for SharePoint 2013 based on the XML input Environment attribute
         if ($env:spVer -eq "15" -and !([string]::IsNullOrEmpty($xmlinput.Configuration.Environment)))
         {
             # From http://www.wictorwilen.se/sharepoint-2013-central-administration-productivity-tip?utm_source=feedburner&utm_medium=feed&utm_campaign=Feed%3A+WictorWilen+%28Wictor+Wil%C3%A9n+-+SharePoint+MCA%2C+MCM+and+MVP%29
             Write-Host -ForegroundColor White " - Updating Central Admin branding text to `"$($xmlinput.Configuration.Environment)`"..."
             $suiteBarBrandingElement = "SharePoint - " + $xmlinput.Configuration.Environment
-            $ca = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.IsAdministrationWebApplication -eq $true}
+            $ca = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.IsAdministrationWebApplication}
             $ca.SuiteBarBrandingElementHtml = "<div class='ms-core-brandingText'>$suiteBarBrandingElement</div>"
             $ca.Update()
         }
@@ -1717,7 +1902,7 @@ Function ConfigureLanguagePacks([xml]$xmlinput)
 Function AddManagedAccounts([xml]$xmlinput)
 {
     WriteLine
-    Write-Host -ForegroundColor White " - Adding Managed Accounts"
+    Write-Host -ForegroundColor White " - Adding Managed Accounts..."
     If ($xmlinput.Configuration.Farm.ManagedAccounts)
     {
         # Get the members of the local Administrators group
@@ -1739,18 +1924,22 @@ Function AddManagedAccounts([xml]$xmlinput)
             $username = $account.username
             $password = $account.Password
             $password = ConvertTo-SecureString "$password" -AsPlaintext -Force
+            $alreadyAdmin = $false
             # The following was suggested by Matthias Einig (http://www.codeplex.com/site/users/view/matein78)
             # And inspired by http://todd-carter.com/post/2010/05/03/Give-your-Application-Pool-Accounts-A-Profile.aspx & http://blog.brainlitter.com/archive/2010/06/08/how-to-revolve-event-id-1511-windows-cannot-find-the-local-profile-on-windows-server-2008.aspx
             Try
             {
-                Write-Host -ForegroundColor White " - Creating local profile for $username..." -NoNewline
                 $credAccount = New-Object System.Management.Automation.PsCredential $username,$password
                 $managedAccountDomain,$managedAccountUser = $username -Split "\\"
+                Write-Host -ForegroundColor White "  - Account `"$managedAccountDomain\$managedAccountUser`:"
+                Write-Host -ForegroundColor White "   - Creating local profile for $username..."
                 # Add managed account to local admins (very) temporarily so it can log in and create its profile
                 If (!($localAdmins -contains $managedAccountUser))
                 {
                     $builtinAdminGroup = Get-AdministratorsGroup
+                    Write-Host -ForegroundColor White "   - Adding to local Admins (*temporarily*)..." -NoNewline
                     ([ADSI]"WinNT://$env:COMPUTERNAME/$builtinAdminGroup,group").Add("WinNT://$managedAccountDomain/$managedAccountUser")
+                    Write-Host -ForegroundColor White "Done."
                 }
                 Else
                 {
@@ -1760,8 +1949,19 @@ Function AddManagedAccounts([xml]$xmlinput)
                 Start-Process -WorkingDirectory "$env:SYSTEMROOT\System32\" -FilePath "cmd.exe" -ArgumentList "/C" -LoadUserProfile -NoNewWindow -Credential $credAccount
                 # Remove managed account from local admins unless it was already there
                 $builtinAdminGroup = Get-AdministratorsGroup
-                If (-not $alreadyAdmin) {([ADSI]"WinNT://$env:COMPUTERNAME/$builtinAdminGroup,group").Remove("WinNT://$managedAccountDomain/$managedAccountUser")}
-                Write-Host -BackgroundColor Blue -ForegroundColor Black "Done."
+                If (-not $alreadyAdmin)
+                {
+                    Write-Host -ForegroundColor White "   - Removing from local Admins..." -NoNewline
+                    ([ADSI]"WinNT://$env:COMPUTERNAME/$builtinAdminGroup,group").Remove("WinNT://$managedAccountDomain/$managedAccountUser")
+                    if (!$?)
+                    {
+                        Write-Host -ForegroundColor White "."
+                        Write-Host -ForegroundColor Yellow "   - Could not remove `"$managedAccountDomain\$managedAccountUser`" from local Admins."
+                        Write-Host -ForegroundColor Yellow "   - Please remove it manually."
+                    }
+                    else {Write-Host -ForegroundColor White "Done."}
+                }
+                Write-Host -ForegroundColor White "  - Done."
             }
             Catch
             {
@@ -1773,10 +1973,10 @@ Function AddManagedAccounts([xml]$xmlinput)
             $managedAccount = Get-SPManagedAccount | Where-Object {$_.UserName -eq $username}
             If ($managedAccount -eq $null)
             {
-                Write-Host -ForegroundColor White " - Registering managed account $username..."
+                Write-Host -ForegroundColor White "   - Registering managed account $username..."
                 If ($username -eq $null -or $password -eq $null)
                 {
-                    Write-Host -BackgroundColor Gray -ForegroundColor DarkBlue " - Prompting for Account: "
+                    Write-Host -BackgroundColor Gray -ForegroundColor DarkBlue "   - Prompting for Account: "
                     $credAccount = $host.ui.PromptForCredential("Managed Account", "Enter Account Credentials:", "", "NetBiosUserName" )
                 }
                 Else
@@ -1784,15 +1984,15 @@ Function AddManagedAccounts([xml]$xmlinput)
                     $credAccount = New-Object System.Management.Automation.PsCredential $username,$password
                 }
                 New-SPManagedAccount -Credential $credAccount | Out-Null
-                If (-not $?) { Throw " - Failed to create managed account" }
+                If (-not $?) { Throw "   - Failed to create managed account" }
             }
             Else
             {
-                Write-Host -ForegroundColor White " - Managed account $username already exists."
+                Write-Host -ForegroundColor White "   - Managed account $username already exists."
             }
         }
     }
-    Write-Host -ForegroundColor White " - Done Adding Managed Accounts"
+    Write-Host -ForegroundColor White " - Done Adding Managed Accounts."
     WriteLine
 }
 #EndRegion
@@ -1925,6 +2125,7 @@ Function CreateGenericServiceApplication()
                     "Microsoft.Office.TranslationServices.TranslationServiceInstance" {} # Do nothing because the service app cmdlet automatically creates a proxy with the default name
                     "Microsoft.Office.Access.Services.MossHost.AccessServicesWebServiceInstance" {& $serviceProxyNewCmdlet -application $newServiceApplication | Out-Null}
                     "Microsoft.Office.Server.PowerPoint.Administration.PowerPointConversionServiceInstance" {& $serviceProxyNewCmdlet -Name "$serviceProxyName" -ServiceApplication $newServiceApplication -AddToDefaultGroup | Out-Null}
+                    "Microsoft.Office.Project.Server.Administration.PsiServiceInstance" {} # Do nothing because the service app cmdlet automatically creates a proxy with the default name
                     Default {& $serviceProxyNewCmdlet -Name "$serviceProxyName" -ServiceApplication $newServiceApplication | Out-Null}
                 }
                 Write-Host -ForegroundColor White " - Done provisioning $serviceName. "
@@ -2253,7 +2454,7 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
     if (!$webAppPoolAccount) {$webAppPoolAccount = Get-SPManagedAccountXML $xmlinput -CommonName "Portal"}
     $webAppName = $webApp.name
     $appPool = $webApp.applicationPool
-    $database = $dbPrefix+$webApp.Database.DBName
+    $database = $dbPrefix+$webApp.Database.Name
     $dbServer = $webApp.Database.DBServer
     # Check for an existing App Pool
     $existingWebApp = Get-SPWebApplication | Where-Object { ($_.ApplicationPool).Name -eq $appPool }
@@ -2278,17 +2479,17 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
     {
         $pathSwitch = @{Path = "$iisWebDir\wss\VirtualDirectories\$webAppName-$port"}
     }
-    else {$pathSwitch = ""}
+    else {$pathSwitch = @{}}
     # Only set $hostHeaderSwitch to blank if the UseHostHeader value exists has explicitly been set to false
     if (!([string]::IsNullOrEmpty($webApp.UseHostHeader)) -and $webApp.UseHostHeader -eq $false)
     {
-        $hostHeaderSwitch = ""
+        $hostHeaderSwitch = @{}
     }
     else {$hostHeaderSwitch = @{HostHeader = $hostHeader}}
     if (!([string]::IsNullOrEmpty($webApp.useClaims)) -and $webApp.useClaims -eq $false)
     {
         # Create the web app using Classic mode authentication
-        $authProviderSwitch = ""
+        $authProviderSwitch = @{}
     }
     else # Configure new web app to use Claims-based authentication
     {
@@ -2310,7 +2511,7 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
     }
     if ($appPoolExists)
     {
-        $appPoolAccountSwitch = ""
+        $appPoolAccountSwitch = @{}
     }
     else
     {
@@ -2320,7 +2521,7 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
     If ($getSPWebApplication -eq $null)
     {
         Write-Host -ForegroundColor White " - Creating Web App `"$webAppName`""
-        New-SPWebApplication -Name $webAppName @appPoolAccountSwitch -ApplicationPool $appPool -DatabaseServer $dbServer -DatabaseName $database @hostHeaderSwitch -Url $url -Port $port -SecureSocketsLayer:$useSSL @authProviderSwitch @pathSwitch | Out-Null
+        New-SPWebApplication -Name $webAppName -ApplicationPool $appPool -DatabaseServer $dbServer -DatabaseName $database -Url $url -Port $port -SecureSocketsLayer:$useSSL @hostHeaderSwitch @appPoolAccountSwitch @authProviderSwitch @pathSwitch | Out-Null
         If (-not $?) { Throw " - Failed to create web application" }
     }
     Else {Write-Host -ForegroundColor White " - Web app `"$webAppName`" already provisioned."}
@@ -2390,12 +2591,12 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
         {
             $templateSwitch = @{Template = $template}
         }
-        else {$templateSwitch = ""}
+        else {$templateSwitch = @{}}
         if ($siteCollection.HostNamedSiteCollection -eq $true)
         {
             $hostHeaderWebAppSwitch = @{HostHeaderWebApplication = $($webApp.url)+":"+$($webApp.port)}
         }
-        else {$hostHeaderWebAppSwitch = ""}
+        else {$hostHeaderWebAppSwitch = @{}}
         Write-Host -ForegroundColor White " - Checking for Site Collection `"$siteURL`"..."
         If (($getSPSiteCollection -eq $null) -and ($siteURL -ne $null))
         {
@@ -2602,7 +2803,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
             {
                 $mySiteDBServer = $xmlinput.Configuration.Farm.Database.DBServer
             }
-            $mySiteDB = $dbPrefix+$mySiteWebApp.Database.DBName
+            $mySiteDB = $dbPrefix+$mySiteWebApp.Database.Name
             $mySiteAppPoolAcct = Get-SPManagedAccountXML $xmlinput -CommonName "MySiteHost"
         }
         $portalWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "Portal"}
@@ -2628,11 +2829,11 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
         {
             $pathSwitch = @{Path = "$iisWebDir\wss\VirtualDirectories\$webAppName-$port"}
         }
-        else {$pathSwitch = ""}
+        else {$pathSwitch = @{}}
         # Only set $hostHeaderSwitch to blank if the UseHostHeader value exists has explicitly been set to false
         if (!([string]::IsNullOrEmpty($webApp.UseHostHeader)) -and $webApp.UseHostHeader -eq $false)
         {
-            $hostHeaderSwitch = ""
+            $hostHeaderSwitch = @{}
         }
         else {$hostHeaderSwitch = @{HostHeader = $hostHeader}}
 
@@ -2670,7 +2871,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
                 If ($getSPWebApplication -eq $null -and ($mySiteWebApp))
                 {
                     Write-Host -ForegroundColor White " - Creating Web App `"$mySiteName`"..."
-                    New-SPWebApplication -Name $mySiteName -ApplicationPoolAccount $($mySiteAppPoolAcct.username) -ApplicationPool $mySiteAppPool -DatabaseServer $mySiteDBServer -DatabaseName $mySiteDB @hostHeaderSwitch -Url $mySiteURL -Port $mySitePort -SecureSocketsLayer:$mySiteUseSSL @pathSwitch | Out-Null
+                    New-SPWebApplication -Name $mySiteName -ApplicationPoolAccount $($mySiteAppPoolAcct.username) -ApplicationPool $mySiteAppPool -DatabaseServer $mySiteDBServer -DatabaseName $mySiteDB -Url $mySiteURL -Port $mySitePort -SecureSocketsLayer:$mySiteUseSSL @hostHeaderSwitch @pathSwitch | Out-Null
                 }
                 Else
                 {
@@ -2955,7 +3156,7 @@ Function CreateUPSAsAdmin([xml]$xmlinput)
         if ([string]::IsNullOrEmpty($mySiteManagedPath))
         {
             # Don't specify the MySiteManagedPath switch if it was left blank. This will effectively use the default path of personal/sites
-            $mySiteManagedPathSwitch = ""
+            $mySiteManagedPathSwitch = @{}
         }
         else
         {
@@ -3148,7 +3349,7 @@ Function ConfigureIISLogging([xml]$xmlinput)
             If (Test-Path -Path $oldIISLogDir)
             {
                 Write-Host -ForegroundColor White " - Moving any contents in old location $oldIISLogDir to $IISLogDir..."
-                ForEach ($item in $(Get-ChildItem $oldIISLogDir))
+                ForEach ($item in $(Get-ChildItem -Path $oldIISLogDir))
                 {
                     Move-Item -Path $oldIISLogDir\$item -Destination $IISLogDir -Force -ErrorAction SilentlyContinue
                 }
@@ -3229,7 +3430,7 @@ Function ConfigureDiagnosticLogging([xml]$xmlinput)
         If (($ULSLogDir -ne $oldULSLogDir) -and (!([string]::IsNullOrEmpty($oldULSLogDir))))
         {
             Write-Host -ForegroundColor White " - Moving any contents in old location $oldULSLogDir to $ULSLogDir..."
-            ForEach ($item in $(Get-ChildItem $oldULSLogDir) | Where-Object {$_.Name -like "*.log"})
+            ForEach ($item in $(Get-ChildItem -Path $oldULSLogDir) | Where-Object {$_.Name -like "*.log"})
             {
                 Move-Item -Path $oldULSLogDir\$item -Destination $ULSLogDir -Force -ErrorAction SilentlyContinue
             }
@@ -3285,7 +3486,7 @@ Function ConfigureUsageLogging([xml]$xmlinput)
             If (($usageLogDir -ne $oldUsageLogDir) -and (!([string]::IsNullOrEmpty($oldUsageLogDir))))
             {
                 Write-Host -ForegroundColor White " - Moving any contents in old location $oldUsageLogDir to $usageLogDir..."
-                ForEach ($item in $(Get-ChildItem $oldUsageLogDir) | Where-Object {$_.Name -like "*.usage"})
+                ForEach ($item in $(Get-ChildItem -Path $oldUsageLogDir) | Where-Object {$_.Name -like "*.usage"})
                 {
                     Move-Item -Path $oldUsageLogDir\$item -Destination $usageLogDir -Force -ErrorAction SilentlyContinue
                 }
@@ -3721,9 +3922,9 @@ Function ConfigureDistributedCacheService ([xml]$xmlinput)
             Write-Host -ForegroundColor White " - Stopping the Distributed Cache Service..." -NoNewline
             if ($serviceInstance.Status -eq "Online")
             {
-            Stop-SPDistributedCacheServiceInstance -Graceful
-            Remove-SPDistributedCacheServiceInstance
-            Write-Host -ForegroundColor White "Done."
+                Stop-SPDistributedCacheServiceInstance -Graceful
+                Remove-SPDistributedCacheServiceInstance
+                Write-Host -ForegroundColor White "Done."
             }
             else {Write-Host -ForegroundColor White "Already stopped."}
         }
@@ -4289,7 +4490,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                         # Specify the RootDirectory parameter only if it's different than the default path
                         if ($indexLocation -ne "$dataDir\Office Server\Applications")
                         {$rootDirectorySwitch = @{RootDirectory = $indexLocation}}
-                        else {$rootDirectorySwitch = ""}
+                        else {$rootDirectorySwitch = @{}}
                         New-SPEnterpriseSearchIndexComponent –SearchTopology $clone -SearchServiceInstance $searchSvc @rootDirectorySwitch | Out-Null
                         If ($?)
                         {
@@ -4416,7 +4617,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                         {
                             # Get the #searchApp object again to prevent conflicts
                             $searchApp = Get-SPEnterpriseSearchServiceApplication -Identity $appConfig.Name
-                            SetSearchCenterUrl $appConfig.SearchCenterURL $searchApp
+                            SetSearchCenterUrl $appConfig.SearchCenterURL.TrimEnd("/") $searchApp
                             if ($?)
                             {
                                 $done = $true
@@ -4480,7 +4681,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
         if ($env:spVer -eq "15") # Invoke-WebRequest requires PowerShell 3.0 but if we're installing SP2013 and we've gotten this far, we must have v3.0
         {
             # Issue a request to the Farm Search Administration page to avoid a Health Analyzer warning about 'Missing Server Side Dependencies'
-            $ca = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.IsAdministrationWebApplication -eq $true}
+            $ca = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.IsAdministrationWebApplication}
             $centralAdminUrl = $ca.Url
             if ($ca.Url -like "http://*" -or $ca.Url -like "*$($env:COMPUTERNAME)*") # If Central Admin uses SSL, only attempt the web request if we're on the same server as Central Admin, otherwise it may throw a certificate error due to our self-signed cert
             {
@@ -5173,11 +5374,6 @@ Function CreateAppManagementServiceApp ([xml]$xmlinput)
     If (ShouldIProvision $serviceConfig -eq $true)
     {
         WriteLine
-	    # If we haven't specified a DB Server then just use the default used by the Farm
-	    If ([string]::IsNullOrEmpty($dbServer))
-	    {
-	        $dbServer = $xmlinput.Configuration.Farm.Database.DBServer
-	    }
 	    $serviceDB = $dbPrefix+$serviceConfig.Database.Name
 	    $dbServer = $serviceConfig.Database.DBServer
 	    # If we haven't specified a DB Server then just use the default used by the Farm
@@ -5208,11 +5404,6 @@ Function CreateSubscriptionSettingsServiceApp ([xml]$xmlinput)
     If (ShouldIProvision $serviceConfig -eq $true)
     {
         WriteLine
-	    # If we haven't specified a DB Server then just use the default used by the Farm
-	    If ([string]::IsNullOrEmpty($dbServer))
-	    {
-	        $dbServer = $xmlinput.Configuration.Farm.Database.DBServer
-	    }
 	    $serviceDB = $dbPrefix+$serviceConfig.Database.Name
 	    $dbServer = $serviceConfig.Database.DBServer
 	    # If we haven't specified a DB Server then just use the default used by the Farm
@@ -5349,6 +5540,101 @@ Function CreateWorkManagementServiceApp ([xml]$xmlinput)
 }
 #EndRegion
 #EndRegion
+
+#Region Create Project Server Service Application
+Function CreateProjectServerServiceApp ([xml]$xmlinput)
+{
+    $serviceConfig = $xmlinput.Configuration.ProjectServer.ServiceApp
+    If ((ShouldIProvision $serviceConfig) -and $xmlinput.Configuration.ProjectServer.Install -eq $true) # We need to check that Project Server has been requested for install, not just if the service app should be provisioned
+    {
+        WriteLine
+        $dbPrefix = $xmlinput.Configuration.Farm.Database.DBPrefix
+        If (($dbPrefix -ne "") -and ($dbPrefix -ne $null)) {$dbPrefix += "_"}
+        If ($dbPrefix -like "*localhost*") {$dbPrefix = $dbPrefix -replace "localhost","$env:COMPUTERNAME"}
+	    $serviceDB = $dbPrefix+$serviceConfig.Database.Name
+	    $dbServer = $serviceConfig.Database.DBServer
+	    # If we haven't specified a DB Server then just use the default used by the Farm
+	    If ([string]::IsNullOrEmpty($dbServer))
+	    {
+	        $dbServer = $xmlinput.Configuration.Farm.Database.DBServer
+	    }
+        $serviceInstanceType = "Microsoft.Office.Project.Server.Administration.PsiServiceInstance"
+        CreateGenericServiceApplication -ServiceConfig $serviceConfig `
+                                        -ServiceInstanceType $serviceInstanceType `
+                                        -ServiceName $serviceConfig.Name `
+                                        -ServiceProxyName $serviceConfig.ProxyName `
+                                        -ServiceGetCmdlet "Get-SPServiceApplication" `
+                                        -ServiceProxyGetCmdlet "Get-SPServiceApplicationProxy" `
+									    -ServiceNewCmdlet "New-SPProjectServiceApplication -Proxy:`$true" `
+                                        -ServiceProxyNewCmdlet "New-SPProjectServiceApplicationProxy" # We won't be using the proxy cmdlet though for Project Server
+
+        # Update process account for Project services
+        $projectServices = @("Microsoft.Office.Project.Server.Administration.ProjectEventService", "Microsoft.Office.Project.Server.Administration.ProjectCalcService", "Microsoft.Office.Project.Server.Administration.ProjectQueueService")
+        foreach ($projectService in $projectServices)
+        {
+            $projectServiceInstances = (Get-SPFarm).Services | ? {$_.GetType().ToString() -eq $projectService}
+            foreach ($projectServiceInstance in $projectServiceInstances)
+            {
+                UpdateProcessIdentity $projectServiceInstance
+            }
+        }
+        # Create a Project Server DB
+        $portalWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "Portal"}
+        Write-Host -ForegroundColor White " - Creating Project Server database `"$serviceDB`"..." -NoNewline
+        if (!(Get-SPDatabase | Where-Object {$_.Name -eq $serviceDB}))
+        {
+            ##New-SPProjectDatabase -Name $serviceDB -WebApplication (Get-SPWebApplication | Where-Object {$_.Name -eq $portalWebApp.Name}) -DatabaseServer $dbServer | Out-Null
+            New-SPProjectDatabase -Name $serviceDB -ServiceApplication (Get-SPServiceApplication | Where-Object {$_.Name -eq $serviceConfig.Name}) -DatabaseServer $dbServer | Out-Null
+            if ($?) {Write-Host -ForegroundColor Black -BackgroundColor Blue "Done."}
+            else
+            {
+                Write-Host -ForegroundColor White "."
+                throw {"Error creating the Project Server database."}
+            }
+        }
+        else
+        {
+            Write-Host -ForegroundColor Black -BackgroundColor Blue "Already exits."
+        }
+        # Create a Project Server Web Instance
+        $projectManagedPath = $xmlinput.Configuration.ProjectServer.ServiceApp.ManagedPath
+        New-SPManagedPath -RelativeURL $xmlinput.Configuration.ProjectServer.ServiceApp.ManagedPath -WebApplication (Get-SPWebApplication | Where-Object {$_.Name -eq $portalWebApp.Name}) -Explicit:$true -ErrorAction SilentlyContinue | Out-Null
+        Write-Host -ForegroundColor White " - Creating Project Server site collection at `"$projectManagedPath`"..." -NoNewline
+        $projectSiteUrl = $portalWebApp.Url+":"+$portalWebApp.Port+"/"+$projectManagedPath
+        if (!(Get-SPSite -Identity $projectSiteUrl -ErrorAction SilentlyContinue))
+        {
+            $projectSite = New-SPSite -Url $projectSiteUrl  -OwnerAlias $env:USERDOMAIN\$env:USERNAME -Template "PROJECTSITE#0"
+            if ($?) {Write-Host -ForegroundColor Black -BackgroundColor Blue "Done."}
+            else
+            {
+                Write-Host -ForegroundColor White "."
+                throw {"Error creating the Project Server site collection."}
+            }
+        }
+        else
+        {
+            Write-Host -ForegroundColor Black -BackgroundColor Blue "Already exits."
+        }
+        Write-Host -ForegroundColor White " - Creating Project Server web instance at `"$projectSiteUrl`"..." -NoNewline
+        if (!(Get-SPProjectWebInstance -Url $projectSiteUrl -ErrorAction SilentlyContinue))
+        {
+            Mount-SPProjectWebInstance -DatabaseName $serviceDB -SiteCollection $projectSite
+            if ($?) {Write-Host -ForegroundColor Black -BackgroundColor Blue "Done."}
+            else
+            {
+                Write-Host -ForegroundColor White "."
+                throw {"Error creating the Project Server web instance."}
+            }
+        }
+        else
+        {
+            Write-Host -ForegroundColor Black -BackgroundColor Blue "Already exits."
+        }
+        WriteLine
+    }
+}
+#EndRegion
+
 
 #Region Configure Outgoing Email
 # This is from http://autospinstaller.codeplex.com/discussions/228507?ProjectName=autospinstaller courtesy of rybocf
@@ -6623,7 +6909,7 @@ function userExists ([string]$name)
 # ====================================================================================
 Function AddResourcesLink([string]$title,[string]$url)
 {
-    $centraladminapp = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.IsAdministrationWebApplication -eq $true}
+    $centraladminapp = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.IsAdministrationWebApplication}
     $centraladminurl = $centraladminapp.Url
     $centraladmin = (Get-SPSite $centraladminurl)
 

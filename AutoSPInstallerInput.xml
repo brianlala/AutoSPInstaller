@@ -20,8 +20,8 @@
        e.g. <ExcelServices Provision="Server1 Server2"> would provision excel services only on Server1 and Server2. -->
 <!-- The Environment attribute below appears at the top of the installation transcript, and will now also appear at the top of the SharePoint 2013 Central Administration top-left branding bar. It does not affect the SharePoint 2010 installation though.
      Simply leave the Environment attribute blank if you do not want to alter the branding bar in SP2013 Central Admin.
-     The Version attribute is for now really just the XML schema version. -->
-<Configuration Environment="Dev" Version="3.95">
+     The Version attribute is now used for comparing the XML schema version with the version of the script (specifically, AutoSPInstallerFunctions.ps1), as there may be dependencies between XML and script elements. -->
+<Configuration Environment="Dev" Version="3.96">
     <!-- The Install section controls what modifications are made to the Windows OS prior to installation and how the SharePoint installation is run.
          You can also explicitly state the SPVersion of SharePoint being installed, (in case you have binaries for both SP2010/SP2013 in your folder structure).
          Allowed values are "2010" or "2013". If you omit this, the script will attempt to determine the version anyhow, and default to 2013 if both sets of install files are present. -->
@@ -29,6 +29,10 @@
         <!-- The following few elements are parameters for the file containing the unattended install settings for SharePoint's setup.exe. Normally this is called config.xml.
              AutoSPInstaller can now create this file if it doesn't already exist (based on the ConfigFile name), and use the values below for PIDKey and SKU. -->
         <ConfigFile>config-AutoSPInstaller.xml</ConfigFile>
+        <!-- InstallDir is the location to use to store the SharePoint server program files (on a drive letter that must exist on all SharePoint servers in the farm)
+             If you don't specify a value, the default location of %PROGRAMFILES%\Microsoft Office Servers\ is used. Don't change this unless you know what you're doing :)
+             Note that this does NOT affect the location of the 14/15 "hive" or SharePoint root - this will still always go to %COMMONPROGRAMFILES%\Microsoft Shared\Web Server Extensions\... -->
+        <InstallDir></InstallDir>
         <!-- DataDir is the location to use to store the SharePoint data files, including (by default) the search index files (on a drive letter that must exist on all SharePoint servers in the farm)
              If you don't specify a value, the default location of %PROGRAMFILES%\Microsoft Office Servers\14.0\Data or %PROGRAMFILES%\Microsoft Office Servers\15.0\Data (based on SharePoint version) is used -->
         <DataDir></DataDir>
@@ -106,7 +110,7 @@
              Note that while some services are stopped by default, many are already started so be careful to specify ONLY the servers on which you want a particular service to be running (or "true" for all, "false" for none) -->
         <Services>
             <SandboxedCodeService Start="false" />
-            <!-- The UpdateAccount attribute will set the Claims To Windows Token Service (C2WTS) to run under an account other than the default Local System (the general spservice account), and thus avoid a Health Analyzer warning. However it might break things like PowerPivot and Excel Services so best bet is to leave it "false" -->
+            <!-- The UpdateAccount attribute will set the Claims To Windows Token Service (C2WTS) to run under an account other than the default Local System (the general spservice account), and thus avoid a Health Analyzer warning. However it might break things like PowerPivot and Excel Services so best bet is to leave it "false". -->
             <ClaimsToWindowsTokenService Start="false" UpdateAccount="false" />
             <SMTP Install="false" />
             <OutgoingEmail Configure="true">
@@ -115,11 +119,12 @@
                 <ReplyToEmail></ReplyToEmail>
             </OutgoingEmail>
             <IncomingEmail Start="localhost" />
-            <!-- As a general rule DistributedCache - Start should never be set to "false", only either "true" for all servers, or a comma-delimited list of specific servers -->
+            <!-- As a general rule DistributedCache - Start should never be set to "false", only either "true" for all servers, or a comma-delimited list of specific servers. -->
             <DistributedCache Start="localhost" />
-            <!-- As a general rule WorkflowTimer - Start should never be set to "false", only either "true" for all servers, or a comma-delimited list of specific servers -->
+            <!-- As a general rule WorkflowTimer - Start should never be set to "false", only either "true" for all servers, or a comma-delimited list of specific servers.
+                 Normally you would specify the same servers to provision WorkflowTimer as you would FoundationWebApplication below. -->
             <WorkflowTimer Start="localhost" />
-            <!-- As a general rule FoundationWebApplication - Start should never be set to "false", only either "true" for all servers, or a comma-delimited list of specific WFE servers 
+            <!-- As a general rule FoundationWebApplication - Start should never be set to "false", only either "true" for all servers, or a comma-delimited list of specific WFE servers.
                  *Note* if you want to remotely install dedicated WFEs in your farm (i.e. RemoteInstall Enable="true") you should name the servers here, in a comma separated list - e.g. Start="WFE1,WFE2,WFEx" -->
             <FoundationWebApplication Start="localhost" />
         </Services>
@@ -216,8 +221,8 @@
                         useOnlineWebPartCatalog="false">
             <!-- You can now specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
-                <!-- DBName: Name of the first content database for this web application. -->
-                <DBName>Content_Portal</DBName>
+                <!-- Name: Name of the first content database for this web application. -->
+                <Name>Content_Portal</Name>
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
@@ -272,8 +277,8 @@
                         useOnlineWebPartCatalog="false">
             <!-- You can now specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
-                <!-- DBName: Name of the first content database for this web application. -->
-                <DBName>Content_MySites</DBName>
+                <!-- Name: Name of the first content database for this web application. -->
+                <Name>Content_MySites</Name>
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
@@ -663,6 +668,32 @@
                            ProxyName="PowerPoint Service Application">
         </PowerPointService>
     </OfficeWebApps>
+    <!-- The ProjectServer section controls the installation of Project Server 2013. Setting Install="true" requires the Project Server installation files to be present.
+         Note: ProjectServer Install can only be "true" or "false" - server names are not allowed here because the bits must be installed on every server in a SharePoint farm.
+         ProjectServerServiceApp Provision however works as usual, with comma-separated server names, or true/false. -->
+    <ProjectServer Install="false"
+                   ConfigFile="config-ProjectServer2013.xml"
+                   PIDKeyProjectServer="">
+        <ServiceApp Provision="false"
+                    Name="Project Server Service Application"
+                    ProxyName="Project Server Service Application"
+                    ManagedPath="PWA"
+                    ServiceAccount="DOMAIN\SP_ProjectServer"
+                    ServiceAccountPassword="">
+            <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
+            <Database>
+                <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
+                <Name>ProjectServer</Name>
+                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
+                     If you leave <DBServer> blank, the default DBServer value for the farm is used -->
+                <DBServer></DBServer>
+                <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
+                <DBAlias Create="false"
+                         DBInstance="SERVER\INSTANCE"
+                         DBPort="" />
+            </Database>
+        </ServiceApp>
+    </ProjectServer>
     <!-- The AdobePDF section can install the Adobe PDF iFilter and configure the search indexer to use it, plus add the proper icon for .pdf files in SharePoint.
          Also, we can configure SharePoint web app MIME type associations to allow direct opening of PDF files (instead of the default behavior of only allowing 'save as') -->
     <AdobePDF>

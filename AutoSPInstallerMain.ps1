@@ -167,6 +167,7 @@ Function Run-Install
     ConfigureIISLogging $xmlinput
     InstallSharePoint $xmlinput
     InstallOfficeWebApps2010 $xmlinput
+    InstallProjectServer $xmlinput
     InstallLanguagePacks $xmlinput
     InstallUpdates
     FixTaxonomyPickerBug
@@ -212,6 +213,7 @@ Function Setup-Services
     CreateVisioServiceApp $xmlinput
     CreatePerformancePointServiceApp $xmlinput
     CreateWordAutomationServiceApp $xmlinput
+    CreateProjectServerServiceApp $xmlinput
     ConfigureWorkflowTimerService $xmlinput
     if ($env:spVer -eq "14") # These are for SP2010 / Office Web Apps 2010 only
     {

@@ -24,4 +24,7 @@ OR
 \SP\2010\PDF\PDFiFilter64installer.msi (optional, only required/supported with SP2010)
 \SP\201x\ForeFront\ (optional)
 
-\SP\201x\Updates (optional, for installation of SharePoint Public/Cumulative Updates instead of or in addition to slipstreaming)
+\SP\2013\ProjectServer\ (copy/extract the contents of the Project Server 2013 DVD/ISO here)
+\SP\2013\ProjectServer\Updates (optional, for slipstreaming Service Packs and Public/Cumulative Updates. NOTE not all updates support slipstreaming!)
+
+\SP\201x\Updates (optional, for installation of SharePoint or Project Server Public/Cumulative Updates instead of or in addition to slipstreaming)
