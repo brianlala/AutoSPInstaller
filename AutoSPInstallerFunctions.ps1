@@ -16,7 +16,6 @@ Function CheckXMLVersion ([xml]$xmlinput)
     }
 }
 
-
 #Region Validate Passphrase
 Function ValidatePassphrase([xml]$xmlinput)
 {
@@ -585,90 +584,96 @@ Function InstallPrerequisites([xml]$xmlinput)
         }
         Try
         {
-			# Install prerequisites manually without using PrerequisiteInstaller if we're installing SP2010 on on Windows Server 2012
+            # Detect if we're installing SP2010 on on Windows Server 2012
             if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
             {
-			    Throw " - SharePoint 2010 is officially unsupported on Windows Server 2012 - see http://support.microsoft.com/kb/2724471"
-			}
-            else # Install using PrerequisiteInstaller as usual
-            {
-                If ($xmlinput.Configuration.Install.OfflineInstall -eq $true) # Install all prerequisites from local folder
+                Write-Host -ForegroundColor White " - Checking for required version of PrerequisiteInstaller.exe..." -NoNewline
+                $prereqInstallerVer = (Get-Command $env:SPbits\PrerequisiteInstaller.exe).FileVersionInfo.ProductVersion
+                # Check for the version of PrerequisiteInstaller.exe included in the MS-provided SharePoint 2010 SP2-integrated package, required for Win2012 compatibility
+                if ($prereqInstallerVer -ne "14.0.7009.1000")
                 {
-                    If ($env:spVer -eq "14") # SP2010
-                    {
-                        Write-Host -ForegroundColor White "  - SQL Native Client..."
-                        # Install SQL native client before running pre-requisite installer as newest versions require an IACCEPTSQLNCLILICENSETERMS=YES argument
-                        Start-Process "$env:SPbits\PrerequisiteInstallerFiles\sqlncli.msi" -Wait -ArgumentList "/passive /norestart IACCEPTSQLNCLILICENSETERMS=YES"
-                        Write-Host -ForegroundColor Blue "  - Running Prerequisite Installer (offline mode)..." -NoNewline
-                        $startTime = Get-Date
-                        Start-Process "$env:SPbits\PrerequisiteInstaller.exe" -ArgumentList "/unattended `
-                                                                                            /SQLNCli:`"$env:SPbits\PrerequisiteInstallerFiles\sqlncli.msi`" `
-                                                                                            /ChartControl:`"$env:SPbits\PrerequisiteInstallerFiles\MSChart.exe`" `
-                                                                                            /NETFX35SP1:`"$env:SPbits\PrerequisiteInstallerFiles\dotnetfx35.exe`" `
-                                                                                            /PowerShell:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.0-KB968930-x64.msu`" `
-                                                                                            /KB976394:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.0-KB976394-x64.msu`" `
-                                                                                            /KB976462:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.1-KB976462-v2-x64.msu`" `
-                                                                                            /IDFX:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.0-KB974405-x64.msu`" `
-                                                                                            /IDFXR2:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.1-KB974405-x64.msu`" `
-                                                                                            /Sync:`"$env:SPbits\PrerequisiteInstallerFiles\Synchronization.msi`" `
-                                                                                            /FilterPack:`"$env:SPbits\PrerequisiteInstallerFiles\FilterPack\FilterPack.msi`" `
-                                                                                            /ADOMD:`"$env:SPbits\PrerequisiteInstallerFiles\SQLSERVER2008_ASADOMD10.msi`" `
-                                                                                            /ReportingServices:`"$env:SPbits\PrerequisiteInstallerFiles\rsSharePoint.msi`" `
-                                                                                            /Speech:`"$env:SPbits\PrerequisiteInstallerFiles\SpeechPlatformRuntime.msi`" `
-                                                                                            /SpeechLPK:`"$env:SPbits\PrerequisiteInstallerFiles\MSSpeech_SR_en-US_TELE.msi`""
-                        If (-not $?) {Throw}
-                    }
-                    ElseIf ($env:spVer -eq "15") #SP2013
-                    {
-                        if ((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") # Try to pre-install .Net Framework 3.5.1 on Windows Server 2012
-                        {
-                            if (Test-Path -Path "$env:SPbits\PrerequisiteInstallerFiles\sxs")
-                            {
-                                Write-Host -ForegroundColor White "  - .Net Framework 3.5.1 from `"$env:SPbits\PrerequisiteInstallerFiles\sxs`"..." -NoNewline
-                                # Get the current progress preference
-                                $pref = $ProgressPreference
-                                # Hide the progress bar since it tends to not disappear
-                                $ProgressPreference = "SilentlyContinue"
-                                Import-Module ServerManager
-                                if (!(Get-WindowsFeature -Name NET-Framework-Core).Installed)
-                                {
-                                    Start-Process -FilePath DISM.exe -ArgumentList "/Online /Enable-Feature /FeatureName:NetFx3 /All /LimitAccess /Source:`"$env:SPbits\PrerequisiteInstallerFiles\sxs`"" -NoNewWindow -Wait
-                                    ##Install-WindowsFeature NET-Framework-Core –Source "$env:SPbits\PrerequisiteInstallerFiles\sxs" | Out-Null
-                                    Write-Host -ForegroundColor White "Done."
-                                }
-                                else {Write-Host -ForegroundColor White "Already installed."}
-                                # Restore progress preference
-                                $ProgressPreference = $pref
-                            }
-                            else {Write-Host -ForegroundColor White " - Could not locate source for .Net Framework 3.5.1`n - The PrerequisiteInstaller will attempt to download it."}
-                        }
-                        Write-Host -ForegroundColor Blue "  - Running Prerequisite Installer (offline mode)..." -NoNewline
-                        $startTime = Get-Date
-                        Start-Process "$env:SPbits\PrerequisiteInstaller.exe" -ArgumentList "/unattended `
-                                                                                             /SQLNCli:`"$env:SPbits\PrerequisiteInstallerFiles\sqlncli.msi`" `
-                                                                                             /PowerShell:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.1-KB2506143-x64.msu`" `
-                                                                                             /NETFX:`"$env:SPbits\PrerequisiteInstallerFiles\dotNetFx45_Full_x86_x64.exe`" `
-                                                                                             /IDFX:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.1-KB974405-x64.msu`" `
-                                                                                             /IDFX11:`"$env:SPbits\PrerequisiteInstallerFiles\MicrosoftIdentityExtensions-64.msi`" `
-                                                                                             /Sync:`"$env:SPbits\PrerequisiteInstallerFiles\Synchronization.msi`" `
-                                                                                             /AppFabric:`"$env:SPbits\PrerequisiteInstallerFiles\WindowsServerAppFabricSetup_x64.exe`" `
-                                                                                             /KB2671763:`"$env:SPbits\PrerequisiteInstallerFiles\AppFabric1.1-RTM-KB2671763-x64-ENU.exe`" `
-                                                                                             /MSIPCClient:`"$env:SPbits\PrerequisiteInstallerFiles\setup_msipc_x64.msi`" `
-                                                                                             /WCFDataServices:`"$env:SPbits\PrerequisiteInstallerFiles\WcfDataServices.exe`""
-                        If (-not $?) {Throw}
-                    }
+                    Write-Host -ForegroundColor White "."
+                    Throw " - SharePoint 2010 is officially unsupported on Windows Server 2012 without an updated set of SP2-integrated binaries - see http://support.microsoft.com/kb/2724471"
                 }
-                Else # Regular prerequisite install - download required files
+                else {Write-Host -BackgroundColor Blue -ForegroundColor Black "OK."}
+             }
+            # Install using PrerequisiteInstaller as usual
+            If ($xmlinput.Configuration.Install.OfflineInstall -eq $true) # Install all prerequisites from local folder
+            {
+                If ($env:spVer -eq "14") # SP2010
                 {
-                    Write-Host -ForegroundColor Blue "  - Running Prerequisite Installer (online mode)..." -NoNewline
+                    Write-Host -ForegroundColor White "  - SQL Native Client..."
+                    # Install SQL native client before running pre-requisite installer as newest versions require an IACCEPTSQLNCLILICENSETERMS=YES argument
+                    Start-Process "$env:SPbits\PrerequisiteInstallerFiles\sqlncli.msi" -Wait -ArgumentList "/passive /norestart IACCEPTSQLNCLILICENSETERMS=YES"
+                    Write-Host -ForegroundColor Blue "  - Running Prerequisite Installer (offline mode)..." -NoNewline
                     $startTime = Get-Date
-                    Start-Process "$env:SPbits\PrerequisiteInstaller.exe" -ArgumentList "/unattended" -WindowStyle Minimized
+                    Start-Process "$env:SPbits\PrerequisiteInstaller.exe" -ArgumentList "/unattended `
+                                                                                        /SQLNCli:`"$env:SPbits\PrerequisiteInstallerFiles\sqlncli.msi`" `
+                                                                                        /ChartControl:`"$env:SPbits\PrerequisiteInstallerFiles\MSChart.exe`" `
+                                                                                        /NETFX35SP1:`"$env:SPbits\PrerequisiteInstallerFiles\dotnetfx35.exe`" `
+                                                                                        /PowerShell:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.0-KB968930-x64.msu`" `
+                                                                                        /KB976394:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.0-KB976394-x64.msu`" `
+                                                                                        /KB976462:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.1-KB976462-v2-x64.msu`" `
+                                                                                        /IDFX:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.0-KB974405-x64.msu`" `
+                                                                                        /IDFXR2:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.1-KB974405-x64.msu`" `
+                                                                                        /Sync:`"$env:SPbits\PrerequisiteInstallerFiles\Synchronization.msi`" `
+                                                                                        /FilterPack:`"$env:SPbits\PrerequisiteInstallerFiles\FilterPack\FilterPack.msi`" `
+                                                                                        /ADOMD:`"$env:SPbits\PrerequisiteInstallerFiles\SQLSERVER2008_ASADOMD10.msi`" `
+                                                                                        /ReportingServices:`"$env:SPbits\PrerequisiteInstallerFiles\rsSharePoint.msi`" `
+                                                                                        /Speech:`"$env:SPbits\PrerequisiteInstallerFiles\SpeechPlatformRuntime.msi`" `
+                                                                                        /SpeechLPK:`"$env:SPbits\PrerequisiteInstallerFiles\MSSpeech_SR_en-US_TELE.msi`""
                     If (-not $?) {Throw}
                 }
-                Show-Progress -Process PrerequisiteInstaller -Color Blue -Interval 5
-                $delta,$null = (New-TimeSpan -Start $startTime -End (Get-Date)).ToString() -split "\."
-                Write-Host -ForegroundColor White "  - Prerequisite Installer completed in $delta."
+                ElseIf ($env:spVer -eq "15") #SP2013
+                {
+                    if ((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") # Try to pre-install .Net Framework 3.5.1 on Windows Server 2012
+                    {
+                        if (Test-Path -Path "$env:SPbits\PrerequisiteInstallerFiles\sxs")
+                        {
+                            Write-Host -ForegroundColor White "  - .Net Framework 3.5.1 from `"$env:SPbits\PrerequisiteInstallerFiles\sxs`"..." -NoNewline
+                            # Get the current progress preference
+                            $pref = $ProgressPreference
+                            # Hide the progress bar since it tends to not disappear
+                            $ProgressPreference = "SilentlyContinue"
+                            Import-Module ServerManager
+                            if (!(Get-WindowsFeature -Name NET-Framework-Core).Installed)
+                            {
+                                Start-Process -FilePath DISM.exe -ArgumentList "/Online /Enable-Feature /FeatureName:NetFx3 /All /LimitAccess /Source:`"$env:SPbits\PrerequisiteInstallerFiles\sxs`"" -NoNewWindow -Wait
+                                ##Install-WindowsFeature NET-Framework-Core –Source "$env:SPbits\PrerequisiteInstallerFiles\sxs" | Out-Null
+                                Write-Host -ForegroundColor White "Done."
+                            }
+                            else {Write-Host -ForegroundColor White "Already installed."}
+                            # Restore progress preference
+                            $ProgressPreference = $pref
+                        }
+                        else {Write-Host -ForegroundColor White " - Could not locate source for .Net Framework 3.5.1`n - The PrerequisiteInstaller will attempt to download it."}
+                    }
+                    Write-Host -ForegroundColor Blue "  - Running Prerequisite Installer (offline mode)..." -NoNewline
+                    $startTime = Get-Date
+                    Start-Process "$env:SPbits\PrerequisiteInstaller.exe" -ArgumentList "/unattended `
+                                                                                         /SQLNCli:`"$env:SPbits\PrerequisiteInstallerFiles\sqlncli.msi`" `
+                                                                                         /PowerShell:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.1-KB2506143-x64.msu`" `
+                                                                                         /NETFX:`"$env:SPbits\PrerequisiteInstallerFiles\dotNetFx45_Full_x86_x64.exe`" `
+                                                                                         /IDFX:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.1-KB974405-x64.msu`" `
+                                                                                         /IDFX11:`"$env:SPbits\PrerequisiteInstallerFiles\MicrosoftIdentityExtensions-64.msi`" `
+                                                                                         /Sync:`"$env:SPbits\PrerequisiteInstallerFiles\Synchronization.msi`" `
+                                                                                         /AppFabric:`"$env:SPbits\PrerequisiteInstallerFiles\WindowsServerAppFabricSetup_x64.exe`" `
+                                                                                         /KB2671763:`"$env:SPbits\PrerequisiteInstallerFiles\AppFabric1.1-RTM-KB2671763-x64-ENU.exe`" `
+                                                                                         /MSIPCClient:`"$env:SPbits\PrerequisiteInstallerFiles\setup_msipc_x64.msi`" `
+                                                                                         /WCFDataServices:`"$env:SPbits\PrerequisiteInstallerFiles\WcfDataServices.exe`""
+                    If (-not $?) {Throw}
+                }
             }
+            Else # Regular prerequisite install - download required files
+            {
+                Write-Host -ForegroundColor Blue "  - Running Prerequisite Installer (online mode)..." -NoNewline
+                $startTime = Get-Date
+                Start-Process "$env:SPbits\PrerequisiteInstaller.exe" -ArgumentList "/unattended" -WindowStyle Minimized
+                If (-not $?) {Throw}
+            }
+            Show-Progress -Process PrerequisiteInstaller -Color Blue -Interval 5
+            $delta,$null = (New-TimeSpan -Start $startTime -End (Get-Date)).ToString() -split "\."
+            Write-Host -ForegroundColor White "  - Prerequisite Installer completed in $delta."
             If ($env:spVer -eq "15") # SP2013
             {
                 # Install the "missing prerequisites" for SP2013 per http://www.toddklindt.com/blog/Lists/Posts/Post.aspx?ID=349
@@ -906,7 +911,7 @@ Function InstallSharePoint([xml]$xmlinput)
                 Start-Sleep 1
             }
             Write-Host -ForegroundColor Blue "Done."
-            Write-Host -ForegroundColor White " - Exiting Products and Technologies Wizard - using Powershell instead!"
+            Write-Host -ForegroundColor White " - Exiting Products and Technologies Wizard - using PowerShell instead!"
             Stop-Process -Name psconfigui
         }
         Else
@@ -979,7 +984,7 @@ Function InstallOfficeWebApps2010([xml]$xmlinput)
                 # The Connect-SPConfigurationDatabase cmdlet throws an error about an "upgrade required" if we don't at least *launch* the Wizard, so we wait to let it launch, then kill it.
                 Start-Sleep 10
                 Write-Host -ForegroundColor Blue "Done."
-                Write-Host -ForegroundColor White " - Exiting Products and Technologies Wizard - using Powershell instead!"
+                Write-Host -ForegroundColor White " - Exiting Products and Technologies Wizard - using PowerShell instead!"
                 Stop-Process -Name psconfigui
             }
             Else
@@ -999,7 +1004,7 @@ Function InstallOfficeWebApps2010([xml]$xmlinput)
 # ===================================================================================
 Function InstallProjectServer([xml]$xmlinput)
 {
-If ($xmlinput.Configuration.ProjectServer.Install -eq $true)
+    If ($xmlinput.Configuration.ProjectServer.Install -eq $true -and $env:SPVer -eq "15") # Check for SP2013 since we don't support installing Project Server 2010 at this point
     {
         WriteLine
         # Create a hash table with major version to product year mappings
@@ -1060,12 +1065,13 @@ If ($xmlinput.Configuration.ProjectServer.Install -eq $true)
                     Start-Sleep 1
                 }
                 Write-Host -ForegroundColor Blue "Done."
-                Write-Host -ForegroundColor White " - Exiting Products and Technologies Wizard - using Powershell instead!"
+                Write-Host -ForegroundColor White " - Exiting Products and Technologies Wizard - using PowerShell instead!"
                 Stop-Process -Name psconfigui
             }
             Else
             {
-                Throw " - Install path $bits\$spYear\ProjectServer not found!!"
+                Write-Warning "Project Server installation requested, but install path $bits\$spYear\ProjectServer not found!!"
+                pause "continue"
             }
         }
         WriteLine
@@ -1204,7 +1210,7 @@ Function InstallLanguagePacks([xml]$xmlinput)
 }
 #EndRegion
 
-#Region Install Update(s)
+#Region Install Updates
 # ===================================================================================
 # Func: InstallUpdates
 # Desc: Install SharePoint Updates (CUs and Service Packs) to work around slipstreaming issues
@@ -1250,43 +1256,29 @@ Function InstallUpdates
         if ($sp2010SP2)
         {
             InstallSpecifiedUpdate $sp2010SP2 "Service Pack 2"
-            # Now install any language pack service packs that are found, using the naming convention for SP2
-            $sp2010LPServicePacks = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include oslpksp2010*.exe -Recurse -ErrorAction SilentlyContinue | Sort-Object -Descending
-            # But only if they match a currently-installed SharePoint language
-            foreach ($installedOfficeServerLanguage in $installedOfficeServerLanguages)
-            {
-                [array]$sp2010LPServicePacksToInstall += $sp2010LPServicePacks | Where-Object {$_ -like "*$installedOfficeServerLanguage*"}
-            }
-            if ($sp2010LPServicePacksToInstall)
-            {
-                foreach ($sp2010LPServicePack in $sp2010LPServicePacksToInstall)
-                {
-                    InstallSpecifiedUpdate $sp2010LPServicePack "Language Pack Service Pack"
-                }
-            }
         }
         # Otherwise, install SP1 as it is a required baseline for any post-June 2012 CUs
         elseif ($sp2010SP1)
         {
             InstallSpecifiedUpdate $sp2010SP1 "Service Pack 1"
-            # Now install any language pack service packs that are found, using the naming convention for SP1
-            $sp2010LPServicePacks = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include serverlanguagepack2010sp*.exe -Recurse -ErrorAction SilentlyContinue | Sort-Object -Descending
-            # But only if they match a currently-installed SharePoint language
-            foreach ($installedOfficeServerLanguage in $installedOfficeServerLanguages)
+        }
+        # Next, install the June 2013 CU if it's found in \Updates
+        if ($sp2010June2013CU)
+        {
+            InstallSpecifiedUpdate $sp2010June2013CU "June 2013 CU"
+        }
+        # Now find any language pack service packs, using the naming conventions for both SP1 and SP2
+        $sp2010LPServicePacks = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include serverlanguagepack2010sp*.exe,oslpksp2010*.exe -Recurse -ErrorAction SilentlyContinue | Sort-Object -Descending
+        # Now install language pack service packs - only if they match a currently-installed SharePoint language
+        foreach ($installedOfficeServerLanguage in $installedOfficeServerLanguages)
+        {
+            [array]$sp2010LPServicePacksToInstall += $sp2010LPServicePacks | Where-Object {$_ -like "*$installedOfficeServerLanguage*"}
+        }
+        if ($sp2010LPServicePacksToInstall)
+        {
+            foreach ($sp2010LPServicePack in $sp2010LPServicePacksToInstall)
             {
-                [array]$sp2010LPServicePacksToInstall += $sp2010LPServicePacks | Where-Object {$_ -like "*$installedOfficeServerLanguage*"}
-            }
-            if ($sp2010LPServicePacksToInstall)
-            {
-                foreach ($sp2010LPServicePack in $sp2010LPServicePacksToInstall)
-                {
-                    InstallSpecifiedUpdate $sp2010LPServicePack "Language Pack Service Pack"
-                }
-            }
-            # Next, install the June 2013 CU if it's found in \Updates
-            if ($sp2010June2013CU)
-            {
-                InstallSpecifiedUpdate $sp2010June2013CU "June 2013 CU"
+                InstallSpecifiedUpdate $sp2010LPServicePack "Language Pack Service Pack"
             }
         }
         if ($xmlinput.Configuration.OfficeWebApps.Install -eq $true)
@@ -1305,6 +1297,15 @@ Function InstallUpdates
         {
             # Look for a Project Server March PU
             $marchPublicUpdate = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include "ubersrvprjsp2013-kb2768001-fullfile-x64-glb.exe" -Recurse -ErrorAction SilentlyContinue
+            if (!$marchPublicUpdate)
+            {
+                # In case we forgot to include the Project Server March PU, just look for the SharePoint Server March PU
+                $marchPublicUpdate = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include "ubersrvsp2013-kb2767999-fullfile-x64-glb.exe" -Recurse -ErrorAction SilentlyContinue
+                if ($marchPublicUpdate)
+                {
+                    Write-Warning "The Project Server March PU wasn't found, but the regular SharePoint Server March PU was, and will be applied. However you should download and install the full Project Server March PU and any subsequent updates afterwards for your server/farm to be completely patched."
+                }
+            }
         }
         else
         {
@@ -1319,11 +1320,11 @@ Function InstallUpdates
         }
     }
     # Get all CUs except the March 2013 PU for SharePoint / Project Server 2013 and the June 2013 CU for SharePoint 2010
-    $cumulativeUpdates = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include office2010*.exe,ubersrv*.exe,ubersts*.exe -Recurse -ErrorAction SilentlyContinue | Where-Object {$_ -notlike "*ubersrvsp2013-kb2767999-fullfile-x64-glb.exe" -and $_ -notlike "*ubersrvprjsp2013-kb2768001-fullfile-x64-glb.exe" -and $_ -notlike "*ubersrv2010-kb2817527-fullfile-x64-glb.exe"} | Sort-Object -Descending
+    $cumulativeUpdates = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include office2010*.exe,ubersrv*.exe,ubersts*.exe,*pjsrv*.exe -Recurse -ErrorAction SilentlyContinue | Where-Object {$_ -notlike "*ubersrvsp2013-kb2767999-fullfile-x64-glb.exe" -and $_ -notlike "*ubersrvprjsp2013-kb2768001-fullfile-x64-glb.exe" -and $_ -notlike "*ubersrv2010-kb2817527-fullfile-x64-glb.exe"} | Sort-Object -Descending
     # Filter out Project Server updates if we aren't installing Project Server
     if ($xmlinput.Configuration.ProjectServer.Install -ne $true)
     {
-        $cumulativeUpdates = $cumulativeUpdates | Where-Object {$_ -notlike "*prj*.exe"}
+        $cumulativeUpdates = $cumulativeUpdates | Where-Object {($_ -notlike "*prj*.exe") -and ($_ -notlike "*pjsrv*.exe")}
     }
     # Look for Server Cumulative Update installers
     if ($cumulativeUpdates)
@@ -2092,7 +2093,7 @@ Function CreateGenericServiceApplication()
         {
             Write-Host -ForegroundColor White " - Re-importing SP PowerShell Snapin to enable new cmdlets..."
             Remove-PSSnapin Microsoft.SharePoint.PowerShell
-            Load-SharePoint-Powershell
+            Load-SharePoint-PowerShell
         }
         $getServiceApplication = Invoke-Expression "$serviceGetCmdlet | ? {`$_.Name -eq `"$serviceName`"}"
         If ($getServiceApplication -eq $null)
@@ -2279,7 +2280,7 @@ Function CreateMetadataServiceApp([xml]$xmlinput)
                         $metaDataServiceAppProxy.Update()
                     }
                 }
-                Write-Host -ForegroundColor White " - Granting rights to Metadata Service Application..."
+                Write-Host -ForegroundColor White " - Granting rights to Metadata Service Application:"
                 # Get ID of "Managed Metadata Service"
                 $metadataServiceAppToSecure = Get-SPServiceApplication | ? {$_.GetType().ToString() -eq "Microsoft.SharePoint.Taxonomy.MetadataWebServiceApplication"}
                 $metadataServiceAppIDToSecure = $metadataServiceAppToSecure.Id
@@ -2288,12 +2289,14 @@ Function CreateMetadataServiceApp([xml]$xmlinput)
                 ForEach ($account in ($xmlinput.Configuration.Farm.ManagedAccounts.ManagedAccount))
                 {
                     # Create a variable that contains the claims principal for the service accounts
+                    Write-Host -ForegroundColor White "  - $($account.username)..."
                     $accountPrincipal = New-SPClaimsPrincipal -Identity $account.username -IdentityType WindowsSamAccountName
                     # Give permissions to the claims principal you just created
                     Grant-SPObjectSecurity $metadataServiceAppSecurity -Principal $accountPrincipal -Rights "Full Access to Term Store"
                 }
                 # Apply the changes to the Metadata Service application
                 Set-SPServiceApplicationSecurity $metadataServiceAppIDToSecure -objectSecurity $metadataServiceAppSecurity
+                Write-Host -ForegroundColor White " - Done granting rights."
                 Write-Host -ForegroundColor White " - Done creating Managed Metadata Service Application."
             }
         }
@@ -2316,26 +2319,24 @@ Function AssignCert([xml]$xmlinput)
 {
     ImportWebAdministration
     Write-Host -ForegroundColor White " - Assigning certificate to site `"https://$SSLHostHeader`:$SSLPort`""
-    # Remove the host portion of the URL and the leading dot
-    $splitSSLHostHeader = $SSLHostHeader  -split "\."
-    $topDomain = $SSLHostHeader.TrimStart($splitSSLHostHeader[0] + ".")
-    # Check for sub-domains
-    $numDomainLevels = ($env:USERDNSDOMAIN -split "\.").Count
-    # If our SSL host header is a FQDN containing the local domain (or part of it, if the local domain is a subdomain), look for an existing wildcard cert
-    If ($SSLHostHeader -like "*.$env:USERDNSDOMAIN")
+    # If our SSL host header is a FQDN (contains a dot), look for an existing wildcard cert
+    If ($SSLHostHeader -like "*.*")
     {
-        Write-Host -ForegroundColor White " - Looking for existing `"*.$env:USERDNSDOMAIN`" wildcard certificate..."
-        $cert = Get-ChildItem cert:\LocalMachine\My | ? {$_.Subject -like "CN=``*.$env:USERDNSDOMAIN*"}
-    }
-    ElseIf (($numDomainLevels -gt 2) -and ($SSLHostHeader -like "*.$topDomain"))
-    {
-        Write-Host -ForegroundColor White " - Looking for existing `"*.$topDomain`" wildcard certificate..."
-        $cert = Get-ChildItem cert:\LocalMachine\My | ? {$_.Subject -like "CN=``*.$topDomain*"}
+        # Remove the host portion of the URL and the leading dot
+        $splitSSLHostHeader = $SSLHostHeader  -split "\."
+        $topDomain = $SSLHostHeader.Substring($splitSSLHostHeader[0].Length + 1)
+        # Create a new wildcard cert so we can potentially use it on other sites too
+        if ($SSLHostHeader -like "*.$env:USERDNSDOMAIN") {$certCommonName = "*.$env:USERDNSDOMAIN"}
+        elseif ($SSLHostHeader -like "*.$topDomain") {$certCommonName = "*.$topDomain"}
+        Write-Host -ForegroundColor White " - Looking for existing `"$certCommonName`" wildcard certificate..."
+        $cert = Get-ChildItem cert:\LocalMachine\My | ? {$_.Subject -like "CN=$certCommonName*"}
     }
     Else
     {
-        Write-Host -ForegroundColor White " - Looking for existing `"$SSLHostHeader`" certificate..."
-        $cert = Get-ChildItem cert:\LocalMachine\My | ? {$_.Subject -eq "CN=$SSLHostHeader"}
+        # Just create a cert that matches the SSL host header
+        $certCommonName = $SSLHostHeader
+        Write-Host -ForegroundColor White " - Looking for existing `"$certCommonName`" certificate..."
+        $cert = Get-ChildItem cert:\LocalMachine\My | ? {$_.Subject -eq "CN=$certCommonName"}
     }
     If (!$cert)
     {
@@ -2345,25 +2346,10 @@ Function AssignCert([xml]$xmlinput)
         $makeCert = "$spInstallPath\Tools\makecert.exe"
         If (Test-Path "$makeCert")
         {
-            Write-Host -ForegroundColor White " - Creating new self-signed certificate..."
-            If ($SSLHostHeader -like "*.$env:USERDNSDOMAIN")
-            {
-                # Create a new wildcard cert so we can potentially use it on other sites too
-                Start-Process -NoNewWindow -Wait -FilePath "$makeCert" -ArgumentList "-r -pe -n `"CN=*.$env:USERDNSDOMAIN`" -eku 1.3.6.1.5.5.7.3.1 -ss My -sr localMachine -sky exchange -sp `"Microsoft RSA SChannel Cryptographic Provider`" -sy 12"
-                $cert = Get-ChildItem cert:\LocalMachine\My | ? {$_.Subject -like "CN=``*.$env:USERDNSDOMAIN*"}
-            }
-            ElseIf (($numDomainLevels -gt 2) -and ($SSLHostHeader -like "*.$topDomain"))
-            {
-                # Create a new wildcard cert so we can potentially use it on other sites too
-                Start-Process -NoNewWindow -Wait -FilePath "$makeCert" -ArgumentList "-r -pe -n `"CN=*.$topDomain`" -eku 1.3.6.1.5.5.7.3.1 -ss My -sr localMachine -sky exchange -sp `"Microsoft RSA SChannel Cryptographic Provider`" -sy 12"
-                $cert = Get-ChildItem cert:\LocalMachine\My | ? {$_.Subject -like "CN=``*.$topDomain*"}
-            }
-            Else
-            {
-                # Just create a cert that matches the SSL host header
-                Start-Process -NoNewWindow -Wait -FilePath "$makeCert" -ArgumentList "-r -pe -n `"CN=$SSLHostHeader`" -eku 1.3.6.1.5.5.7.3.1 -ss My -sr localMachine -sky exchange -sp `"Microsoft RSA SChannel Cryptographic Provider`" -sy 12"
-                $cert = Get-ChildItem cert:\LocalMachine\My | ? {$_.Subject -eq "CN=$SSLHostHeader"}
-            }
+            Write-Host -ForegroundColor White " - Creating new self-signed certificate $certCommonName..."
+            Start-Process -NoNewWindow -Wait -FilePath "$makeCert" -ArgumentList "-r -pe -n `"CN=$certCommonName`" -eku 1.3.6.1.5.5.7.3.1 -ss My -sr localMachine -sky exchange -sp `"Microsoft RSA SChannel Cryptographic Provider`" -sy 12"
+            $cert = Get-ChildItem cert:\LocalMachine\My | ? {$_.Subject -like "CN=``*$certCommonName"}
+            if (!$cert) {$cert = Get-ChildItem cert:\LocalMachine\My | ? {$_.Subject -eq "CN=$SSLHostHeader"}}
         }
         Else
         {
@@ -2542,6 +2528,7 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
         (ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.VisioService -eq $true) -or `
         (ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.ExcelServices -eq $true) -or `
         (ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.AccessService -eq $true) -or `
+        (ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.AccessServices -eq $true) -or `
         (ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.PerformancePointService -eq $true))
     {
         $spservice = Get-SPManagedAccountXML $xmlinput -CommonName "spservice"
@@ -2645,7 +2632,7 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
         if ($siteCollection.HostNamedSiteCollection -eq $true)
         {
             Add-LocalIntranetURL ($siteURL)
-            if ($xmlinput.Configuration.WebApplications.AddURLsToHOSTS)
+            if ($xmlinput.Configuration.WebApplications.AddURLsToHOSTS -eq $true)
             {
                 # Add the hostname of this host header-based site collection to the local HOSTS so it's immediately resolvable locally
                 # Strip out any protocol and/or port values
@@ -2810,8 +2797,11 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
         $portalAppPoolAcct = Get-SPManagedAccountXML $xmlinput -CommonName "Portal"
         $farmAcct = $xmlinput.Configuration.Farm.Account.Username
         $farmAcctPWD = $xmlinput.Configuration.Farm.Account.Password
-        # Get the content access account of the first Search Service Application in the XML
-        $contentAccessAcct = $xmlinput.Configuration.ServiceApps.EnterpriseSearchService.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication[0].ContentAccessAccount
+        # Get the content access accounts of each Search Service Application in the XML (in case there are multiple)
+        foreach ($searchServiceApplication in $xmlinput.Configuration.ServiceApps.EnterpriseSearchService.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication)
+        {
+            $contentAccessAccounts += $searchServiceApplication.ContentAccessAccount
+        }
         If (($farmAcctPWD -ne "") -and ($farmAcctPWD -ne $null)) {$farmAcctPWD = (ConvertTo-SecureString $farmAcctPWD -AsPlainText -force)}
         $mySiteTemplate = $mySiteWebApp.SiteCollections.SiteCollection.Template
         $mySiteLCID = $mySiteWebApp.SiteCollections.SiteCollection.LCID
@@ -2953,7 +2943,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
                 $profileServiceAppProxy  = New-SPProfileServiceApplicationProxy -Name "$userProfileServiceProxyName" -ServiceApplication $profileServiceApp -DefaultProxyGroup
                 If (-not $?) { Throw " - Failed to create $userProfileServiceName Proxy" }
 
-                Write-Host -ForegroundColor White " - Granting rights to $userProfileServiceName..."
+                Write-Host -ForegroundColor White " - Granting rights to ($userProfileServiceName):"
                 # Create a variable that contains the guid for the User Profile service for which you want to delegate permissions
                 $serviceAppIDToSecure = Get-SPServiceApplication $($profileServiceApp.Id)
 
@@ -2963,24 +2953,39 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
                 $profileServiceAppPermissions = Get-SPServiceApplicationSecurity $serviceAppIDToSecure
 
                 # Create variables that contains the claims principals for current (Setup) user, genral service account, MySite App Pool, Portal App Pool and Content Access accounts
+                # Then give 'Full Control' permissions to the current (Setup) user, general service account, MySite App Pool, Portal App Pool account and content access account claims principals
                 $currentUserAcctPrincipal = New-SPClaimsPrincipal -Identity $env:USERDOMAIN\$env:USERNAME -IdentityType WindowsSamAccountName
                 $spServiceAcctPrincipal = New-SPClaimsPrincipal -Identity $($spservice.username) -IdentityType WindowsSamAccountName
-                If ($mySiteAppPoolAcct) {$mySiteAppPoolAcctPrincipal = New-SPClaimsPrincipal -Identity $($mySiteAppPoolAcct.username) -IdentityType WindowsSamAccountName}
-                If ($portalAppPoolAcct) {$portalAppPoolAcctPrincipal = New-SPClaimsPrincipal -Identity $($portalAppPoolAcct.username) -IdentityType WindowsSamAccountName}
-                If ($contentAccessAcct) {$contentAccessAcctPrincipal = New-SPClaimsPrincipal -Identity $contentAccessAcct -IdentityType WindowsSamAccountName}
-
-                # Give 'Full Control' permissions to the current (Setup) user, general service account, MySite App Pool, Portal App Pool account and content access account claims principals
                 Grant-SPObjectSecurity $profileServiceAppSecurity -Principal $currentUserAcctPrincipal -Rights "Full Control"
                 Grant-SPObjectSecurity $profileServiceAppPermissions -Principal $currentUserAcctPrincipal -Rights "Full Control"
                 Grant-SPObjectSecurity $profileServiceAppPermissions -Principal $spServiceAcctPrincipal -Rights "Full Control"
-                If ($mySiteAppPoolAcct) {Grant-SPObjectSecurity $profileServiceAppSecurity -Principal $mySiteAppPoolAcctPrincipal -Rights "Full Control"}
-                If ($portalAppPoolAcct) {Grant-SPObjectSecurity $profileServiceAppSecurity -Principal $portalAppPoolAcctPrincipal -Rights "Full Control"}
-                # Give 'Retrieve People Data for Search Crawlers' permissions to the Content Access claims principal
-                If ($contentAccessAcct) {Grant-SPObjectSecurity $profileServiceAppSecurity -Principal $contentAccessAcctPrincipal -Rights "Retrieve People Data for Search Crawlers"}
+                If ($mySiteAppPoolAcct)
+                {
+                    Write-Host -ForegroundColor White "  - $($mySiteAppPoolAcct.username)..."
+                    $mySiteAppPoolAcctPrincipal = New-SPClaimsPrincipal -Identity $($mySiteAppPoolAcct.username) -IdentityType WindowsSamAccountName
+                    Grant-SPObjectSecurity $profileServiceAppSecurity -Principal $mySiteAppPoolAcctPrincipal -Rights "Full Control"
+                }
+                If ($portalAppPoolAcct)
+                {
+                    Write-Host -ForegroundColor White "  - $($portalAppPoolAcct.username)..."
+                    $portalAppPoolAcctPrincipal = New-SPClaimsPrincipal -Identity $($portalAppPoolAcct.username) -IdentityType WindowsSamAccountName
+                    Grant-SPObjectSecurity $profileServiceAppSecurity -Principal $portalAppPoolAcctPrincipal -Rights "Full Control"
+                }
+                If ($contentAccessAccounts)
+                {
+                    foreach ($contentAccessAcct in $contentAccessAccounts)
+                    {
+                        # Give 'Retrieve People Data for Search Crawlers' permissions to the Content Access claims principal
+                        Write-Host -ForegroundColor White "  - $contentAccessAcct..."
+                        $contentAccessAcctPrincipal = New-SPClaimsPrincipal -Identity $contentAccessAcct -IdentityType WindowsSamAccountName
+                        Grant-SPObjectSecurity $profileServiceAppSecurity -Principal $contentAccessAcctPrincipal -Rights "Retrieve People Data for Search Crawlers"
+                    }
+                }
 
                 # Apply the changes to the User Profile service application
                 Set-SPServiceApplicationSecurity $serviceAppIDToSecure -objectSecurity $profileServiceAppSecurity -Admin
                 Set-SPServiceApplicationSecurity $serviceAppIDToSecure -objectSecurity $profileServiceAppPermissions
+                Write-Host -ForegroundColor White " - Done granting rights."
 
                 # Add link to resources list
                 AddResourcesLink "User Profile Administration" ("_layouts/ManageUserProfileServiceApplication.aspx?ApplicationID=" +  $profileServiceApp.Id)
@@ -3133,7 +3138,7 @@ Else {Write-Host -ForegroundColor White " - Done.";Start-Sleep 15}
 # Func: CreateUPSAsAdmin
 # Desc: Create the User Profile Service Application itself as the Farm Admin account, in a session with elevated privileges
 #       This incorporates the workaround by @harbars & @glapointe http://www.harbar.net/archive/2010/10/30/avoiding-the-default-schema-issue-when-creating-the-user-profile.aspx
-#       Modified to work within AutoSPInstaller (to pass our script variables to the Farm Account credential's Powershell session)
+#       Modified to work within AutoSPInstaller (to pass our script variables to the Farm Account credential's PowerShell session)
 # ===================================================================================
 
 Function CreateUPSAsAdmin([xml]$xmlinput)
@@ -3155,8 +3160,9 @@ Function CreateUPSAsAdmin([xml]$xmlinput)
         }
         if ([string]::IsNullOrEmpty($mySiteManagedPath))
         {
-            # Don't specify the MySiteManagedPath switch if it was left blank. This will effectively use the default path of personal/sites
-            $mySiteManagedPathSwitch = @{}
+            # Don't specify the MySiteManagedPath switch if it was left blank. This will effectively use the default path of "personal/sites"
+            # Note that an empty hashtable doesn't seem to work here so we just put an empty string
+            $mySiteManagedPathSwitch = ""
         }
         else
         {
@@ -3234,12 +3240,16 @@ Function CreateUPSAsAdmin([xml]$xmlinput)
 #Region Create State Service Application
 Function CreateStateServiceApp([xml]$xmlinput)
 {
-    $stateService = $xmlinput.Configuration.ServiceApps.StateService
-    If (ShouldIProvision $stateService -eq $true)
+    If ((ShouldIProvision $xmlinput.Configuration.ServiceApps.StateService -eq $true) -or `
+        (ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.AccessService -eq $true) -or `
+        (ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.VisioService -eq $true) -or `
+        (ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.AccessServices -eq $true) -or `
+        (ShouldIProvision $xmlinput.Configuration.ServiceApps.WebAnalyticsService -eq $true))
     {
         WriteLine
         Try
         {
+            $stateService = $xmlinput.Configuration.ServiceApps.StateService
             $dbServer = $stateService.Database.DBServer
             # If we haven't specified a DB Server then just use the default used by the Farm
             If ([string]::IsNullOrEmpty($dbServer))
@@ -3574,7 +3584,13 @@ Function CreateWebAnalyticsApp([xml]$xmlinput)
 #Region Create Secure Store Service Application
 Function CreateSecureStoreServiceApp
 {
-    If (ShouldIProvision $xmlinput.Configuration.ServiceApps.SecureStoreService -eq $true)
+    # Secure Store Service Application will be provisioned even if it's been marked false, if any of these service apps have been requested, as it's a dependency.
+    If ((ShouldIProvision $xmlinput.Configuration.ServiceApps.SecureStoreService -eq $true) -or `
+        (ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.ExcelServices -eq $true) -or `
+        (ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.VisioService -eq $true) -or `
+        (ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.PerformancePointService -eq $true) -or `
+        (ShouldIProvision $xmlinput.Configuration.ServiceApps.BusinessDataConnectivity -eq $true) -or `
+        (ShouldIProvision $xmlinput.Configuration.OfficeWebApps.ExcelService -eq $true))
     {
         WriteLine
         Try
@@ -3964,7 +3980,15 @@ Function ConfigureDistributedCacheService ([xml]$xmlinput)
 function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
 {
     $searchServiceAccount = Get-SPManagedAccountXML $xmlinput -CommonName "SearchService"
-    $secSearchServicePassword = ConvertTo-SecureString -String $searchServiceAccount.Password -AsPlainText -Force
+    # Check if the Search Service account username has been specified before we try to convert its password to a secure string
+    if (!([string]::IsNullOrEmpty($searchServiceAccount.Username)))
+    {
+        $secSearchServicePassword = ConvertTo-SecureString -String $searchServiceAccount.Password -AsPlainText -Force
+    }
+    else
+    {
+        Write-Host -ForegroundColor White " - Managed account credentials for Search Service have not been specified."
+    }
     If (ShouldIProvision $xmlinput.Configuration.ServiceApps.EnterpriseSearchService -eq $true)
     {
         WriteLine
@@ -4694,12 +4718,13 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 catch {}
             }
         }
+        WriteLine
     }
     Else
     {
         WriteLine
-        #Set the service account to something other than Local System to avoid Health Analyzer warnings
-        If (($searchServiceAccount.Username) -and ($secSearchServicePassword))
+        # Set the service account to something other than Local System to avoid Health Analyzer warnings
+        If (!([string]::IsNullOrEmpty($searchServiceAccount.Username)) -and !([string]::IsNullOrEmpty($secSearchServicePassword)))
         {
             # Use the values for Search Service account and password, if they've been defined
             $username = $searchServiceAccount.Username
@@ -4982,7 +5007,7 @@ Function CreateExcelServiceApp ([xml]$xmlinput)
                     {
                         Write-Host -ForegroundColor White " - Re-importing SP PowerShell Snapin to enable new cmdlets..."
                         Remove-PSSnapin Microsoft.SharePoint.PowerShell
-                        Load-SharePoint-Powershell
+                        Load-SharePoint-PowerShell
                     }
                     $excelServiceApp = New-SPExcelServiceApplication -name $excelAppName -ApplicationPool $($applicationPool.Name) -Default
                     If (-not $?) { Throw " - Failed to create $excelAppName" }
@@ -5753,7 +5778,7 @@ Function Configure-PDFSearchAndIcon
         Catch {$_}
         If ((Get-PsSnapin |?{$_.Name -eq "Microsoft.SharePoint.PowerShell"})-eq $null)
         {
-            Write-Host -ForegroundColor White " - Loading SharePoint Powershell Snapin..."
+            Write-Host -ForegroundColor White " - Loading SharePoint PowerShell Snapin..."
             Add-PsSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null
         }
         Write-Host -ForegroundColor White " - Setting PDF search crawl extension..."
@@ -6154,15 +6179,15 @@ Function Confirm-LocalSession
 #Region Miscellaneous/Utility Functions
 #Region Load Snapins
 # ===================================================================================
-# Func: Load SharePoint Powershell Snapin
-# Desc: Load SharePoint Powershell Snapin
+# Func: Load SharePoint PowerShell Snapin
+# Desc: Load SharePoint PowerShell Snapin
 # ===================================================================================
-Function Load-SharePoint-Powershell
+Function Load-SharePoint-PowerShell
 {
     If ((Get-PsSnapin |?{$_.Name -eq "Microsoft.SharePoint.PowerShell"})-eq $null)
     {
         WriteLine
-        Write-Host -ForegroundColor White " - Loading SharePoint Powershell Snapin..."
+        Write-Host -ForegroundColor White " - Loading SharePoint PowerShell Snapin..."
         # Added the line below to match what the SharePoint.ps1 file implements (normally called via the SharePoint Management Shell Start Menu shortcut)
         If (Confirm-LocalSession) {$Host.Runspace.ThreadOptions = "ReuseThread"}
         Add-PsSnapin Microsoft.SharePoint.PowerShell -ErrorAction Stop | Out-Null
@@ -6592,7 +6617,7 @@ Function CheckForSP1
         $build = (Get-SPFarm).BuildVersion.Build
         If (!($build)) # Get the ProductVersion of a SharePoint DLL instead, since the farm doesn't seem to exist yet
         {
-            $spProdVer = (Get-Command $env:CommonProgramFiles'\Microsoft Shared\Web Server Extensions\$env:spVer\isapi\microsoft.sharepoint.portal.dll').FileVersionInfo.ProductVersion
+            $spProdVer = (Get-Command $env:CommonProgramFiles"\Microsoft Shared\Web Server Extensions\$env:spVer\isapi\microsoft.sharepoint.portal.dll").FileVersionInfo.ProductVersion
             $null,$null,[int]$build,$null = $spProdVer -split "\."
         }
         If ($build -ge 6029 -or $env:spVer -eq "15") # SP2010 SP1, or SP2013
@@ -6613,7 +6638,7 @@ Function CheckForSP1
 
 # ====================================================================================
 # Func: CheckIfUpgradeNeeded
-# Desc: Returns $true if the server or farm requires an upgrade (i.e. requires PSConfig or the corresponding Powershell commands to be run)
+# Desc: Returns $true if the server or farm requires an upgrade (i.e. requires PSConfig or the corresponding PowerShell commands to be run)
 # ====================================================================================
 Function CheckIfUpgradeNeeded
 {
@@ -6688,8 +6713,8 @@ Function AddToHOSTS ($hosts)
     $hostsfile = "$env:windir\System32\drivers\etc\HOSTS"
     $date = Get-Date -UFormat "%y%m%d%H%M%S"
     $filecopy = $hostsfile + '.' + $date + '.copy'
-    Write-Host -ForegroundColor White " - Backing up HOSTS file to:"
-    Write-Host -ForegroundColor White " - $filecopy"
+    Write-Host -ForegroundColor White "  - Backing up HOSTS file to:"
+    Write-Host -ForegroundColor White "  - $filecopy"
     Copy-Item $hostsfile -Destination $filecopy
 
     if (!$hosts) # No hosts were passed as arguments, so look at the AAMs in the farm
@@ -6706,20 +6731,21 @@ Function AddToHOSTS ($hosts)
     ForEach ($hostname in $hosts)
     {
         If ($file.Contains(" $hostname") -or $file.Contains("`t$hostname")) # Added check for a space or tab character before the hostname for better exact matching
-        {Write-Host -ForegroundColor White " - HOSTS file entry for `"$hostname`" already exists - skipping."}
+        {Write-Host -ForegroundColor White "  - HOSTS file entry for `"$hostname`" already exists - skipping."}
         Else
         {
-            Write-Host -ForegroundColor White " - Adding HOSTS file entry for `"$hostname`"..."
+            Write-Host -ForegroundColor White "  - Adding HOSTS file entry for `"$hostname`"..."
             Add-Content -Path $hostsfile -Value "`r"
-            Add-Content -Path $hostsfile -value "127.0.0.1 `t $hostname"
+            Add-Content -Path $hostsfile -value "127.0.0.1 `t $hostname`t# Added by AutoSPInstaller to locally resolve SharePoint URLs back to this server"
             $keepHOSTSCopy = $true
         }
     }
     If (!$keepHOSTSCopy)
     {
-        Write-Host -ForegroundColor White " - Deleting HOSTS backup file since no changes were made..."
+        Write-Host -ForegroundColor White "  - Deleting HOSTS backup file since no changes were made..."
         Remove-Item $filecopy
     }
+    Write-Host -ForegroundColor White " - Done with HOSTS file."
 }
 # ====================================================================================
 # Func: Add-LocalIntranetURL
@@ -6732,8 +6758,8 @@ Function Add-LocalIntranetURL ($url)
         # Strip out any protocol value
         $url = $url -replace "http://","" -replace "https://",""
         $splitURL = $url -split "\."
-        # Remove the host portion of the URL and the leading dot
-        $urlDomain = $url.TrimStart($splitURL[0] + ".")
+        # Thanks to CodePlex user Eulenspiegel for the updates $urlDomain syntax (https://autospinstaller.codeplex.com/workitem/20486)
+        $urlDomain = $url.Substring($splitURL[0].Length + 1)
         Write-Host -ForegroundColor White " - Adding *.$urlDomain to local Intranet security zone..."
         New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ZoneMap\Domains" -Name $urlDomain -ItemType Leaf -Force | Out-Null
         New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ZoneMap\Domains\$urlDomain" -Name '*' -value "1" -PropertyType dword -Force | Out-Null

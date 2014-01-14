@@ -30,7 +30,7 @@ IF EXIST "%~dp0\AutoSPInstallerInput.xml" (
 ECHO - Input File not found! Please check for AutoSPInstallerInput.xml, AutoSPInstallerInput-%USERDOMAIN%.xml, or AutoSPInstallerInput-%COMPUTERNAME%.xml
 GOTO END
 :START
-:: Check for Powershell
+:: Check for PowerShell
 IF NOT EXIST "%SYSTEMROOT%\system32\windowspowershell\v1.0\powershell.exe" (
 	COLOR 0C
 	ECHO - "powershell.exe" not found!
@@ -39,8 +39,8 @@ IF NOT EXIST "%SYSTEMROOT%\system32\windowspowershell\v1.0\powershell.exe" (
 	pause
 	EXIT
 	)
-:: Check for Powershell v2.0 (minimum)
-ECHO - Checking for Powershell 2.0 (minimum)...
+:: Check for PowerShell v2.0 (minimum)
+ECHO - Checking for PowerShell 2.0 (minimum)...
 "%SYSTEMROOT%\system32\windowspowershell\v1.0\powershell.exe" $host.Version.Major | find "1" >nul
 IF %ERRORLEVEL% == 0 (
 	COLOR 0C
