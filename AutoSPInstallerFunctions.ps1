@@ -2437,7 +2437,11 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
     # Look for a managed account that matches the web app type, e.g. "Portal" or "MySiteHost"
     $webAppPoolAccount = Get-SPManagedAccountXML $xmlinput $webApp.Type
     # If no managed account is found matching the web app type, just use the Portal managed account
-    if (!$webAppPoolAccount) {$webAppPoolAccount = Get-SPManagedAccountXML $xmlinput -CommonName "Portal"}
+    if (!$webAppPoolAccount)
+    {
+        $webAppPoolAccount = Get-SPManagedAccountXML $xmlinput -CommonName "Portal"
+        if ([string]::IsNullOrEmpty($webAppPoolAccount.username)) {throw " - `"Portal`" managed account not found! Check your XML."}
+    }
     $webAppName = $webApp.name
     $appPool = $webApp.applicationPool
     $database = $dbPrefix+$webApp.Database.Name
@@ -2632,7 +2636,8 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
         if ($siteCollection.HostNamedSiteCollection -eq $true)
         {
             Add-LocalIntranetURL ($siteURL)
-            if ($xmlinput.Configuration.WebApplications.AddURLsToHOSTS -eq $true)
+            # Updated so that we don't add URLs to the local hosts file of a server that's not running the Foundation Web Application service
+            if ($xmlinput.Configuration.WebApplications.AddURLsToHOSTS -eq $true -and !(($xmlinput.Configuration.Farm.Services.SelectSingleNode("FoundationWebApplication")) -and !(ShouldIProvision $xmlinput.Configuration.Farm.Services.FoundationWebApplication)))
             {
                 # Add the hostname of this host header-based site collection to the local HOSTS so it's immediately resolvable locally
                 # Strip out any protocol and/or port values
@@ -2792,15 +2797,17 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
             }
             $mySiteDB = $dbPrefix+$mySiteWebApp.Database.Name
             $mySiteAppPoolAcct = Get-SPManagedAccountXML $xmlinput -CommonName "MySiteHost"
+            if ([string]::IsNullOrEmpty($mySiteAppPoolAcct.username)) {throw " - `"MySiteHost`" managed account not found! Check your XML."}
         }
         $portalWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "Portal"}
         $portalAppPoolAcct = Get-SPManagedAccountXML $xmlinput -CommonName "Portal"
+        if ([string]::IsNullOrEmpty($portalAppPoolAcct.username)) {throw " - `"Portal`" managed account not found! Check your XML."}
         $farmAcct = $xmlinput.Configuration.Farm.Account.Username
         $farmAcctPWD = $xmlinput.Configuration.Farm.Account.Password
         # Get the content access accounts of each Search Service Application in the XML (in case there are multiple)
         foreach ($searchServiceApplication in $xmlinput.Configuration.ServiceApps.EnterpriseSearchService.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication)
         {
-            $contentAccessAccounts += $searchServiceApplication.ContentAccessAccount
+            [array]$contentAccessAccounts += $searchServiceApplication.ContentAccessAccount
         }
         If (($farmAcctPWD -ne "") -and ($farmAcctPWD -ne $null)) {$farmAcctPWD = (ConvertTo-SecureString $farmAcctPWD -AsPlainText -force)}
         $mySiteTemplate = $mySiteWebApp.SiteCollections.SiteCollection.Template
@@ -3356,6 +3363,7 @@ Function ConfigureIISLogging([xml]$xmlinput)
             Write-Host -ForegroundColor White " - Setting the global IIS logging location..."
             # The line below is from http://stackoverflow.com/questions/4626791/powershell-command-to-set-iis-logging-settings
             Set-WebConfigurationProperty "/system.applicationHost/sites/siteDefaults" -name logfile.directory -value $IISLogDir
+            # TODO: Fix this so it actually moves all files within subfolders
             If (Test-Path -Path $oldIISLogDir)
             {
                 Write-Host -ForegroundColor White " - Moving any contents in old location $oldIISLogDir to $IISLogDir..."
@@ -3590,7 +3598,7 @@ Function CreateSecureStoreServiceApp
         (ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.VisioService -eq $true) -or `
         (ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.PerformancePointService -eq $true) -or `
         (ShouldIProvision $xmlinput.Configuration.ServiceApps.BusinessDataConnectivity -eq $true) -or `
-        (ShouldIProvision $xmlinput.Configuration.OfficeWebApps.ExcelService -eq $true))
+        ((ShouldIProvision $xmlinput.Configuration.OfficeWebApps.ExcelService -eq $true) -and ($xmlinput.Configuration.OfficeWebApps.Install -eq $true)))
     {
         WriteLine
         Try
@@ -3720,7 +3728,7 @@ Function ConfigureClaimsToWindowsTokenService
         (ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.ExcelServices -eq $true) -or `
         (ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.VisioService -eq $true) -or `
         (ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.PerformancePointService -eq $true) -or `
-        (ShouldIProvision $xmlinput.Configuration.OfficeWebApps.ExcelService -eq $true))
+        ((ShouldIProvision $xmlinput.Configuration.OfficeWebApps.ExcelService -eq $true) -and ($xmlinput.Configuration.OfficeWebApps.Install -eq $true)))
     {
         WriteLine
         # Ensure Claims to Windows Token Service is started
@@ -4686,10 +4694,11 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
             {
                 $crawlStartAddresses += ","+$($webAppConfig.url)+":"+$($webAppConfig.Port)
             }
-            foreach ($siteCollectionConfig in $webAppConfig.SiteCollections.SiteCollection | Where-Object {$_.HostNamedSiteCollection -eq $true})
-            {
-                $crawlStartAddresses += ","+$($siteCollectionConfig.siteUrl)
-            }
+            ## Removing this as it seems host header site collections will automatically be crawled if the "parent" web application's URL is present in the content source
+            ##foreach ($siteCollectionConfig in $webAppConfig.SiteCollections.SiteCollection | Where-Object {$_.HostNamedSiteCollection -eq $true})
+            ##{
+            ##    $crawlStartAddresses += ","+$($siteCollectionConfig.siteUrl)
+            ##}
         }
 
         If ($mySiteHostHeaderAndPort)
@@ -5659,7 +5668,6 @@ Function CreateProjectServerServiceApp ([xml]$xmlinput)
     }
 }
 #EndRegion
-
 
 #Region Configure Outgoing Email
 # This is from http://autospinstaller.codeplex.com/discussions/228507?ProjectName=autospinstaller courtesy of rybocf

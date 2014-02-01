@@ -21,6 +21,12 @@ $Host.UI.RawUI.WindowTitle = " -- AutoSPInstaller -- $env:COMPUTERNAME --"
 $0 = $myInvocation.MyCommand.Definition
 $env:dp0 = [System.IO.Path]::GetDirectoryName($0)
 $bits = Get-Item $env:dp0 | Split-Path -Parent
+
+#Region Source External Functions
+. "$env:dp0\AutoSPInstallerFunctions.ps1"
+. "$env:dp0\AutoSPInstallerFunctionsCustom.ps1"
+#EndRegion
+
 # Check if SharePoint binaries are in the \SP20xx\SharePoint subfolder as per new folder structure
 # Look for SP2013
 If ($xmlinput.Configuration.Install.SPVersion -eq "2013")
@@ -31,8 +37,8 @@ If ($xmlinput.Configuration.Install.SPVersion -eq "2013")
     }
     else {Write-Host -ForegroundColor Yellow " - SP2013 was specified in $($inputfile.replace($bits,'')),`n - but $bits\2013\SharePoint\setup.exe was not found. Looking for SP2010..."}
 }
-# If 2013 bits aren't found, look for SP2010 bits or use the value specified in $xmlinput
-ElseIf ((Test-Path -Path "$bits\2010\SharePoint\setup.exe") -or ($xmlinput.Configuration.Install.SPVersion -eq "2010"))
+# If 2013 bits aren't found, look for SP2010 bits and ensure they match the value specified in $xmlinput
+ElseIf ((Test-Path -Path "$bits\2010\SharePoint\setup.exe") -and ($xmlinput.Configuration.Install.SPVersion -eq "2010"))
 {
     $env:SPbits = $bits+"\2010\SharePoint"
 }
@@ -40,22 +46,29 @@ Elseif (Test-Path -Path "$bits\SharePoint\setup.exe") # Use old path convention
 {
     $env:SPbits = $bits+"\SharePoint"
 }
-Else
+if ([string]::IsNullOrEmpty($env:SPbits))
 {
-    Throw " - Cannot locate SharePoint binaries; please check that the files are in the \SharePoint subfolder as per new folder structure."
+    # Changed this to a warning in case we just want to create/configure a farm and are sure that SharePoint is pre-installed
+    Write-Warning "Cannot locate SharePoint binaries; please check that the files are in the \SharePoint subfolder as per new folder structure."
+    Pause "proceed if you know that SharePoint is already installed, or Ctrl-C to exit" "y"
+    # If no setup binaries are present, this might be OK if SharePoint is already installed and we've specified the version in the XML
+    $spInstalled = $true
+    # Check to see that we've at least specified the desired version in the XML
+    if (($xmlinput.Configuration.Install.SPVersion -eq "2010") -or ($xmlinput.Configuration.Install.SPVersion -eq "2013"))
+    {
+        $env:spVer = $xmlinput.Configuration.Install.SPVersion
+    }
+    else {Throw " - Cannot determine version of SharePoint setup binaries, and no Version was specified in `"$(Split-Path -Path $inputFile -Leaf)`"."}
 }
-$env:spVer,$null = (Get-Item -Path "$env:SPbits\setup.exe").VersionInfo.ProductVersion -split "\."
-If (!$env:spVer) {Throw " - Cannot determine version of SharePoint setup binaries."}
+else
+{
+    $env:spVer,$null = (Get-Item -Path "$env:SPbits\setup.exe").VersionInfo.ProductVersion -split "\."
+}
 # Create a hash table with major version to product year mappings
 $spYears = @{"14" = "2010"; "15" = "2013"}
 $spYear = $spYears.$env:spVer
 $PSConfig = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$env:spVer\BIN\psconfig.exe"
 $PSConfigUI = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$env:spVer\BIN\psconfigui.exe"
-
-#Region External Functions
-. "$env:dp0\AutoSPInstallerFunctions.ps1"
-. "$env:dp0\AutoSPInstallerFunctionsCustom.ps1"
-#EndRegion
 
 $script:DBPrefix = $xmlinput.Configuration.Farm.Database.DBPrefix
 If (($dbPrefix -ne "") -and ($dbPrefix -ne $null)) {$script:DBPrefix += "_"}
