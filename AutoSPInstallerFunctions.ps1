@@ -807,9 +807,9 @@ Function InstallPrerequisites([xml]$xmlinput)
                     Write-Host -ForegroundColor White " - A known issue occurred installing one of the prerequisites - retrying..."
                     InstallPreRequisites ([xml]$xmlinput)
                 }
-                ElseIf ($preReqLog | Select-String -SimpleMatch -Pattern "Error when enabling ASP.NET v4.0.30319" -Encoding Unicode)
+                ElseIf (($preReqLog | Select-String -SimpleMatch -Pattern "Error when enabling ASP.NET v4.0.30319" -Encoding Unicode) -or ($preReqLog | Select-String -SimpleMatch -Pattern "Error when enabling ASP.NET v4.5 with IIS" -Encoding Unicode))
                 {
-                    # Account for new issue with Win2012 RC and SP2013
+                    # Account for new issue with Win2012 RC / R2 and SP2013
                     Write-Host -ForegroundColor White " - A known issue occurred configuring .NET 4 / IIS."
                     $preReqKnownIssueRestart = $true
                 }
@@ -1288,29 +1288,57 @@ Function InstallUpdates
             {
                 InstallSpecifiedUpdate $sp2010OWAUpdate "Office Web Apps Update"
             }
-
         }
     }
     if ($spYear -eq "2013")
     {
+        # Do SP1 first, if it's found
+        $sp2013SP1 = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include "officeserversp2013-kb2817429-fullfile-x64-en-us.exe" -Recurse -ErrorAction SilentlyContinue
+        if ($sp2013SP1)
+        {
+            # In case we find more than one (e.g. in subfolders), grab the first one
+            if ($sp2013SP1 -is [system.array]) {$sp2013SP1 = $sp2013SP1[0]}
+            InstallSpecifiedUpdate $sp2013SP1 "Service Pack 1"
+        }
         if ($xmlinput.Configuration.ProjectServer.Install -eq $true)
         {
-            # Look for a Project Server March PU
-            $marchPublicUpdate = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include "ubersrvprjsp2013-kb2768001-fullfile-x64-glb.exe" -Recurse -ErrorAction SilentlyContinue
-            if (!$marchPublicUpdate)
+            if ($sp2013SP1)
             {
-                # In case we forgot to include the Project Server March PU, just look for the SharePoint Server March PU
-                $marchPublicUpdate = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include "ubersrvsp2013-kb2767999-fullfile-x64-glb.exe" -Recurse -ErrorAction SilentlyContinue
-                if ($marchPublicUpdate)
+                # Look for Project Server 2013 SP1, since we have SharePoint Server SP1
+                $sp2013ProjectSP1 = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include "projectserversp2013-kb2817434-fullfile-x64-en-us.exe" -Recurse -ErrorAction SilentlyContinue
+                if ($sp2013ProjectSP1)
                 {
-                    Write-Warning "The Project Server March PU wasn't found, but the regular SharePoint Server March PU was, and will be applied. However you should download and install the full Project Server March PU and any subsequent updates afterwards for your server/farm to be completely patched."
+                    # In case we find more than one (e.g. in subfolders), grab the first one
+                    if ($sp2013ProjectSP1 -is [system.array]) {$sp2013ProjectSP1 = $sp2013ProjectSP1[0]}
+                    InstallSpecifiedUpdate $sp2013ProjectSP1 "Project Server Service Pack 1"
+                }
+                else
+                {
+                    Write-Warning "Project Server Service Pack 1 wasn't found. Since SharePoint itself will be updated to SP1, you should download and install Project Server 2013 SP1 for your server/farm to be completely patched."
+                }
+            }
+            else
+            {
+                # Look for a Project Server March PU
+                $marchPublicUpdate = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include "ubersrvprjsp2013-kb2768001-fullfile-x64-glb.exe" -Recurse -ErrorAction SilentlyContinue
+                if (!$marchPublicUpdate)
+                {
+                    # In case we forgot to include the Project Server March PU, just look for the SharePoint Server March PU
+                    $marchPublicUpdate = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include "ubersrvsp2013-kb2767999-fullfile-x64-glb.exe" -Recurse -ErrorAction SilentlyContinue
+                    if ($marchPublicUpdate)
+                    {
+                        Write-Warning "The Project Server March PU wasn't found, but the regular SharePoint Server March PU was, and will be applied. However you should download and install the full Project Server March PU and any subsequent updates afterwards for your server/farm to be completely patched."
+                    }
                 }
             }
         }
         else
         {
-            # Look for the SharePoint Server March PU
-            $marchPublicUpdate = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include "ubersrvsp2013-kb2767999-fullfile-x64-glb.exe" -Recurse -ErrorAction SilentlyContinue
+            if (!$sp2013SP1)
+            {
+                # Look for the SharePoint Server March PU
+                $marchPublicUpdate = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include "ubersrvsp2013-kb2767999-fullfile-x64-glb.exe" -Recurse -ErrorAction SilentlyContinue
+            }
         }
         if ($marchPublicUpdate)
         {
@@ -1329,7 +1357,7 @@ Function InstallUpdates
     # Look for Server Cumulative Update installers
     if ($cumulativeUpdates)
     {
-        if ($spYear -eq "2013" -and !$marchPublicUpdate)
+        if ($spYear -eq "2013" -and !$sp2013SP1 -and !$marchPublicUpdate)
         {
             Write-Host -ForegroundColor Yellow "  - Note: the March 2013 PU package wasn't found in ..\$spYear\Updates; it may need to be installed first if it wasn't slipstreamed."
         }
@@ -2100,7 +2128,7 @@ Function CreateGenericServiceApplication()
         {
             Write-Host -ForegroundColor White " - Creating $serviceName..."
             # A bit kludgey to accomodate the new PerformancePoint cmdlet in Service Pack 1, and some new SP2010 service apps (and still be able to use the CreateGenericServiceApplication function)
-            If ((CheckForSP1) -and ($serviceInstanceType -eq "Microsoft.PerformancePoint.Scorecards.BIMonitoringServiceInstance"))
+            If ((CheckFor2010SP1) -and ($serviceInstanceType -eq "Microsoft.PerformancePoint.Scorecards.BIMonitoringServiceInstance"))
             {
                 $newServiceApplication = Invoke-Expression "$serviceNewCmdlet -Name `"$serviceName`" -ApplicationPool `$applicationPool -DatabaseServer `$dbServer -DatabaseName `$serviceDB"
             }
@@ -2423,7 +2451,7 @@ Function CreateWebApplications([xml]$xmlinput)
             WriteLine
         }
         # Updated so that we don't add URLs to the local hosts file of a server that's not running the Foundation Web Application service
-        If ($xmlinput.Configuration.WebApplications.AddURLsToHOSTS -eq $true -and !(($xmlinput.Configuration.Farm.Services.SelectSingleNode("FoundationWebApplication")) -and !(ShouldIProvision $xmlinput.Configuration.Farm.Services.FoundationWebApplication)))
+        If ($xmlinput.Configuration.WebApplications.AddURLsToHOSTS -eq $true -and !(($xmlinput.Configuration.Farm.Services.SelectSingleNode("FoundationWebApplication")) -and !(ShouldIProvision $xmlinput.Configuration.Farm.Services.FoundationWebApplication -eq $true)))
         {AddToHOSTS}
     }
     WriteLine
@@ -2637,7 +2665,7 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
         {
             Add-LocalIntranetURL ($siteURL)
             # Updated so that we don't add URLs to the local hosts file of a server that's not running the Foundation Web Application service
-            if ($xmlinput.Configuration.WebApplications.AddURLsToHOSTS -eq $true -and !(($xmlinput.Configuration.Farm.Services.SelectSingleNode("FoundationWebApplication")) -and !(ShouldIProvision $xmlinput.Configuration.Farm.Services.FoundationWebApplication)))
+            if ($xmlinput.Configuration.WebApplications.AddURLsToHOSTS -eq $true -and !(($xmlinput.Configuration.Farm.Services.SelectSingleNode("FoundationWebApplication")) -and !(ShouldIProvision $xmlinput.Configuration.Farm.Services.FoundationWebApplication -eq $true)))
             {
                 # Add the hostname of this host header-based site collection to the local HOSTS so it's immediately resolvable locally
                 # Strip out any protocol and/or port values
@@ -3098,7 +3126,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
                     # Attempt to create a sync connection only on a successful, newly-provisioned User Profile Sync service
                     # We don't have the ability to check for existing connections and we don't want to overwrite/duplicate any existing sync connections
                     # Note that this isn't really supported anyhow, and that only SharePoint 2010 Service Pack 1 and above includes the Add-SPProfileSyncConnection cmdlet
-                    If ((CheckForSP1) -and ($userProfile.CreateDefaultSyncConnection -eq $true) -and ($newlyProvisionedSync -eq $true))
+                    If ((CheckFor2010SP1) -and ($userProfile.CreateDefaultSyncConnection -eq $true) -and ($newlyProvisionedSync -eq $true))
                     {
                         Write-Host -ForegroundColor White " - Creating a default Profile Sync connection..."
                         $profileServiceApp = Get-SPServiceApplication |?{$_.DisplayName -eq $userProfileServiceName}
@@ -3825,7 +3853,7 @@ Function StopServiceInstance ($service)
 Function ConfigureWorkflowTimerService
 {
     # Ensure the node exists in the XML first as we don't want to inadvertently disable the service if it wasn't explicitly specified
-    if (($xmlinput.Configuration.Farm.Services.SelectSingleNode("WorkflowTimer")) -and !(ShouldIProvision $xmlinput.Configuration.Farm.Services.WorkflowTimer))
+    if (($xmlinput.Configuration.Farm.Services.SelectSingleNode("WorkflowTimer")) -and !(ShouldIProvision $xmlinput.Configuration.Farm.Services.WorkflowTimer -eq $true))
     {
         StopServiceInstance "Microsoft.SharePoint.Workflow.SPWorkflowTimerServiceInstance"
     }
@@ -3938,7 +3966,7 @@ Function ConfigureDistributedCacheService ([xml]$xmlinput)
         $distributedCachingSvc = (Get-SPFarm).Services | where {$_.Name -eq "AppFabricCachingService"}
         # Check if we should disable the Distributed Cache service on the local server
         # Ensure the node exists in the XML first as we don't want to inadvertently disable the service if it wasn't explicitly specified
-        if (($xmlinput.Configuration.Farm.Services.SelectSingleNode("DistributedCache")) -and !(ShouldIProvision $xmlinput.Configuration.Farm.Services.DistributedCache))
+        if (($xmlinput.Configuration.Farm.Services.SelectSingleNode("DistributedCache")) -and !(ShouldIProvision $xmlinput.Configuration.Farm.Services.DistributedCache -eq $true))
         {
             ##StopServiceInstance "Microsoft.SharePoint.DistributedCaching.Utilities.SPDistributedCacheServiceInstance"
             $serviceInstances = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.SharePoint.DistributedCaching.Utilities.SPDistributedCacheServiceInstance"}
@@ -4364,6 +4392,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                     $searchSvc | Start-SPEnterpriseSearchServiceInstance
                     If (!$?) {Throw "  - Could not start the Search Service Instance."}
                     # Wait
+                    $searchSvc = Get-SPEnterpriseSearchServiceInstance -Local
                     While ($searchSvc.Status -ne "Online")
                     {
                         Write-Host -ForegroundColor Blue "." -NoNewline
@@ -5271,7 +5300,7 @@ Function CreatePerformancePointServiceApp ([xml]$xmlinput)
                 }
                 $application | Set-SPPerformancePointSecureDataValues -DataSourceUnattendedServiceAccount $performancePointCredential
 
-                If (!(CheckForSP1)) # Only need this if our environment isn't up to Service Pack 1 for SharePoint 2010
+                If (!(CheckFor2010SP1)) # Only need this if our environment isn't up to Service Pack 1 for SharePoint 2010
                 {
                     # Rename the performance point service application database
                     Write-Host -ForegroundColor White " - Renaming Performance Point Service Application Database"
@@ -5579,7 +5608,7 @@ Function CreateWorkManagementServiceApp ([xml]$xmlinput)
 Function CreateProjectServerServiceApp ([xml]$xmlinput)
 {
     $serviceConfig = $xmlinput.Configuration.ProjectServer.ServiceApp
-    If ((ShouldIProvision $serviceConfig) -and $xmlinput.Configuration.ProjectServer.Install -eq $true) # We need to check that Project Server has been requested for install, not just if the service app should be provisioned
+    If ((ShouldIProvision $serviceConfig -eq $true) -and $xmlinput.Configuration.ProjectServer.Install -eq $true) # We need to check that Project Server has been requested for install, not just if the service app should be provisioned
     {
         WriteLine
         $dbPrefix = $xmlinput.Configuration.Farm.Database.DBPrefix
@@ -5699,7 +5728,7 @@ Function ConfigureOutgoingEmail
 Function ConfigureIncomingEmail
 {
     # Ensure the node exists in the XML first as we don't want to inadvertently disable the service if it wasn't explicitly specified
-    if (($xmlinput.Configuration.Farm.Services.SelectSingleNode("IncomingEmail")) -and !(ShouldIProvision $xmlinput.Configuration.Farm.Services.IncomingEmail))
+    if (($xmlinput.Configuration.Farm.Services.SelectSingleNode("IncomingEmail")) -and !(ShouldIProvision $xmlinput.Configuration.Farm.Services.IncomingEmail -eq $true))
     {
         StopServiceInstance "Microsoft.SharePoint.Administration.SPIncomingEmailServiceInstance"
     }
@@ -5710,7 +5739,7 @@ Function ConfigureIncomingEmail
 Function ConfigureFoundationWebApplicationService
 {
     # Ensure the node exists in the XML first as we don't want to inadvertently disable the service if it wasn't explicitly specified
-    if (($xmlinput.Configuration.Farm.Services.SelectSingleNode("FoundationWebApplication")) -and !(ShouldIProvision $xmlinput.Configuration.Farm.Services.FoundationWebApplication))
+    if (($xmlinput.Configuration.Farm.Services.SelectSingleNode("FoundationWebApplication")) -and !(ShouldIProvision $xmlinput.Configuration.Farm.Services.FoundationWebApplication -eq $true))
     {
         StopServiceInstance "Microsoft.SharePoint.Administration.SPWebServiceInstance"
     }
@@ -6380,7 +6409,7 @@ Function CheckSQLAccess
     $serverRolesToCheck = "dbcreator","securityadmin"
     # If we are provisioning PerformancePoint but aren't running SharePoint 2010 Service Pack 1 yet, we need sysadmin in order to run the RenameDatabase function
     # We also evidently need sysadmin in order to configure MaxDOP on the SQL instance if we are installing SharePoint 2013
-    If (($xmlinput.Configuration.EnterpriseServiceApps.PerformancePointService) -and (ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.PerformancePointService -eq $true) -and (!(CheckForSP1)))
+    If (($xmlinput.Configuration.EnterpriseServiceApps.PerformancePointService) -and (ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.PerformancePointService -eq $true) -and (!(CheckFor2010SP1)))
     {
         $serverRolesToCheck += "sysadmin"
     }
@@ -6613,11 +6642,11 @@ Function FixTaxonomyPickerBug
 
 #Region Miscellaneous Checks
 # ====================================================================================
-# Func: CheckForSP1
-# Desc: Returns $true if the farm build number or SharePoint DLL is at Service Pack 1 (6029) or greater (or if slipstreamed SP1 is detected); otherwise returns $false
+# Func: CheckFor2010SP1
+# Desc: Returns $true if the SharePoint 2010 farm build number or SharePoint DLL is at Service Pack 1 (6029) or greater (or if slipstreamed SP1 is detected); otherwise returns $false
 # Desc: Helps to determine whether certain new/updated cmdlets are available
 # ====================================================================================
-Function CheckForSP1
+Function CheckFor2010SP1
 {
     If (Get-Command Get-SPFarm -ErrorAction SilentlyContinue)
     {
