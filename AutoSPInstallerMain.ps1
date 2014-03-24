@@ -27,6 +27,10 @@ $bits = Get-Item $env:dp0 | Split-Path -Parent
 . "$env:dp0\AutoSPInstallerFunctionsCustom.ps1"
 #EndRegion
 
+# Create hash tables with major version to product year mappings & vice-versa
+$spYears = @{"14" = "2010"; "15" = "2013"}
+$spVersions = @{"2010" = "14"; "2013" = "15"}
+
 # Check if SharePoint binaries are in the \SP20xx\SharePoint subfolder as per new folder structure
 # Look for SP2013
 If ($xmlinput.Configuration.Install.SPVersion -eq "2013")
@@ -56,7 +60,8 @@ if ([string]::IsNullOrEmpty($env:SPbits))
     # Check to see that we've at least specified the desired version in the XML
     if (($xmlinput.Configuration.Install.SPVersion -eq "2010") -or ($xmlinput.Configuration.Install.SPVersion -eq "2013"))
     {
-        $env:spVer = $xmlinput.Configuration.Install.SPVersion
+        # Grab the version from the hashtable
+        $env:spVer = $spVersions.($xmlinput.Configuration.Install.SPVersion)
     }
     else {Throw " - Cannot determine version of SharePoint setup binaries, and no Version was specified in `"$(Split-Path -Path $inputFile -Leaf)`"."}
 }
@@ -64,8 +69,6 @@ else
 {
     $env:spVer,$null = (Get-Item -Path "$env:SPbits\setup.exe").VersionInfo.ProductVersion -split "\."
 }
-# Create a hash table with major version to product year mappings
-$spYears = @{"14" = "2010"; "15" = "2013"}
 $spYear = $spYears.$env:spVer
 $PSConfig = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$env:spVer\BIN\psconfig.exe"
 $PSConfigUI = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$env:spVer\BIN\psconfigui.exe"

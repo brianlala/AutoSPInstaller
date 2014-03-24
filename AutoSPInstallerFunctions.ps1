@@ -650,18 +650,37 @@ Function InstallPrerequisites([xml]$xmlinput)
                     }
                     Write-Host -ForegroundColor Blue "  - Running Prerequisite Installer (offline mode)..." -NoNewline
                     $startTime = Get-Date
-                    Start-Process "$env:SPbits\PrerequisiteInstaller.exe" -ArgumentList "/unattended `
-                                                                                         /SQLNCli:`"$env:SPbits\PrerequisiteInstallerFiles\sqlncli.msi`" `
-                                                                                         /PowerShell:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.1-KB2506143-x64.msu`" `
-                                                                                         /NETFX:`"$env:SPbits\PrerequisiteInstallerFiles\dotNetFx45_Full_x86_x64.exe`" `
-                                                                                         /IDFX:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.1-KB974405-x64.msu`" `
-                                                                                         /IDFX11:`"$env:SPbits\PrerequisiteInstallerFiles\MicrosoftIdentityExtensions-64.msi`" `
-                                                                                         /Sync:`"$env:SPbits\PrerequisiteInstallerFiles\Synchronization.msi`" `
-                                                                                         /AppFabric:`"$env:SPbits\PrerequisiteInstallerFiles\WindowsServerAppFabricSetup_x64.exe`" `
-                                                                                         /KB2671763:`"$env:SPbits\PrerequisiteInstallerFiles\AppFabric1.1-RTM-KB2671763-x64-ENU.exe`" `
-                                                                                         /MSIPCClient:`"$env:SPbits\PrerequisiteInstallerFiles\setup_msipc_x64.msi`" `
-                                                                                         /WCFDataServices:`"$env:SPbits\PrerequisiteInstallerFiles\WcfDataServices.exe`""
-                    If (-not $?) {Throw}
+                    if (CheckFor2013SP1) # Include WCFDataServices56 as required by updated SP1 prerequisiteinstaller.exe
+                    {
+                        Start-Process "$env:SPbits\PrerequisiteInstaller.exe" -ArgumentList "/unattended `
+                                                                                             /SQLNCli:`"$env:SPbits\PrerequisiteInstallerFiles\sqlncli.msi`" `
+                                                                                             /PowerShell:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.1-KB2506143-x64.msu`" `
+                                                                                             /NETFX:`"$env:SPbits\PrerequisiteInstallerFiles\dotNetFx45_Full_x86_x64.exe`" `
+                                                                                             /IDFX:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.1-KB974405-x64.msu`" `
+                                                                                             /IDFX11:`"$env:SPbits\PrerequisiteInstallerFiles\MicrosoftIdentityExtensions-64.msi`" `
+                                                                                             /Sync:`"$env:SPbits\PrerequisiteInstallerFiles\Synchronization.msi`" `
+                                                                                             /AppFabric:`"$env:SPbits\PrerequisiteInstallerFiles\WindowsServerAppFabricSetup_x64.exe`" `
+                                                                                             /KB2671763:`"$env:SPbits\PrerequisiteInstallerFiles\AppFabric1.1-RTM-KB2671763-x64-ENU.exe`" `
+                                                                                             /MSIPCClient:`"$env:SPbits\PrerequisiteInstallerFiles\setup_msipc_x64.msi`" `
+                                                                                             /WCFDataServices:`"$env:SPbits\PrerequisiteInstallerFiles\WcfDataServices.exe`" `
+                                                                                             /WCFDataServices56:`"$env:SPbits\PrerequisiteInstallerFiles\WcfDataServices56.exe`""
+                        If (-not $?) {Throw}
+                    }
+                    else # Just install the pre-SP1 set of prerequisites
+                    {
+                        Start-Process "$env:SPbits\PrerequisiteInstaller.exe" -ArgumentList "/unattended `
+                                                                                             /SQLNCli:`"$env:SPbits\PrerequisiteInstallerFiles\sqlncli.msi`" `
+                                                                                             /PowerShell:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.1-KB2506143-x64.msu`" `
+                                                                                             /NETFX:`"$env:SPbits\PrerequisiteInstallerFiles\dotNetFx45_Full_x86_x64.exe`" `
+                                                                                             /IDFX:`"$env:SPbits\PrerequisiteInstallerFiles\Windows6.1-KB974405-x64.msu`" `
+                                                                                             /IDFX11:`"$env:SPbits\PrerequisiteInstallerFiles\MicrosoftIdentityExtensions-64.msi`" `
+                                                                                             /Sync:`"$env:SPbits\PrerequisiteInstallerFiles\Synchronization.msi`" `
+                                                                                             /AppFabric:`"$env:SPbits\PrerequisiteInstallerFiles\WindowsServerAppFabricSetup_x64.exe`" `
+                                                                                             /KB2671763:`"$env:SPbits\PrerequisiteInstallerFiles\AppFabric1.1-RTM-KB2671763-x64-ENU.exe`" `
+                                                                                             /MSIPCClient:`"$env:SPbits\PrerequisiteInstallerFiles\setup_msipc_x64.msi`" `
+                                                                                             /WCFDataServices:`"$env:SPbits\PrerequisiteInstallerFiles\WcfDataServices.exe`""
+                        If (-not $?) {Throw}
+                    }
                 }
             }
             Else # Regular prerequisite install - download required files
@@ -677,7 +696,6 @@ Function InstallPrerequisites([xml]$xmlinput)
             If ($env:spVer -eq "15") # SP2013
             {
                 # Install the "missing prerequisites" for SP2013 per http://www.toddklindt.com/blog/Lists/Posts/Post.aspx?ID=349
-                Write-Host -ForegroundColor White "  - SharePoint 2013 `"missing hotfix`" prerequisites..."
                 # Expand hotfix executable to $env:SPbits\PrerequisiteInstallerFiles\
                 if ((Gwmi Win32_OperatingSystem).Version -eq "6.1.7601") # Win2008 R2 SP1
                 {
@@ -692,7 +710,11 @@ Function InstallPrerequisites([xml]$xmlinput)
                     $missingHotfixes = @{"Windows8-RT-KB2765317-x64.msu" = "http://download.microsoft.com/download/0/2/E/02E9E569-5462-48EB-AF57-8DCCF852E6F4/Windows8-RT-KB2765317-x64.msu"}
                 }
                 else {} # Reserved for Win2012 R2
-                $hotfixLocation = $env:SPbits+"\PrerequisiteInstallerFiles"
+                if ($missingHotfixes.Count -ge 1)
+                {
+                    Write-Host -ForegroundColor White "  - SharePoint 2013 `"missing hotfix`" prerequisites..."
+                    $hotfixLocation = $env:SPbits+"\PrerequisiteInstallerFiles"
+                }
                 ForEach ($hotfixPatch in $missingHotfixes.Keys)
                 {
                     $hotfixKB = $hotfixPatch.Split('-') | Where-Object {$_ -like "KB*"}
@@ -6570,7 +6592,7 @@ drop table #opt
 # ====================================================================================
 Function Run-HealthAnalyzerJobs
 {
-    $healthJobs = Get-SPTimerJob | Where {$_.DisplayName -match "Health Analysis Job"}
+    $healthJobs = Get-SPTimerJob | Where {$_.Name -match "health-analysis-job"}
     Write-Host -ForegroundColor White " - Running all Health Analyzer jobs..."
     ForEach ($job in $healthJobs)
     {
@@ -6674,6 +6696,49 @@ Function CheckFor2010SP1
 }
 
 # ====================================================================================
+# Func: CheckFor2013SP1
+# Desc: Returns $true if the SharePoint 2013 farm build number or SharePoint prerequisiteinstaller.exe is at Service Pack 1 (4569 or 4567, respectively) or greater; otherwise returns $false
+# ====================================================================================
+Function CheckFor2013SP1
+{
+    if ($env:spVer -eq "15")
+    {
+        If (Get-Command Get-SPFarm -ErrorAction SilentlyContinue)
+        {
+            # Try to get the version of the farm first
+            $build = (Get-SPFarm).BuildVersion.Build
+            If (!($build)) # Get the ProductVersion of a SharePoint DLL instead, since the farm doesn't seem to exist yet
+            {
+                $spProdVer = (Get-Command $env:CommonProgramFiles"\Microsoft Shared\Web Server Extensions\$env:spVer\isapi\microsoft.sharepoint.portal.dll").FileVersionInfo.ProductVersion
+                $null,$null,[int]$build,$null = $spProdVer -split "\."
+            }
+            If ($build -ge 4569) # SP2013 SP1
+            {
+                Return $true
+            }
+        }
+        # SharePoint probably isn't installed yet, so try to determine version of prerequisiteinstaller.exe...
+        ElseIf (Get-Item "$env:SPbits\prerequisiteinstaller.exe" -ErrorAction SilentlyContinue)
+        {
+            $preReqInstallerVer = (Get-Command "$env:SPbits\prerequisiteinstaller.exe").FileVersionInfo.ProductVersion
+            $null,$null,[int]$build,$null = $preReqInstallerVer -split "\."
+            If ($build -ge 4567) # SP2013 SP1
+            {
+                Return $true
+            }
+        }
+        Else
+        {
+            Return $false
+        }
+    }
+    else
+    {
+        Return $false
+    }
+}
+
+# ====================================================================================
 # Func: CheckIfUpgradeNeeded
 # Desc: Returns $true if the server or farm requires an upgrade (i.e. requires PSConfig or the corresponding PowerShell commands to be run)
 # ====================================================================================
@@ -6767,7 +6832,7 @@ Function AddToHOSTS ($hosts)
     # Write the AAMs to the hosts file, unless they already exist.
     ForEach ($hostname in $hosts)
     {
-        If ($file.Contains(" $hostname") -or $file.Contains("`t$hostname")) # Added check for a space or tab character before the hostname for better exact matching
+        If (($file -match " $hostname") -or ($file -match "`t$hostname")) # Added check for a space or tab character before the hostname for better exact matching, also used -match for case-insensitivity
         {Write-Host -ForegroundColor White "  - HOSTS file entry for `"$hostname`" already exists - skipping."}
         Else
         {
