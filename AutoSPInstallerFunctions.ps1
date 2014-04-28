@@ -275,6 +275,7 @@ Function CheckConfigFiles([xml]$xmlinput)
         # Set $installDir to the default value if it's not specified in $xmlinput
         if ([string]::IsNullOrEmpty($installDir)) {$installDir = "%PROGRAMFILES%\Microsoft Office Servers\"}
         $dataDir = $xmlinput.Configuration.Install.DataDir
+        $dataDir = $dataDir.TrimEnd("\")
         # Set $dataDir to the default value if it's not specified in $xmlinput
         if ([string]::IsNullOrEmpty($dataDir)) {$dataDir = "%PROGRAMFILES%\Microsoft Office Servers\$env:spVer.0\Data"}
         $xmlConfig = @"
@@ -1473,10 +1474,11 @@ Function InstallSpecifiedUpdate ($updateFile, $updateName)
 # ===================================================================================
 Function ConfigureFarmAdmin([xml]$xmlinput)
 {
-    If (($xmlinput.Configuration.Farm.Account.getAttribute("AddToLocalAdminsDuringSetup") -eq $true) -and (ShouldIProvision $xmlinput.Configuration.ServiceApps.UserProfileServiceApp -eq $true))
+    # Per Spencer Harbar, the farm account needs to be a local admin when provisioning distributed cache, so if it's being requested for provisioning we'll add it to Administrators here
+    If (($xmlinput.Configuration.Farm.Account.getAttribute("AddToLocalAdminsDuringSetup") -eq $true) -or (ShouldIProvision $xmlinput.Configuration.ServiceApps.UserProfileServiceApp -eq $true) -or (ShouldIProvision $xmlinput.Configuration.Farm.Services.DistributedCache -eq $true))
     {
         WriteLine
-        #Add to Admins Group
+        # Add to Admins Group
         $farmAcct = $xmlinput.Configuration.Farm.Account.Username
         Write-Host -ForegroundColor White " - Adding $farmAcct to local Administrators" -NoNewline
         If ($xmlinput.Configuration.Farm.Account.LeaveInLocalAdmins -ne $true) {Write-Host -ForegroundColor White " (only for install)..."}
@@ -1594,23 +1596,30 @@ Function CreateOrJoinFarm([xml]$xmlinput, $secPhrase, $farmCredential)
     # Look for an existing farm and join the farm if not already joined, or create a new farm
     Try
     {
-        Write-Host -ForegroundColor White " - Checking farm membership for $env:COMPUTERNAME in `"$configDB`"..."
+        Write-Host -ForegroundColor White " - Checking farm membership for $env:COMPUTERNAME in `"$configDB`"..." -NoNewline
         $spFarm = Get-SPFarm | Where-Object {$_.Name -eq $configDB} -ErrorAction SilentlyContinue
+        Write-Host "."
     }
-    Catch {""}
+    Catch {Write-Host "Not joined yet."}
     If ($spFarm -eq $null)
     {
         $dbServer = $xmlinput.Configuration.Farm.Database.DBServer
         $centralAdminContentDB = $dbPrefix+$xmlinput.Configuration.Farm.CentralAdmin.Database
-
+        # If the SharePoint version is newer than 2010, set the new -SkipRegisterAsDistributedCacheHost parameter when creating/joining the farm if we aren't requesting it for the current server
+        if (($env:spVer -ge "15") -and !(ShouldIProvision $xmlinput.Configuration.Farm.Services.DistributedCache -eq $true))
+        {
+            $distCacheSwitch = @{SkipRegisterAsDistributedCacheHost = $true}
+            Write-Host -ForegroundColor White " - This host has been requested to be excluded from the Distributed Cache cluster."
+        }
+        else {$distCacheSwitch = @{}}
         Write-Host -ForegroundColor White " - Attempting to join farm on `"$configDB`"..."
-        $connectFarm = Connect-SPConfigurationDatabase -DatabaseName "$configDB" -Passphrase $secPhrase -DatabaseServer "$dbServer" -ErrorAction SilentlyContinue
+        $connectFarm = Connect-SPConfigurationDatabase -DatabaseName "$configDB" -Passphrase $secPhrase -DatabaseServer "$dbServer" @distCacheSwitch -ErrorAction SilentlyContinue
         If (-not $?)
         {
             Write-Host -ForegroundColor White " - No existing farm found.`n - Creating config database `"$configDB`"..."
             # Waiting a few seconds seems to help with the Connect-SPConfigurationDatabase barging in on the New-SPConfigurationDatabase command; not sure why...
             Start-Sleep 5
-            New-SPConfigurationDatabase -DatabaseName "$configDB" -DatabaseServer "$dbServer" -AdministrationContentDatabaseName "$centralAdminContentDB" -Passphrase $secPhrase -FarmCredentials $farmCredential
+            New-SPConfigurationDatabase -DatabaseName "$configDB" -DatabaseServer "$dbServer" -AdministrationContentDatabaseName "$centralAdminContentDB" -Passphrase $secPhrase -FarmCredentials $farmCredential @distCacheSwitch
             If (-not $?) {Throw " - Error creating new farm configuration database"}
             Else {$farmMessage = " - Done creating configuration database for farm."}
         }
@@ -2603,7 +2612,8 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
 
     ForEach ($siteCollection in $webApp.SiteCollections.SiteCollection)
     {
-        $siteCollectionName = $siteCollection.name
+        $getSPSiteCollection = $null
+        $siteCollectionName = $siteCollection.Name
         $siteURL = $siteCollection.siteURL
         if (!([string]::IsNullOrEmpty($($siteCollection.CustomDatabase)))) # Check if we have specified a non-default content database for this site collection
         {
@@ -2626,7 +2636,6 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
         $LCID = $siteCollection.LCID
         $siteCollectionLocale = $siteCollection.Locale
         $siteCollectionTime24 = $siteCollection.Time24
-        $getSPSiteCollection = Get-SPSite -Limit ALL | Where-Object {$_.Url -eq $siteURL}
         # If a template has been pre-specified, use it when creating the Portal site collection; otherwise, leave it blank so we can select one when the portal first loads
         If (($template -ne $null) -and ($template -ne ""))
         {
@@ -2639,6 +2648,7 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
         }
         else {$hostHeaderWebAppSwitch = @{}}
         Write-Host -ForegroundColor White " - Checking for Site Collection `"$siteURL`"..."
+        $getSPSiteCollection = Get-SPSite -Limit ALL | Where-Object {$_.Url -eq $siteURL}
         If (($getSPSiteCollection -eq $null) -and ($siteURL -ne $null))
         {
             # Verify that the Language we're trying to create the site in is currently installed on the server
@@ -2692,7 +2702,7 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
                 # Add the hostname of this host header-based site collection to the local HOSTS so it's immediately resolvable locally
                 # Strip out any protocol and/or port values
                 $hostname,$null = $siteURL -replace "http://","" -replace "https://","" -split ":"
-                AddToHosts $hostname
+                AddToHOSTS $hostname
             }
         }
         WriteLine
@@ -4075,6 +4085,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
         }
 
         $dataDir = $xmlinput.Configuration.Install.DataDir
+        $dataDir = $dataDir.TrimEnd("\")
         # Set it to the default value if it's not specified in $xmlinput
         if ([string]::IsNullOrEmpty($dataDir)) {$dataDir = "$env:ProgramFiles\Microsoft Office Servers\$env:spVer.0\Data"}
 
@@ -6829,11 +6840,15 @@ Function AddToHOSTS ($hosts)
     $file = Get-Content $hostsfile
     $file = $file | Out-String
 
-    # Write the AAMs to the hosts file, unless they already exist.
+    # Write the AAMs to the hosts file, unless they already exist or happen to match the local computer name.
     ForEach ($hostname in $hosts)
     {
+        # Get rid of any path information that may have snuck in here
+        $hostname,$null = $hostname -split "/"
         If (($file -match " $hostname") -or ($file -match "`t$hostname")) # Added check for a space or tab character before the hostname for better exact matching, also used -match for case-insensitivity
         {Write-Host -ForegroundColor White "  - HOSTS file entry for `"$hostname`" already exists - skipping."}
+        if ($hostname -eq "$env:Computername" -or $hostname -eq "$env:Computername.$env:USERDNSDOMAIN")
+        {Write-Host -ForegroundColor Yellow "  - HOSTS file entry for `"$hostname`" matches local computer name - skipping."}
         Else
         {
             Write-Host -ForegroundColor White "  - Adding HOSTS file entry for `"$hostname`"..."

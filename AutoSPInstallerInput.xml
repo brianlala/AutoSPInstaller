@@ -79,7 +79,7 @@
              added to the server's local administrators group for the duration of the execution of the script. This is required for some steps, such as
              configuring the User Profile Synchronization service. If for some reason you need to leave the Farm account in the Administrators group after setup, set LeaveInLocalAdmins to true -->
         <Account AddToLocalAdminsDuringSetup="true" LeaveInLocalAdmins="false">
-            <Username>DOMAIN\SP_Farm</Username>
+            <Username>CONTOSO\SP_Farm</Username>
             <Password></Password>
         </Account>
         <!-- Which server(s) to provision CentralAdmin on. Specify "true" or a list of servers -->
@@ -119,7 +119,7 @@
                 <ReplyToEmail></ReplyToEmail>
             </OutgoingEmail>
             <IncomingEmail Start="localhost" />
-            <!-- As a general rule DistributedCache - Start should never be set to "false", only either "true" for all servers, or a comma-delimited list of specific servers. -->
+            <!-- DistributedCache (SharePoint 2013 only) - Start should never be set to "false", only either "true" for ALL servers (usually not recommended either), or a comma-delimited list of specific servers (maximum 4 cache host servers per farm). -->
             <DistributedCache Start="localhost" />
             <!-- As a general rule WorkflowTimer - Start should never be set to "false", only either "true" for all servers, or a comma-delimited list of specific servers.
                  Normally you would specify the same servers to provision WorkflowTimer as you would FoundationWebApplication below. -->
@@ -134,27 +134,27 @@
                  If you are creating additional web applications, use a new account for each web application with a new common name, unless you are creating a large number
                  of web applications, in which case the additional memory consumption this requires outweighs the security benefits. -->
             <ManagedAccount CommonName="spservice">
-                <Username>DOMAIN\SP_Services</Username>
+                <Username>CONTOSO\SP_Services</Username>
                 <Password></Password>
             </ManagedAccount>
             <ManagedAccount CommonName="Portal">
-                <Username>DOMAIN\SP_PortalAppPool</Username>
+                <Username>CONTOSO\SP_PortalAppPool</Username>
                 <Password></Password>
             </ManagedAccount>
             <ManagedAccount CommonName="MySiteHost">
-                <Username>DOMAIN\SP_ProfilesAppPool</Username>
+                <Username>CONTOSO\SP_ProfilesAppPool</Username>
                 <Password></Password>
             </ManagedAccount>
             <ManagedAccount CommonName="SearchService">
-                <Username>DOMAIN\SP_SearchService</Username>
+                <Username>CONTOSO\SP_SearchService</Username>
                 <Password></Password>
             </ManagedAccount>
         </ManagedAccounts>
         <!-- The object cache accounts are user accounts that are given FullControl and FullRead privileges on WebApplications so items can be cached by ASP.Net to improve performance.
              These accounts should not have any special Active Directory privileges other than Domain User membership -->
         <ObjectCacheAccounts>
-            <SuperUser>DOMAIN\SP_CacheSuperUser</SuperUser>
-            <SuperReader>DOMAIN\SP_CacheSuperReader</SuperReader>
+            <SuperUser>CONTOSO\SP_CacheSuperUser</SuperUser>
+            <SuperReader>CONTOSO\SP_CacheSuperReader</SuperReader>
         </ObjectCacheAccounts>
         <!-- The <Logging> section allows you to move various log files to another location / volume, per best practices and to control disk space usage on the (default) C: drive.
              It also allows you to specify some logging options, such as using NTFS compression for additional disk space savings.
@@ -211,7 +211,7 @@
         <WebApplication type="Portal"
                         name="Portal"
                         applicationPool="Portal"
-                        url="http://localhost"
+                        url="http://portal.contoso.com"
                         port="80"
                         UseHostHeader="false"
                         AddURLToLocalIntranetZone="true"
@@ -249,13 +249,13 @@
                 Locale: Actual locale of the site for regional settings. e.g. for UK English you use the US English LCID of 1033 but the locale en-gb.
                         If omitted, the default locale of the LCID is used.
                 Time24: If true, times are displayed using a 24 hour clock. If false, AM/PM is used. If omitted, the default for the LCID is applied. -->
-                <SiteCollection siteUrl="http://localhost"
+                <SiteCollection siteUrl="http://portal.contoso.com"
                                 HostNamedSiteCollection="false"
                                 Owner=""
                                 Name="Portal Home"
                                 Description="Portal Home Site"
                                 CustomDatabase=""
-                                SearchUrl="http://localhost/search"
+                                SearchUrl="http://portal.contoso.com/search"
                                 CustomTemplate="false"
                                 Template="SPSPORTAL#0"
                                 LCID="1033"
@@ -267,8 +267,8 @@
         <WebApplication type="MySiteHost"
                         name="MySite Host"
                         applicationPool="MySites"
-                        url="http://localhost"
-                        port="8080"
+                        url="http://mysites.contoso.com"
+                        port="80"
                         UseHostHeader="true"
                         AddURLToLocalIntranetZone="true"
                         GrantCurrentUserFullControl="true"
@@ -291,13 +291,13 @@
                 <ManagedPath relativeUrl="personal" explicit="false"/>
             </ManagedPaths>
             <SiteCollections>
-                <SiteCollection siteUrl="http://localhost:8080"
+                <SiteCollection siteUrl="http://mysites.contoso.com"
                                 HostNamedSiteCollection="false"
                                 Owner=""
                                 Name="My Site Host"
                                 Description="My Site Host"
                                 CustomDatabase=""
-                                SearchUrl="http://localhost/search"
+                                SearchUrl="http://portal.contoso.com/search"
                                 CustomTemplate="false"
                                 Template="SPSMSITEHOST#0"
                                 LCID="1033"
@@ -346,7 +346,7 @@
                                EnableNetBIOSDomainNames="false"
                                StartProfileSync="true"
                                CreateDefaultSyncConnection="false"
-                               SyncConnectionAccount="DOMAIN\SP_ProfileSync"
+                               SyncConnectionAccount="CONTOSO\SP_ProfileSync"
                                SyncConnectionAccountPassword="" >
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
@@ -380,7 +380,7 @@
                                                     Partitioned="false"
                                                     Partitions="1"
                                                     SearchServiceApplicationType="Regular"
-                                                    ContentAccessAccount="DOMAIN\SP_SearchContent"
+                                                    ContentAccessAccount="CONTOSO\SP_SearchContent"
                                                     ContentAccessAccountPassword="">
                     <Database>
                         <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
@@ -597,13 +597,13 @@
     <EnterpriseServiceApps>
         <ExcelServices Provision="false"
                        Name="Excel Services Application"
-                       UnattendedIDUser="DOMAIN\SP_ExcelUser"
+                       UnattendedIDUser="CONTOSO\SP_ExcelUser"
                        UnattendedIDPassword="">
         </ExcelServices>
         <VisioService Provision="false"
                       Name="Visio Graphics Service"
                       ProxyName="Visio Graphics Service"
-                      UnattendedIDUser="DOMAIN\SP_VisioUser"
+                      UnattendedIDUser="CONTOSO\SP_VisioUser"
                       UnattendedIDPassword="">
         </VisioService>
         <!-- AccessService is the version found in SP2010, or the version called 'Access 2010 Service' in SharePoint 2013. In SharePoint 2013 you can actually provision both. -->
@@ -632,7 +632,7 @@
         <PerformancePointService Provision="false"
                                  Name="PerformancePoint Service"
                                  ProxyName="PerformancePoint Service"
-                                 UnattendedIDUser="DOMAIN\SP_PerfPointUser"
+                                 UnattendedIDUser="CONTOSO\SP_PerfPointUser"
                                  UnattendedIDPassword="">
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
@@ -656,7 +656,7 @@
         <ExcelService Provision="false"
                       Name="Excel Web App"
                       ProxyName="Excel Web App"
-                      UnattendedIDUser="DOMAIN\SP_ExcelUser"
+                      UnattendedIDUser="CONTOSO\SP_ExcelUser"
                       UnattendedIDPassword="">
         </ExcelService>
         <WordViewingService Provision="false"
@@ -678,7 +678,7 @@
                     Name="Project Server Service Application"
                     ProxyName="Project Server Service Application"
                     ManagedPath="PWA"
-                    ServiceAccount="DOMAIN\SP_ProjectServer"
+                    ServiceAccount="CONTOSO\SP_ProjectServer"
                     ServiceAccountPassword="">
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
