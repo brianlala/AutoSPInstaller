@@ -585,19 +585,33 @@ Function InstallPrerequisites([xml]$xmlinput)
         }
         Try
         {
-            # Detect if we're installing SP2010 on on Windows Server 2012
-            if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
+            # Detect if we're installing SP2010 on Windows Server 2012 (R2)
+            if ((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*")
+            {
+                $osName = "Windows Server 2012"
+                $win2012 = $true
+                $prereqInstallerRequiredBuild = "7009" # i.e. minimum required version of PrerequisiteInstaller.exe for Windows Server 2012 is 14.0.7009.1000
+            }
+            elseif ((Get-WmiObject Win32_OperatingSystem).Version -like "6.3*")
+            {
+                $osName = "Windows Server 2012 R2"
+                $win2012 = $true
+                $prereqInstallerRequiredBuild = "7104" # i.e. minimum required version of PrerequisiteInstaller.exe for Windows Server 2012 R2 is 14.0.7104.5000
+            }
+            else {$win2012 = $false}
+            if ($win2012 -and ($env:spVer -eq "14"))
             {
                 Write-Host -ForegroundColor White " - Checking for required version of PrerequisiteInstaller.exe..." -NoNewline
                 $prereqInstallerVer = (Get-Command $env:SPbits\PrerequisiteInstaller.exe).FileVersionInfo.ProductVersion
-                # Check for the version of PrerequisiteInstaller.exe included in the MS-provided SharePoint 2010 SP2-integrated package, required for Win2012 compatibility
-                if ($prereqInstallerVer -ne "14.0.7009.1000")
+                $null,$null,$prereqInstallerBuild,$null = $prereqInstallerVer -split "\."
+                # Check that the version of PrerequisiteInstaller.exe included in the MS-provided SharePoint 2010 SP2-integrated package meets the minimum required version for the detected OS
+                if ($prereqInstallerBuild -lt $prereqInstallerRequiredBuild)
                 {
                     Write-Host -ForegroundColor White "."
-                    Throw " - SharePoint 2010 is officially unsupported on Windows Server 2012 without an updated set of SP2-integrated binaries - see http://support.microsoft.com/kb/2724471"
+                    Throw " - SharePoint 2010 is officially unsupported on $osName without an updated set of SP2-integrated binaries - see http://support.microsoft.com/kb/2724471"
                 }
                 else {Write-Host -BackgroundColor Blue -ForegroundColor Black "OK."}
-             }
+            }
             # Install using PrerequisiteInstaller as usual
             If ($xmlinput.Configuration.Install.OfflineInstall -eq $true) # Install all prerequisites from local folder
             {
@@ -1591,6 +1605,7 @@ Function UpdateProcessIdentity ($serviceToUpdate)
 Function CreateOrJoinFarm([xml]$xmlinput, $secPhrase, $farmCredential)
 {
     WriteLine
+    $dbPrefix = Get-DBPrefix $xmlinput
     $configDB = $dbPrefix+$xmlinput.Configuration.Farm.Database.ConfigDB
 
     # Look for an existing farm and join the farm if not already joined, or create a new farm
@@ -1736,6 +1751,7 @@ Function CreateCentralAdmin([xml]$xmlinput)
 # ===================================================================================
 Function CheckFarmTopology([xml]$xmlinput)
 {
+    $dbPrefix = Get-DBPrefix $xmlinput
     $configDB = $dbPrefix+$xmlinput.Configuration.Farm.Database.ConfigDB
     $dbServer = $xmlinput.Configuration.Farm.Database.DBServer
     $spFarm = Get-SPFarm | Where-Object {$_.Name -eq $configDB}
@@ -2264,6 +2280,7 @@ Function CreateMetadataServiceApp([xml]$xmlinput)
         WriteLine
         Try
         {
+            $dbPrefix = Get-DBPrefix $xmlinput
             $metaDataDB = $dbPrefix+$xmlinput.Configuration.ServiceApps.ManagedMetadataServiceApp.Database.Name
             $dbServer = $xmlinput.Configuration.ServiceApps.ManagedMetadataServiceApp.Database.DBServer
             # If we haven't specified a DB Server then just use the default used by the Farm
@@ -2503,6 +2520,7 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
     }
     $webAppName = $webApp.name
     $appPool = $webApp.applicationPool
+    $dbPrefix = Get-DBPrefix $xmlinput
     $database = $dbPrefix+$webApp.Database.Name
     $dbServer = $webApp.Database.DBServer
     # Check for an existing App Pool
@@ -2612,6 +2630,7 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
 
     ForEach ($siteCollection in $webApp.SiteCollections.SiteCollection)
     {
+        $dbPrefix = Get-DBPrefix $xmlinput
         $getSPSiteCollection = $null
         $siteCollectionName = $siteCollection.Name
         $siteURL = $siteCollection.siteURL
@@ -2843,6 +2862,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
     {
         $userProfile = $xmlinput.Configuration.ServiceApps.UserProfileServiceApp
         $mySiteWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "MySiteHost"}
+        $dbPrefix = Get-DBPrefix $xmlinput
         # If we have asked to create a MySite Host web app, use that as the MySite host location
         if ($mySiteWebApp)
         {
@@ -3248,6 +3268,7 @@ Function CreateUPSAsAdmin([xml]$xmlinput)
         $profileDBServer = $dbServer
         $syncDBServer = $dbServer
         $socialDBServer = $dbServer
+        $dbPrefix = Get-DBPrefix $xmlinput
         $profileDB = $dbPrefix+$userProfile.Database.ProfileDB
         $syncDB = $dbPrefix+$userProfile.Database.SyncDB
         $socialDB = $dbPrefix+$userProfile.Database.SocialDB
@@ -3323,6 +3344,7 @@ Function CreateStateServiceApp([xml]$xmlinput)
             {
                 $dbServer = $xmlinput.Configuration.Farm.Database.DBServer
             }
+            $dbPrefix = Get-DBPrefix $xmlinput
             $stateServiceDB = $dbPrefix+$stateService.Database.Name
             $stateServiceName = $stateService.Name
             $stateServiceProxyName = $stateService.ProxyName
@@ -3370,6 +3392,7 @@ Function CreateSPUsageApp([xml]$xmlinput)
                 $dbServer = $xmlinput.Configuration.Farm.Database.DBServer
             }
             $spUsageApplicationName = $xmlinput.Configuration.ServiceApps.SPUsageService.Name
+            $dbPrefix = Get-DBPrefix $xmlinput
             $spUsageDB = $dbPrefix+$xmlinput.Configuration.ServiceApps.SPUsageService.Database.Name
             $getSPUsageApplication = Get-SPUsageApplication
             If ($getSPUsageApplication -eq $null)
@@ -3411,7 +3434,8 @@ Function ConfigureIISLogging([xml]$xmlinput)
     WriteLine
     $IISLogConfig = $xmlinput.Configuration.Farm.Logging.IISLogs
     Write-Host -ForegroundColor White " - Configuring IIS logging..."
-    If (!([string]::IsNullOrEmpty($IISLogConfig.Path)))
+    # New: Check for PowerShell version > 2 in case this is being run on Windows Server 2012
+    If (!([string]::IsNullOrEmpty($IISLogConfig.Path)) -and $host.Version.Major -gt 2)
     {
         $IISLogDir = $IISLogConfig.Path
         EnsureFolder $IISLogDir
@@ -3608,6 +3632,7 @@ Function CreateWebAnalyticsApp([xml]$xmlinput)
                 $dbServer = $xmlinput.Configuration.Farm.Database.DBServer
             }
             $applicationPool = Get-HostedServicesAppPool $xmlinput
+            $dbPrefix = Get-DBPrefix $xmlinput
             $webAnalyticsReportingDB = $dbPrefix+$xmlinput.Configuration.ServiceApps.WebAnalyticsService.Database.ReportingDB
             $webAnalyticsStagingDB = $dbPrefix+$xmlinput.Configuration.ServiceApps.WebAnalyticsService.Database.StagingDB
             $webAnalyticsServiceName = $xmlinput.Configuration.ServiceApps.WebAnalyticsService.Name
@@ -3677,6 +3702,7 @@ Function CreateSecureStoreServiceApp
             {
                 $dbServer = $xmlinput.Configuration.Farm.Database.DBServer
             }
+            $dbPrefix = Get-DBPrefix $xmlinput
             $secureStoreDB = $dbPrefix+$xmlinput.Configuration.ServiceApps.SecureStoreService.Database.Name
             Write-Host -ForegroundColor White " - Provisioning Secure Store Service Application..."
             $applicationPool = Get-HostedServicesAppPool $xmlinput
@@ -3998,12 +4024,12 @@ Function ConfigureDistributedCacheService ([xml]$xmlinput)
         $distributedCachingSvc = (Get-SPFarm).Services | where {$_.Name -eq "AppFabricCachingService"}
         # Check if we should disable the Distributed Cache service on the local server
         # Ensure the node exists in the XML first as we don't want to inadvertently disable the service if it wasn't explicitly specified
+        $serviceInstances = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.SharePoint.DistributedCaching.Utilities.SPDistributedCacheServiceInstance"}
+        $serviceInstance = $serviceInstances | ? {MatchComputerName $_.Server.Address $env:COMPUTERNAME}
         if (($xmlinput.Configuration.Farm.Services.SelectSingleNode("DistributedCache")) -and !(ShouldIProvision $xmlinput.Configuration.Farm.Services.DistributedCache -eq $true))
         {
             ##StopServiceInstance "Microsoft.SharePoint.DistributedCaching.Utilities.SPDistributedCacheServiceInstance"
-            $serviceInstances = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.SharePoint.DistributedCaching.Utilities.SPDistributedCacheServiceInstance"}
-            $serviceInstance = $serviceInstances | ? {MatchComputerName $_.Server.Address $env:COMPUTERNAME}
-            Write-Host -ForegroundColor White " - Stopping the Distributed Cache Service..." -NoNewline
+            Write-Host -ForegroundColor White " - Stopping the Distributed Cache service..." -NoNewline
             if ($serviceInstance.Status -eq "Online")
             {
                 Stop-SPDistributedCacheServiceInstance -Graceful
@@ -4012,9 +4038,16 @@ Function ConfigureDistributedCacheService ([xml]$xmlinput)
             }
             else {Write-Host -ForegroundColor White "Already stopped."}
         }
-        # Otherwise, set it to run under a different account
+        # Otherwise, make sure it's started, and set it to run under a different account
         else
         {
+            # Ensure the local Distributed Cache services is actually running
+            if ($serviceInstance.Status -ne "Online")
+            {
+                Write-Host -ForegroundColor White " - Starting the Distributed Cache service..." -NoNewline
+                Add-SPDistributedCacheServiceInstance
+                Write-Host -ForegroundColor White "Done."
+            }
             $appPoolAcctDomain,$appPoolAcctUser = $spservice.username -Split "\\"
             Write-Host -ForegroundColor White " - Applying service account $($spservice.username) to service AppFabricCachingService..."
             $managedAccountGen = Get-SPManagedAccount | Where-Object {$_.UserName -eq $($spservice.username)}
@@ -4122,6 +4155,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
         {
             $svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication | ForEach-Object {
                 $appConfig = $_
+                $dbPrefix = Get-DBPrefix $xmlinput
                 If (!([string]::IsNullOrEmpty($appConfig.Database.DBServer)))
                 {
                     $dbServer = $appConfig.Database.DBServer
@@ -4360,6 +4394,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
         {
             $svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication | ForEach-Object {
                 $appConfig = $_
+                $dbPrefix = Get-DBPrefix $xmlinput
                 If (!([string]::IsNullOrEmpty($appConfig.Database.DBServer)))
                 {
                     $dbServer = $appConfig.Database.DBServer
@@ -4933,6 +4968,7 @@ Function CreateBusinessDataConnectivityServiceApp([xml]$xmlinput)
                 $dbServer = $xmlinput.Configuration.Farm.Database.DBServer
             }
             $bdcAppName = $xmlinput.Configuration.ServiceApps.BusinessDataConnectivity.Name
+            $dbPrefix = Get-DBPrefix $xmlinput
             $bdcDataDB = $dbPrefix+$($xmlinput.Configuration.ServiceApps.BusinessDataConnectivity.Database.Name)
             $bdcAppProxyName = $xmlinput.Configuration.ServiceApps.BusinessDataConnectivity.ProxyName
             Write-Host -ForegroundColor White " - Provisioning $bdcAppName"
@@ -4991,15 +5027,13 @@ Function CreateBusinessDataConnectivityServiceApp([xml]$xmlinput)
 Function CreateWordAutomationServiceApp ([xml]$xmlinput)
 {
     $serviceConfig = $xmlinput.Configuration.ServiceApps.WordAutomationService
-    $dbPrefix = $xmlinput.Configuration.Farm.Database.DBPrefix
-    If (($dbPrefix -ne "") -and ($dbPrefix -ne $null)) {$dbPrefix += "_"}
-    If ($dbPrefix -like "*localhost*") {$dbPrefix = $dbPrefix -replace "localhost","$env:COMPUTERNAME"}
     $dbServer = $serviceConfig.Database.DBServer
     # If we haven't specified a DB Server then just use the default used by the Farm
     If ([string]::IsNullOrEmpty($dbServer))
     {
         $dbServer = $xmlinput.Configuration.Farm.Database.DBServer
     }
+    $dbPrefix = Get-DBPrefix $xmlinput
     $serviceDB = $dbPrefix+$($serviceConfig.Database.Name)
     If (ShouldIProvision $serviceConfig -eq $true)
     {
@@ -5301,6 +5335,7 @@ Function CreatePerformancePointServiceApp ([xml]$xmlinput)
     	    {
     	        $dbServer = $xmlinput.Configuration.Farm.Database.DBServer
     	    }
+            $dbPrefix = Get-DBPrefix $xmlinput
     	    $serviceDB = $dbPrefix+$serviceConfig.Database.Name
             $serviceInstanceType = "Microsoft.PerformancePoint.Scorecards.BIMonitoringServiceInstance"
             CreateGenericServiceApplication -ServiceConfig $serviceConfig `
@@ -5470,6 +5505,7 @@ Function CreateAppManagementServiceApp ([xml]$xmlinput)
     If (ShouldIProvision $serviceConfig -eq $true)
     {
         WriteLine
+        $dbPrefix = Get-DBPrefix $xmlinput
 	    $serviceDB = $dbPrefix+$serviceConfig.Database.Name
 	    $dbServer = $serviceConfig.Database.DBServer
 	    # If we haven't specified a DB Server then just use the default used by the Farm
@@ -5500,6 +5536,7 @@ Function CreateSubscriptionSettingsServiceApp ([xml]$xmlinput)
     If (ShouldIProvision $serviceConfig -eq $true)
     {
         WriteLine
+        $dbPrefix = Get-DBPrefix $xmlinput
 	    $serviceDB = $dbPrefix+$serviceConfig.Database.Name
 	    $dbServer = $serviceConfig.Database.DBServer
 	    # If we haven't specified a DB Server then just use the default used by the Farm
@@ -5527,15 +5564,13 @@ Function CreateSubscriptionSettingsServiceApp ([xml]$xmlinput)
 Function CreateAccessServicesApp ([xml]$xmlinput)
 {
     $officeServerPremium = $xmlinput.Configuration.Install.SKU -replace "Enterprise","1" -replace "Standard","0"
-    $dbPrefix = $xmlinput.Configuration.Farm.Database.DBPrefix
-    If (($dbPrefix -ne "") -and ($dbPrefix -ne $null)) {$dbPrefix += "_"}
-    If ($dbPrefix -like "*localhost*") {$dbPrefix = $dbPrefix -replace "localhost","$env:COMPUTERNAME"}
     $dbServer = $serviceConfig.Database.DBServer
     # If we haven't specified a DB Server then just use the default used by the Farm
     If ([string]::IsNullOrEmpty($dbServer))
     {
         $dbServer = $xmlinput.Configuration.Farm.Database.DBServer
     }
+    $dbPrefix = Get-DBPrefix $xmlinput
     $serviceDB = $dbPrefix+$($serviceConfig.Database.Name)
     $serviceConfig = $xmlinput.Configuration.EnterpriseServiceApps.AccessServices
     If (ShouldIProvision $serviceConfig -eq $true)
@@ -5588,15 +5623,13 @@ Function CreatePowerPointConversionServiceApp ([xml]$xmlinput)
 Function CreateMachineTranslationServiceApp ([xml]$xmlinput)
 {
     $serviceConfig = $xmlinput.Configuration.ServiceApps.MachineTranslationService
-    $dbPrefix = $xmlinput.Configuration.Farm.Database.DBPrefix
-    If (($dbPrefix -ne "") -and ($dbPrefix -ne $null)) {$dbPrefix += "_"}
-    If ($dbPrefix -like "*localhost*") {$dbPrefix = $dbPrefix -replace "localhost","$env:COMPUTERNAME"}
     $dbServer = $serviceConfig.Database.DBServer
     # If we haven't specified a DB Server then just use the default used by the Farm
     If ([string]::IsNullOrEmpty($dbServer))
     {
         $dbServer = $xmlinput.Configuration.Farm.Database.DBServer
     }
+    $dbPrefix = Get-DBPrefix $xmlinput
     $translationDatabase = $dbPrefix+$($serviceConfig.Database.Name)
     If (ShouldIProvision $serviceConfig -eq $true)
     {
@@ -5644,9 +5677,7 @@ Function CreateProjectServerServiceApp ([xml]$xmlinput)
     If ((ShouldIProvision $serviceConfig -eq $true) -and $xmlinput.Configuration.ProjectServer.Install -eq $true) # We need to check that Project Server has been requested for install, not just if the service app should be provisioned
     {
         WriteLine
-        $dbPrefix = $xmlinput.Configuration.Farm.Database.DBPrefix
-        If (($dbPrefix -ne "") -and ($dbPrefix -ne $null)) {$dbPrefix += "_"}
-        If ($dbPrefix -like "*localhost*") {$dbPrefix = $dbPrefix -replace "localhost","$env:COMPUTERNAME"}
+        $dbPrefix = Get-DBPrefix $xmlinput
 	    $serviceDB = $dbPrefix+$serviceConfig.Database.Name
 	    $dbServer = $serviceConfig.Database.DBServer
 	    # If we haven't specified a DB Server then just use the default used by the Farm
@@ -6979,6 +7010,19 @@ Function Show-Progress ($process, $color, $interval)
         Start-Sleep $interval
     }
     Write-Host -ForegroundColor $color "Done."
+}
+
+# ====================================================================================
+# Func: Get-DBPrefix
+# Desc: Returns the database prefix for the farm
+# From: Brian Lalancette, 2014
+# ====================================================================================
+Function Get-DBPrefix ([xml]$xmlinput)
+{
+    $dbPrefix = $xmlinput.Configuration.Farm.Database.DBPrefix
+    If (($dbPrefix -ne "") -and ($dbPrefix -ne $null)) {$dbPrefix += "_"}
+    If ($dbPrefix -like "*localhost*") {$dbPrefix = $dbPrefix -replace "localhost","$env:COMPUTERNAME"}
+    return $dbPrefix
 }
 #EndRegion
 
