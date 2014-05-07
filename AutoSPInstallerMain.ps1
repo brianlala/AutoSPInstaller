@@ -369,6 +369,27 @@ If (MatchComputerName $farmServers $env:COMPUTERNAME)
         Run-Install
         Write-Host -ForegroundColor White " - SharePoint $spYear binary file installation done!"
 
+        #Region Re-Launch Script under PowerShell v2
+        # Check for SharePoint 2010 on Windows Server 2012, and re-launch script under PowerShell version 2 if it's not already
+        # Required for compatibility
+        if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($host.Version.Major -gt 2) -and ($env:spVer -eq "14"))
+        {
+            Write-Host -ForegroundColor Yellow " - A version of PowerShell greater than 2.0 was detected."
+            Write-Host -ForegroundColor Yellow " - We need to re-launch the script to enable PowerShell version 2 for SharePoint $spYear."
+            $scriptCommandLine = $($MyInvocation.Line)
+            If (Confirm-LocalSession)
+            {
+                Write-Host -ForegroundColor White " - Re-Launching:"
+                Write-Host -ForegroundColor White " - $scriptCommandLine"
+                Start-Process -WorkingDirectory $PSHOME -FilePath "powershell.exe" -ArgumentList "-Version 2 -NoExit -ExecutionPolicy Bypass $scriptCommandLine" -Verb RunAs
+                $aborted = $true
+                Start-Sleep 10
+                Write-Host -ForegroundColor White " - You can now safely close this window."
+            }
+            exit
+        }
+        #EndRegion
+
         If (($xmlinput.Configuration.Install.PauseAfterInstall -eq $true) -or ($xmlinput.Configuration.Install.RemoteInstall.ParallelInstall -eq $true))
         {
             Pause "proceed with farm configuration" "y"
