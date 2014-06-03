@@ -1330,7 +1330,7 @@ Function InstallUpdates
     if ($spYear -eq "2013")
     {
         # Do SP1 first, if it's found
-        $sp2013SP1 = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include "officeserversp2013-kb2817429-fullfile-x64-en-us.exe" -Recurse -ErrorAction SilentlyContinue
+        $sp2013SP1 = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include "officeserversp2013-kb2880552-fullfile-x64-en-us.exe" -Recurse -ErrorAction SilentlyContinue
         if ($sp2013SP1)
         {
             # In case we find more than one (e.g. in subfolders), grab the first one
@@ -1394,7 +1394,8 @@ Function InstallUpdates
     # Look for Server Cumulative Update installers
     if ($cumulativeUpdates)
     {
-        if ($spYear -eq "2013" -and !$sp2013SP1 -and !$marchPublicUpdate)
+        # Display warning about missing March 2013 PU only if we are actually installing SP2013 and SP1 isn't already installed and the SP1 installer isn't found
+        if ($spYear -eq "2013" -and !($sp2013SP1 -or (CheckFor2013SP1)) -and !$marchPublicUpdate)
         {
             Write-Host -ForegroundColor Yellow "  - Note: the March 2013 PU package wasn't found in ..\$spYear\Updates; it may need to be installed first if it wasn't slipstreamed."
         }
@@ -2628,103 +2629,110 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
     WriteLine
     ConfigureObjectCache $webApp
 
-    ForEach ($siteCollection in $webApp.SiteCollections.SiteCollection)
+    if ($webApp.SiteCollections.SelectSingleNode("SiteCollection")) # Only go through these steps if we actually have a site collection to create
     {
-        $dbPrefix = Get-DBPrefix $xmlinput
-        $getSPSiteCollection = $null
-        $siteCollectionName = $siteCollection.Name
-        $siteURL = $siteCollection.siteURL
-        if (!([string]::IsNullOrEmpty($($siteCollection.CustomDatabase)))) # Check if we have specified a non-default content database for this site collection
+        ForEach ($siteCollection in $webApp.SiteCollections.SiteCollection)
         {
-            $siteDatabase = $dbPrefix+$siteCollection.CustomDatabase
-        }
-        else # Just use the first, default content database for the web application
-        {
-            $siteDatabase = $database
-        }
-        $template = $siteCollection.template
-        # If an OwnerAlias has been specified, make it the primary, and the currently logged-in account the secondary. Otherwise, make the app pool account for the web app the primary owner
-        if (!([string]::IsNullOrEmpty($($siteCollection.Owner))))
-        {
-            $ownerAlias = $siteCollection.Owner
-        }
-        else
-        {
-            $ownerAlias = $webAppPoolAccount.username
-        }
-        $LCID = $siteCollection.LCID
-        $siteCollectionLocale = $siteCollection.Locale
-        $siteCollectionTime24 = $siteCollection.Time24
-        # If a template has been pre-specified, use it when creating the Portal site collection; otherwise, leave it blank so we can select one when the portal first loads
-        If (($template -ne $null) -and ($template -ne ""))
-        {
-            $templateSwitch = @{Template = $template}
-        }
-        else {$templateSwitch = @{}}
-        if ($siteCollection.HostNamedSiteCollection -eq $true)
-        {
-            $hostHeaderWebAppSwitch = @{HostHeaderWebApplication = $($webApp.url)+":"+$($webApp.port)}
-        }
-        else {$hostHeaderWebAppSwitch = @{}}
-        Write-Host -ForegroundColor White " - Checking for Site Collection `"$siteURL`"..."
-        $getSPSiteCollection = Get-SPSite -Limit ALL | Where-Object {$_.Url -eq $siteURL}
-        If (($getSPSiteCollection -eq $null) -and ($siteURL -ne $null))
-        {
-            # Verify that the Language we're trying to create the site in is currently installed on the server
-            $culture = [System.Globalization.CultureInfo]::GetCultureInfo(([convert]::ToInt32($LCID)))
-            $cultureDisplayName = $culture.DisplayName
-            If (!($installedOfficeServerLanguages | Where-Object {$_ -eq $culture.Name}))
+            $dbPrefix = Get-DBPrefix $xmlinput
+            $getSPSiteCollection = $null
+            $siteCollectionName = $siteCollection.Name
+            $siteURL = $siteCollection.siteURL
+            if (!([string]::IsNullOrEmpty($($siteCollection.CustomDatabase)))) # Check if we have specified a non-default content database for this site collection
             {
-                Write-Warning "You must install the `"$culture ($cultureDisplayName)`" Language Pack before you can create a site using LCID $LCID"
+                $siteDatabase = $dbPrefix+$siteCollection.CustomDatabase
             }
-            Else
+            else # Just use the first, default content database for the web application
             {
-                $siteDatabaseExists = Get-SPContentDatabase -Identity $siteDatabase -ErrorAction SilentlyContinue
-                if (!$siteDatabaseExists)
+                $siteDatabase = $database
+            }
+            $template = $siteCollection.template
+            # If an OwnerAlias has been specified, make it the primary, and the currently logged-in account the secondary. Otherwise, make the app pool account for the web app the primary owner
+            if (!([string]::IsNullOrEmpty($($siteCollection.Owner))))
+            {
+                $ownerAlias = $siteCollection.Owner
+            }
+            else
+            {
+                $ownerAlias = $webAppPoolAccount.username
+            }
+            $LCID = $siteCollection.LCID
+            $siteCollectionLocale = $siteCollection.Locale
+            $siteCollectionTime24 = $siteCollection.Time24
+            # If a template has been pre-specified, use it when creating the Portal site collection; otherwise, leave it blank so we can select one when the portal first loads
+            If (($template -ne $null) -and ($template -ne ""))
+            {
+                $templateSwitch = @{Template = $template}
+            }
+            else {$templateSwitch = @{}}
+            if ($siteCollection.HostNamedSiteCollection -eq $true)
+            {
+                $hostHeaderWebAppSwitch = @{HostHeaderWebApplication = $($webApp.url)+":"+$($webApp.port)}
+            }
+            else {$hostHeaderWebAppSwitch = @{}}
+            Write-Host -ForegroundColor White " - Checking for Site Collection `"$siteURL`"..."
+            $getSPSiteCollection = Get-SPSite -Limit ALL | Where-Object {$_.Url -eq $siteURL}
+            If (($getSPSiteCollection -eq $null) -and ($siteURL -ne $null))
+            {
+                # Verify that the Language we're trying to create the site in is currently installed on the server
+                $culture = [System.Globalization.CultureInfo]::GetCultureInfo(([convert]::ToInt32($LCID)))
+                $cultureDisplayName = $culture.DisplayName
+                If (!($installedOfficeServerLanguages | Where-Object {$_ -eq $culture.Name}))
                 {
-                    Write-Host -ForegroundColor White " - Creating new content database `"$siteDatabase`"..."
-                    New-SPContentDatabase -Name $siteDatabase -WebApplication (Get-SPWebApplication $webApp.url) | Out-Null
+                    Write-Warning "You must install the `"$culture ($cultureDisplayName)`" Language Pack before you can create a site using LCID $LCID"
                 }
-                Write-Host -ForegroundColor White " - Creating Site Collection `"$siteURL`"..."
-                $site = New-SPSite -Url $siteURL -OwnerAlias $ownerAlias -SecondaryOwner $env:USERDOMAIN\$env:USERNAME -ContentDatabase $siteDatabase -Description $siteCollectionName -Name $siteCollectionName -Language $LCID @templateSwitch @hostHeaderWebAppSwitch -ErrorAction Stop
+                Else
+                {
+                    $siteDatabaseExists = Get-SPContentDatabase -Identity $siteDatabase -ErrorAction SilentlyContinue
+                    if (!$siteDatabaseExists)
+                    {
+                        Write-Host -ForegroundColor White " - Creating new content database `"$siteDatabase`"..."
+                        New-SPContentDatabase -Name $siteDatabase -WebApplication (Get-SPWebApplication $webApp.url) | Out-Null
+                    }
+                    Write-Host -ForegroundColor White " - Creating Site Collection `"$siteURL`"..."
+                    $site = New-SPSite -Url $siteURL -OwnerAlias $ownerAlias -SecondaryOwner $env:USERDOMAIN\$env:USERNAME -ContentDatabase $siteDatabase -Description $siteCollectionName -Name $siteCollectionName -Language $LCID @templateSwitch @hostHeaderWebAppSwitch -ErrorAction Stop
 
-                # Add the Portal Site Connection to the web app, unless of course the current web app *is* the portal
-                # Inspired by http://www.toddklindt.com/blog/Lists/Posts/Post.aspx?ID=264
-                $portalWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "Portal"}
-                $portalSiteColl = $portalWebApp.SiteCollections.SiteCollection | Select-Object -First 1
-                If ($site.URL -ne $portalSiteColl.siteURL)
-                {
-                    Write-Host -ForegroundColor White " - Setting the Portal Site Connection for `"$siteCollectionName`"..."
-                    $site.PortalName = $portalSiteColl.Name
-                    $site.PortalUrl = $portalSiteColl.siteUrl
+                    # Add the Portal Site Connection to the web app, unless of course the current web app *is* the portal
+                    # Inspired by http://www.toddklindt.com/blog/Lists/Posts/Post.aspx?ID=264
+                    $portalWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "Portal"}
+                    $portalSiteColl = $portalWebApp.SiteCollections.SiteCollection | Select-Object -First 1
+                    If ($site.URL -ne $portalSiteColl.siteURL)
+                    {
+                        Write-Host -ForegroundColor White " - Setting the Portal Site Connection for `"$siteCollectionName`"..."
+                        $site.PortalName = $portalSiteColl.Name
+                        $site.PortalUrl = $portalSiteColl.siteUrl
+                    }
+                    If ($siteCollectionLocale)
+                    {
+                        Write-Host -ForegroundColor White " - Updating the locale for `"$siteCollectionName`" to `"$siteCollectionLocale`"..."
+                        $site.RootWeb.Locale = [System.Globalization.CultureInfo]::CreateSpecificCulture($siteCollectionLocale)
+                    }
+                    If ($siteCollectionTime24)
+                    {
+                        Write-Host -ForegroundColor White " - Updating 24 hour time format for `"$siteCollectionName`" to `"$siteCollectionTime24`"..."
+                        $site.RootWeb.RegionalSettings.Time24 = $([System.Convert]::ToBoolean($siteCollectionTime24))
+                    }
+                    $site.RootWeb.Update()
                 }
-                If ($siteCollectionLocale)
-                {
-                    Write-Host -ForegroundColor White " - Updating the locale for `"$siteCollectionName`" to `"$siteCollectionLocale`"..."
-                    $site.RootWeb.Locale = [System.Globalization.CultureInfo]::CreateSpecificCulture($siteCollectionLocale)
-                }
-                If ($siteCollectionTime24)
-                {
-                    Write-Host -ForegroundColor White " - Updating 24 hour time format for `"$siteCollectionName`" to `"$siteCollectionTime24`"..."
-                    $site.RootWeb.RegionalSettings.Time24 = $([System.Convert]::ToBoolean($siteCollectionTime24))
-                }
-                $site.RootWeb.Update()
             }
-        }
-        Else {Write-Host -ForegroundColor White " - Skipping creation of site `"$siteCollectionName`" - already provisioned."}
-        if ($siteCollection.HostNamedSiteCollection -eq $true)
-        {
-            Add-LocalIntranetURL ($siteURL)
-            # Updated so that we don't add URLs to the local hosts file of a server that's not running the Foundation Web Application service
-            if ($xmlinput.Configuration.WebApplications.AddURLsToHOSTS -eq $true -and !(($xmlinput.Configuration.Farm.Services.SelectSingleNode("FoundationWebApplication")) -and !(ShouldIProvision $xmlinput.Configuration.Farm.Services.FoundationWebApplication -eq $true)))
+            Else {Write-Host -ForegroundColor White " - Skipping creation of site `"$siteCollectionName`" - already provisioned."}
+            if ($siteCollection.HostNamedSiteCollection -eq $true)
             {
-                # Add the hostname of this host header-based site collection to the local HOSTS so it's immediately resolvable locally
-                # Strip out any protocol and/or port values
-                $hostname,$null = $siteURL -replace "http://","" -replace "https://","" -split ":"
-                AddToHOSTS $hostname
+                Add-LocalIntranetURL ($siteURL)
+                # Updated so that we don't add URLs to the local hosts file of a server that's not running the Foundation Web Application service
+                if ($xmlinput.Configuration.WebApplications.AddURLsToHOSTS -eq $true -and !(($xmlinput.Configuration.Farm.Services.SelectSingleNode("FoundationWebApplication")) -and !(ShouldIProvision $xmlinput.Configuration.Farm.Services.FoundationWebApplication -eq $true)))
+                {
+                    # Add the hostname of this host header-based site collection to the local HOSTS so it's immediately resolvable locally
+                    # Strip out any protocol and/or port values
+                    $hostname,$null = $siteURL -replace "http://","" -replace "https://","" -split ":"
+                    AddToHOSTS $hostname
+                }
             }
+            WriteLine
         }
-        WriteLine
+    }
+    else
+    {
+        Write-Host -ForegroundColor Yellow " - No site collections specified for $($webapp.url) - skipping."
     }
 }
 
@@ -3974,16 +3982,20 @@ Function ConfigureTracing ([xml]$xmlinput)
         {
             Write-Host -ForegroundColor White " - $($spservice.username) is already a member of Performance Monitor Users."
         }
-        #Add to Performance Log Users group
-        Write-Host -ForegroundColor White " - Adding $($spservice.username) to local Performance Log Users group..."
-        Try
+        #Add all managed accounts to Performance Log Users group
+        foreach ($managedAccount in (Get-SPManagedAccount))
         {
-            ([ADSI]"WinNT://$env:COMPUTERNAME/Performance Log Users,group").Add("WinNT://$appPoolAcctDomain/$appPoolAcctUser")
-            If (-not $?) {Throw}
-        }
-        Catch
-        {
-            Write-Host -ForegroundColor White " - $($spservice.username) is already a member of Performance Log Users."
+            $appPoolAcctDomain,$appPoolAcctUser = $managedAccount.UserName -Split "\\"
+            Write-Host -ForegroundColor White " - Adding $($managedAccount.UserName) to local Performance Log Users group..."
+            Try
+            {
+                ([ADSI]"WinNT://$env:COMPUTERNAME/Performance Log Users,group").Add("WinNT://$appPoolAcctDomain/$appPoolAcctUser")
+                If (-not $?) {Throw}
+            }
+            Catch
+            {
+                Write-Host -ForegroundColor White "  - $($managedAccount.UserName) is already a member of Performance Log Users."
+            }
         }
         Try
         {
@@ -6871,11 +6883,11 @@ Function AddToHOSTS ($hosts)
     $file = Get-Content $hostsfile
     $file = $file | Out-String
 
-    # Write the AAMs to the hosts file, unless they already exist or happen to match the local computer name.
+    # Write the AAMs to the hosts file, UNLESS they already exist, are "localhost" or happen to match the local computer name.
     ForEach ($hostname in $hosts)
     {
         # Get rid of any path information that may have snuck in here
-        $hostname,$null = $hostname -split "/"
+        $hostname,$null = $hostname -split "/" -replace ("localhost", $env:COMPUTERNAME)
         If (($file -match " $hostname") -or ($file -match "`t$hostname")) # Added check for a space or tab character before the hostname for better exact matching, also used -match for case-insensitivity
         {Write-Host -ForegroundColor White "  - HOSTS file entry for `"$hostname`" already exists - skipping."}
         if ($hostname -eq "$env:Computername" -or $hostname -eq "$env:Computername.$env:USERDNSDOMAIN")
