@@ -244,7 +244,12 @@ Function Setup-Services
         CreatePowerPointConversionServiceApp $xmlinput
 	    ConfigureDistributedCacheService $xmlinput
     }
-	InstallSMTP $xmlinput
+    if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
+    {
+        Write-Host -ForegroundColor White " - Installing SMTP Windows feature in a separate PowerShell window..."
+        Start-Process -FilePath "$PSHOME\powershell.exe" -Verb Runas -ArgumentList "-Command `". $env:dp0\AutoSPInstallerFunctions.ps1`; InstallSMTP (Get-Content $inputFile); Start-Sleep 5" -Wait
+    }
+    else {InstallSMTP $xmlinput}
     ConfigureOutgoingEmail $xmlinput
     ConfigureIncomingEmail $xmlinput
     Configure-PDFSearchAndIcon $xmlinput
@@ -383,6 +388,7 @@ If (MatchComputerName $farmServers $env:COMPUTERNAME)
                 Write-Host -ForegroundColor White " - $scriptCommandLine"
                 Start-Process -WorkingDirectory $PSHOME -FilePath "powershell.exe" -ArgumentList "-Version 2 -NoExit -ExecutionPolicy Bypass $scriptCommandLine" -Verb RunAs
                 $aborted = $true
+                If ($isTracing) {Stop-Transcript; $script:isTracing = $false}
                 Start-Sleep 10
                 Write-Host -ForegroundColor White " - You can now safely close this window."
             }

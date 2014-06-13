@@ -1721,7 +1721,12 @@ Function CreateCentralAdmin([xml]$xmlinput)
                     $SSLPort = $centralAdminPort
                     $SSLSiteName = $centralAdmin.DisplayName
                     New-SPAlternateURL -Url "https://$($env:COMPUTERNAME):$centralAdminPort" -Zone Default -WebApplication $centralAdmin | Out-Null
-                    AssignCert
+                    if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
+                    {
+                        Write-Host -ForegroundColor White " - Assigning certificate(s) in a separate PowerShell window..."
+                        Start-Process -FilePath "$PSHOME\powershell.exe" -Verb RunAs -ArgumentList "-Command `". $env:dp0\AutoSPInstallerFunctions.ps1`; AssignCert $SSLHostHeader $SSLPort $SSLSiteName; Start-Sleep 2" -Wait
+                    }
+                    else {AssignCert $SSLHostHeader $SSLPort $SSLSiteName}
                 }
             }
             # Otherwise create a Central Admin site locally, with an AAM to the existing Central Admin
@@ -1911,20 +1916,12 @@ Function ConfigureFarm([xml]$xmlinput)
         Start-Service SPTimerV4
         If (!$?) {Throw " - Could not start Timer service!"}
     }
-    #Region Stop Default Web Site
-    # Added to avoid conflicts with web apps that do not use a host header
-    # Thanks to Paul Stork per http://autospinstaller.codeplex.com/workitem/19318 for confirming the Stop-Website cmdlet
-    ImportWebAdministration
-    $defaultWebsite = Get-Website | Where-Object {$_.Name -eq "Default Web Site" -or $_.ID -eq 1 -or $_.physicalPath -eq "%SystemDrive%\inetpub\wwwroot"} # Try different ways of identifying the Default Web Site, in case it has a different name (e.g. localized installs)
-    Write-Host -ForegroundColor White " - Checking $($defaultWebsite.Name)..." -NoNewline
-    if ($defaultWebsite.State -ne "Stopped")
+    if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
     {
-        Write-Host -ForegroundColor White "Stopping..." -NoNewline
-        $defaultWebsite | Stop-Website
-        if ($?) {Write-Host -ForegroundColor White "Done."}
+        Write-Host -ForegroundColor White " - Stopping Default Web Site in a separate PowerShell window..."
+        Start-Process -FilePath "$PSHOME\powershell.exe" -Verb RunAs -ArgumentList "-Command `". $env:dp0\AutoSPInstallerFunctions.ps1`; Stop-DefaultWebsite; Start-Sleep 2" -Wait
     }
-    else {Write-Host -ForegroundColor White "Already stopped."}
-    #EndRegion
+    else {Stop-DefaultWebsite}
     Write-Host -ForegroundColor White " - Done initial farm/server config."
     WriteLine
 }
@@ -2392,7 +2389,7 @@ Function CreateMetadataServiceApp([xml]$xmlinput)
 # Func: AssignCert
 # Desc: Create and assign SSL Certificate
 # ===================================================================================
-Function AssignCert([xml]$xmlinput)
+Function AssignCert($SSLHostHeader, $SSLPort, $SSLSiteName)
 {
     ImportWebAdministration
     Write-Host -ForegroundColor White " - Assigning certificate to site `"https://$SSLHostHeader`:$SSLPort`""
@@ -2539,15 +2536,23 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
     # Strip out any protocol value
     If ($url -like "https://*") {$useSSL = $true}
     $hostHeader = $url -replace "http://","" -replace "https://",""
-    # Set the directory path for the web app to something a bit more friendly
-    ImportWebAdministration
-    # Get the default root location for web apps
-    $iisWebDir = (Get-ItemProperty "IIS:\Sites\Default Web Site\" -name physicalPath -ErrorAction SilentlyContinue) -replace ("%SystemDrive%","$env:SystemDrive")
-    If (!([string]::IsNullOrEmpty($iisWebDir)))
+    if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
     {
-        $pathSwitch = @{Path = "$iisWebDir\wss\VirtualDirectories\$webAppName-$port"}
+        Write-Host -ForegroundColor White " - Skipping setting the web app directory path name (not currently working on Windows 2012 w/SP2010)..."
+        $pathSwitch = @{}
     }
-    else {$pathSwitch = @{}}
+    else
+    {
+        # Set the directory path for the web app to something a bit more friendly
+        ImportWebAdministration
+        # Get the default root location for web apps
+        $iisWebDir = (Get-ItemProperty "IIS:\Sites\Default Web Site\" -name physicalPath -ErrorAction SilentlyContinue) -replace ("%SystemDrive%","$env:SystemDrive")
+        if (!([string]::IsNullOrEmpty($iisWebDir)))
+        {
+            $pathSwitch = @{Path = "$iisWebDir\wss\VirtualDirectories\$webAppName-$port"}
+        }
+        else {$pathSwitch = @{}}
+    }
     # Only set $hostHeaderSwitch to blank if the UseHostHeader value exists has explicitly been set to false
     if (!([string]::IsNullOrEmpty($webApp.UseHostHeader)) -and $webApp.UseHostHeader -eq $false)
     {
@@ -2599,7 +2604,12 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
         $SSLHostHeader = $hostHeader
         $SSLPort = $port
         $SSLSiteName = $webAppName
-        AssignCert
+        if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
+        {
+            Write-Host -ForegroundColor White " - Assigning certificate(s) in a separate PowerShell window..."
+            Start-Process -FilePath "$PSHOME\powershell.exe" -Verb RunAs -ArgumentList "-Command `". $env:dp0\AutoSPInstallerFunctions.ps1`; AssignCert $SSLHostHeader $SSLPort $SSLSiteName; Start-Sleep 2" -Wait
+        }
+        else {AssignCert $SSLHostHeader $SSLPort $SSLSiteName}
     }
 
     # If we are provisioning any Office Web Apps, Visio, Excel, Access or PerformancePoint services, we need to grant the generic app pool account access to the newly-created content database
@@ -2906,15 +2916,23 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
         If($userProfileServiceName -eq $null) {$userProfileServiceName = "User Profile Service Application"}
         If($userProfileServiceProxyName -eq $null) {$userProfileServiceProxyName = $userProfileServiceName}
         If (!$farmCredential) {[System.Management.Automation.PsCredential]$farmCredential = GetFarmCredentials $xmlinput}
-        # Set the directory path for the web app to something a bit more friendly
-        ImportWebAdministration
-        # Get the default root location for web apps
-        $iisWebDir = (Get-ItemProperty "IIS:\Sites\Default Web Site\" -name physicalPath -ErrorAction SilentlyContinue) -replace ("%SystemDrive%","$env:SystemDrive")
-        If (!([string]::IsNullOrEmpty($iisWebDir)))
+        if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
         {
-            $pathSwitch = @{Path = "$iisWebDir\wss\VirtualDirectories\$webAppName-$port"}
+            Write-Host -ForegroundColor White " - Skipping setting the web app directory path name (not currently working on Windows 2012 w/SP2010)..."
+            $pathSwitch = @{}
         }
-        else {$pathSwitch = @{}}
+        else
+        {
+            # Set the directory path for the web app to something a bit more friendly
+            ImportWebAdministration
+            # Get the default root location for web apps
+            $iisWebDir = (Get-ItemProperty "IIS:\Sites\Default Web Site\" -name physicalPath -ErrorAction SilentlyContinue) -replace ("%SystemDrive%","$env:SystemDrive")
+            If (!([string]::IsNullOrEmpty($iisWebDir)))
+            {
+                $pathSwitch = @{Path = "$iisWebDir\wss\VirtualDirectories\$webAppName-$port"}
+            }
+            else {$pathSwitch = @{}}
+        }
         # Only set $hostHeaderSwitch to blank if the UseHostHeader value exists has explicitly been set to false
         if (!([string]::IsNullOrEmpty($webApp.UseHostHeader)) -and $webApp.UseHostHeader -eq $false)
         {
@@ -2992,7 +3010,12 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
                             $SSLHostHeader,$null = $mySiteHostLocation -replace "http://","" -replace "https://","" -split ":"
                             $SSLPort = $mySitePort
                             $SSLSiteName = $mySiteName
-                            AssignCert
+                            if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
+                            {
+                                Write-Host -ForegroundColor White " - Assigning certificate(s) in a separate PowerShell window..."
+                                Start-Process -FilePath "$PSHOME\powershell.exe" -Verb RunAs -ArgumentList "-Command `". $env:dp0\AutoSPInstallerFunctions.ps1`; AssignCert $SSLHostHeader $SSLPort $SSLSiteName; Start-Sleep 2" -Wait
+                            }
+                            else {AssignCert $SSLHostHeader $SSLPort $SSLSiteName}
                         }
                     }
                 }
@@ -3207,8 +3230,13 @@ Else {Write-Host -ForegroundColor White " - Done.";Start-Sleep 15}
 "@
                         $addProfileScriptFile = "$((Get-Item $env:TEMP).FullName)\AutoSPInstaller-AddProfileSyncCmd.ps1"
                         $addProfileSyncCmd | Out-File $addProfileScriptFile
+                        if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
+                        {
+                            $versionSwitch = "-Version 2"
+                        }
+                        else {$versionSwitch = ""}
                         # Run our Add-SPProfileSyncConnection script as the Farm Account - doesn't seem to work otherwise
-                        Start-Process -WorkingDirectory $PSHOME -FilePath "powershell.exe" -Credential $farmCredential -ArgumentList "-ExecutionPolicy Bypass -Command Start-Process -WorkingDirectory `"'$PSHOME'`" -FilePath `"'powershell.exe'`" -ArgumentList `"'-ExecutionPolicy Bypass $addProfileScriptFile'`" -Verb Runas" -Wait
+                        Start-Process -WorkingDirectory $PSHOME -FilePath "powershell.exe" -Credential $farmCredential -ArgumentList "-ExecutionPolicy Bypass -Command Start-Process -WorkingDirectory `"'$PSHOME'`" -FilePath `"'powershell.exe'`" -ArgumentList `"'$versionSwitch -ExecutionPolicy Bypass $addProfileScriptFile'`" -Verb Runas" -Wait
                         # Give Add-SPProfileSyncConnection time to complete before continuing
                         Start-Sleep 120
                         Remove-Item -LiteralPath $addProfileScriptFile -Force -ErrorAction SilentlyContinue
@@ -3294,10 +3322,16 @@ Function CreateUPSAsAdmin([xml]$xmlinput)
         # Grant the current install account rights to the newly-created Social DB as well
         Write-Output "`$socialDBId = Get-SPDatabase | ? {`$_.Name -eq `"$socialDB`"}" | Out-File $scriptFile -Width 400 -Append
         Write-Output "Add-SPShellAdmin -UserName `"$env:USERDOMAIN\$env:USERNAME`" -database `$socialDBId" | Out-File $scriptFile -Width 400 -Append
+        # Add the -Version 2 switch in case we are installing SP2010 on Windows Server 2012 or 2012 R2
+        if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
+        {
+            $versionSwitch = "-Version 2"
+        }
+        else {$versionSwitch = ""}
         If (Confirm-LocalSession) # Create the UPA as usual if this isn't a remote session
         {
             # Start a process under the Farm Account's credentials, then spawn an elevated process within to finally execute the script file that actually creates the UPS
-            Start-Process -WorkingDirectory $PSHOME -FilePath "powershell.exe" -Credential $farmCredential -ArgumentList "-ExecutionPolicy Bypass -Command Start-Process -WorkingDirectory `"'$PSHOME'`" -FilePath `"'powershell.exe'`" -ArgumentList `"'-ExecutionPolicy Bypass $scriptFile'`" -Verb Runas" -Wait
+            Start-Process -WorkingDirectory $PSHOME -FilePath "powershell.exe" -Credential $farmCredential -ArgumentList "-ExecutionPolicy Bypass -Command Start-Process -WorkingDirectory `"'$PSHOME'`" -FilePath `"'powershell.exe'`" -ArgumentList `"'$versionSwitch -ExecutionPolicy Bypass $scriptFile'`" -Verb Runas" -Wait
         }
         Else # Do some fancy stuff to get this to work over a remote session
         {
@@ -6660,7 +6694,7 @@ Function Run-HealthAnalyzerJobs
 # Func: InstallSMTP
 # Desc: Installs the SMTP Server Windows feature
 # ====================================================================================
-Function InstallSMTP
+Function InstallSMTP([xml]$xmlinput)
 {
     If (ShouldIProvision $xmlinput.Configuration.Farm.Services.SMTP -eq $true)
     {
@@ -6672,7 +6706,7 @@ Function InstallSMTP
         {
             Start-Process -FilePath servermanagercmd.exe -ArgumentList "-install smtp-server" -Wait -NoNewWindow
         }
-            Else # Win2008 or Win2012
+        Else # Win2008 or Win2012
         {
             # Get the current progress preference
             $pref = $ProgressPreference
@@ -7142,4 +7176,23 @@ Function PinToTaskbar([string]$application)
     }
 }
 #EndRegion
+
+#Region Stop Default Web Site
+Function Stop-DefaultWebsite ()
+{
+    # Added to avoid conflicts with web apps that do not use a host header
+    # Thanks to Paul Stork per http://autospinstaller.codeplex.com/workitem/19318 for confirming the Stop-Website cmdlet
+    ImportWebAdministration
+    $defaultWebsite = Get-Website | Where-Object {$_.Name -eq "Default Web Site" -or $_.ID -eq 1 -or $_.physicalPath -eq "%SystemDrive%\inetpub\wwwroot"} # Try different ways of identifying the Default Web Site, in case it has a different name (e.g. localized installs)
+    Write-Host -ForegroundColor White " - Checking $($defaultWebsite.Name)..." -NoNewline
+    if ($defaultWebsite.State -ne "Stopped")
+    {
+        Write-Host -ForegroundColor White "Stopping..." -NoNewline
+        $defaultWebsite | Stop-Website
+        if ($?) {Write-Host -ForegroundColor White "Done."}
+    }
+    else {Write-Host -ForegroundColor White "Already stopped."}
+}
+#EndRegion
+
 #EndRegion
