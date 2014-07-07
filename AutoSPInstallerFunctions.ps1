@@ -263,6 +263,7 @@ Function CheckConfigFiles([xml]$xmlinput)
     }
     else
     {
+        Get-MajorVersionNumber $xmlinput
         # Write out a new config file based on defaults and the values provided in $inputFile
         $pidKey = $xmlinput.Configuration.Install.PIDKey
         # Do a rudimentary check on the presence and format of the product key
@@ -551,6 +552,7 @@ Function InstallPrerequisites([xml]$xmlinput)
 	If ($UACWasEnabled -eq 1) {Set-UserAccountControl 1}
     # Now, remove the lingering registry UAC flag
     Remove-ItemProperty -Path "HKLM:\SOFTWARE\AutoSPInstaller\" -Name "UACWasEnabled" -ErrorAction SilentlyContinue
+    Get-MajorVersionNumber $xmlinput
     # Create a hash table with major version to product year mappings
     $spYears = @{"14" = "2010"; "15" = "2013"}
     $spYear = $spYears.$env:spVer
@@ -615,7 +617,30 @@ Function InstallPrerequisites([xml]$xmlinput)
             # Install using PrerequisiteInstaller as usual
             If ($xmlinput.Configuration.Install.OfflineInstall -eq $true) # Install all prerequisites from local folder
             {
-                If ($env:spVer -eq "14") # SP2010
+                # Try to pre-install .Net Framework 3.5.1 on Windows Server 2012 or 2012 R2
+                if ((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*")
+                {
+                    if (Test-Path -Path "$env:SPbits\PrerequisiteInstallerFiles\sxs")
+                    {
+                        Write-Host -ForegroundColor White "  - .Net Framework 3.5.1 from `"$env:SPbits\PrerequisiteInstallerFiles\sxs`"..." -NoNewline
+                        # Get the current progress preference
+                        $pref = $ProgressPreference
+                        # Hide the progress bar since it tends to not disappear
+                        $ProgressPreference = "SilentlyContinue"
+                        Import-Module ServerManager
+                        if (!(Get-WindowsFeature -Name NET-Framework-Core).Installed)
+                        {
+                            Start-Process -FilePath DISM.exe -ArgumentList "/Online /Enable-Feature /FeatureName:NetFx3 /All /LimitAccess /Source:`"$env:SPbits\PrerequisiteInstallerFiles\sxs`"" -NoNewWindow -Wait
+                            ##Install-WindowsFeature NET-Framework-Core –Source "$env:SPbits\PrerequisiteInstallerFiles\sxs" | Out-Null
+                            Write-Host -ForegroundColor White "Done."
+                        }
+                        else {Write-Host -ForegroundColor White "Already installed."}
+                        # Restore progress preference
+                        $ProgressPreference = $pref
+                    }
+                    else {Write-Host -ForegroundColor White " - Could not locate source for .Net Framework 3.5.1`n - The PrerequisiteInstaller will attempt to download it."}
+                }
+                if ($env:spVer -eq "14") # SP2010
                 {
                     Write-Host -ForegroundColor White "  - SQL Native Client..."
                     # Install SQL native client before running pre-requisite installer as newest versions require an IACCEPTSQLNCLILICENSETERMS=YES argument
@@ -639,30 +664,8 @@ Function InstallPrerequisites([xml]$xmlinput)
                                                                                         /SpeechLPK:`"$env:SPbits\PrerequisiteInstallerFiles\MSSpeech_SR_en-US_TELE.msi`""
                     If (-not $?) {Throw}
                 }
-                ElseIf ($env:spVer -eq "15") #SP2013
+                elseif ($env:spVer -eq "15") #SP2013
                 {
-                    if ((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") # Try to pre-install .Net Framework 3.5.1 on Windows Server 2012
-                    {
-                        if (Test-Path -Path "$env:SPbits\PrerequisiteInstallerFiles\sxs")
-                        {
-                            Write-Host -ForegroundColor White "  - .Net Framework 3.5.1 from `"$env:SPbits\PrerequisiteInstallerFiles\sxs`"..." -NoNewline
-                            # Get the current progress preference
-                            $pref = $ProgressPreference
-                            # Hide the progress bar since it tends to not disappear
-                            $ProgressPreference = "SilentlyContinue"
-                            Import-Module ServerManager
-                            if (!(Get-WindowsFeature -Name NET-Framework-Core).Installed)
-                            {
-                                Start-Process -FilePath DISM.exe -ArgumentList "/Online /Enable-Feature /FeatureName:NetFx3 /All /LimitAccess /Source:`"$env:SPbits\PrerequisiteInstallerFiles\sxs`"" -NoNewWindow -Wait
-                                ##Install-WindowsFeature NET-Framework-Core –Source "$env:SPbits\PrerequisiteInstallerFiles\sxs" | Out-Null
-                                Write-Host -ForegroundColor White "Done."
-                            }
-                            else {Write-Host -ForegroundColor White "Already installed."}
-                            # Restore progress preference
-                            $ProgressPreference = $pref
-                        }
-                        else {Write-Host -ForegroundColor White " - Could not locate source for .Net Framework 3.5.1`n - The PrerequisiteInstaller will attempt to download it."}
-                    }
                     Write-Host -ForegroundColor Blue "  - Running Prerequisite Installer (offline mode)..." -NoNewline
                     $startTime = Get-Date
                     if (CheckFor2013SP1) # Include WCFDataServices56 as required by updated SP1 prerequisiteinstaller.exe
@@ -894,6 +897,7 @@ Function InstallPrerequisites([xml]$xmlinput)
 Function InstallSharePoint([xml]$xmlinput)
 {
     WriteLine
+    Get-MajorVersionNumber $xmlinput
     # Create a hash table with major version to product year mappings
     $spYears = @{"14" = "2010"; "15" = "2013"}
     $spYear = $spYears.$env:spVer
@@ -969,6 +973,7 @@ Function InstallSharePoint([xml]$xmlinput)
 # ===================================================================================
 Function InstallOfficeWebApps2010([xml]$xmlinput)
 {
+    Get-MajorVersionNumber $xmlinput
     If ($xmlinput.Configuration.OfficeWebApps.Install -eq $true -and $env:spVer -eq "14") # Check for SP2010
     {
         WriteLine
@@ -1041,6 +1046,7 @@ Function InstallOfficeWebApps2010([xml]$xmlinput)
 # ===================================================================================
 Function InstallProjectServer([xml]$xmlinput)
 {
+    Get-MajorVersionNumber $xmlinput
     If ($xmlinput.Configuration.ProjectServer.Install -eq $true -and $env:SPVer -eq "15") # Check for SP2013 since we don't support installing Project Server 2010 at this point
     {
         WriteLine
@@ -1119,6 +1125,7 @@ Function InstallProjectServer([xml]$xmlinput)
 #Region Configure Office Web Apps 2010
 Function ConfigureOfficeWebApps([xml]$xmlinput)
 {
+    Get-MajorVersionNumber $xmlinput
     If ($xmlinput.Configuration.OfficeWebApps.Install -eq $true -and $env:spVer -eq "14") # Check for SP2010
     {
         Writeline
@@ -1161,6 +1168,7 @@ Function ConfigureOfficeWebApps([xml]$xmlinput)
 Function InstallLanguagePacks([xml]$xmlinput)
 {
     WriteLine
+    Get-MajorVersionNumber $xmlinput
     $spYears = @{"14" = "2010"; "15" = "2013"}
     $spYear = $spYears.$env:spVer
     #Get installed languages from registry (HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Office Server\$env:spVer.0\InstalledLanguages)
@@ -1256,6 +1264,7 @@ Function InstallUpdates
 {
     WriteLine
     Write-Host -ForegroundColor White " - Looking for SharePoint updates to install..."
+    Get-MajorVersionNumber $xmlinput
     $spYears = @{"14" = "2010"; "15" = "2013"}
     $spYear = $spYears.$env:spVer
     # Result codes below are from http://technet.microsoft.com/en-us/library/cc179058(v=office.14).aspx
@@ -1321,9 +1330,12 @@ Function InstallUpdates
         if ($xmlinput.Configuration.OfficeWebApps.Install -eq $true)
         {
             $sp2010OWAUpdates = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include wac*.exe -Recurse -ErrorAction SilentlyContinue | Sort-Object -Descending
-            foreach ($sp2010OWAUpdate in $sp2010OWAUpdates)
+            if ($sp2010OWAUpdates.Count -ge 1)
             {
-                InstallSpecifiedUpdate $sp2010OWAUpdate "Office Web Apps Update"
+                foreach ($sp2010OWAUpdate in $sp2010OWAUpdates)
+                {
+                    InstallSpecifiedUpdate $sp2010OWAUpdate "Office Web Apps Update"
+                }
             }
         }
     }
@@ -1606,6 +1618,7 @@ Function UpdateProcessIdentity ($serviceToUpdate)
 Function CreateOrJoinFarm([xml]$xmlinput, $secPhrase, $farmCredential)
 {
     WriteLine
+    Get-MajorVersionNumber $xmlinput
     $dbPrefix = Get-DBPrefix $xmlinput
     $configDB = $dbPrefix+$xmlinput.Configuration.Farm.Database.ConfigDB
 
@@ -1686,6 +1699,7 @@ Function Check-PSConfig
 # ===================================================================================
 Function CreateCentralAdmin([xml]$xmlinput)
 {
+    Get-MajorVersionNumber $xmlinput
     # Get all Central Admin service instances in the farm
     $centralAdminServices = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.SharePoint.Administration.SPWebServiceInstance" -and $_.Name -eq "WSS_Administration"}
     # Get those Central Admin services that are Online
@@ -1811,6 +1825,7 @@ Function WaitForHelpInstallToFinish
 Function ConfigureFarm([xml]$xmlinput)
 {
     WriteLine
+    Get-MajorVersionNumber $xmlinput
     Write-Host -ForegroundColor White " - Configuring the SharePoint farm/server..."
     # Force a full configuration if this is the first web/app server in the farm
     If ((!($farmExists)) -or ($firstServer -eq $true) -or (CheckIfUpgradeNeeded -eq $true)) {[bool]$doFullConfig = $true}
@@ -1931,6 +1946,7 @@ Function ConfigureFarm([xml]$xmlinput)
 #Region Configure Language Packs
 Function ConfigureLanguagePacks([xml]$xmlinput)
 {
+    Get-MajorVersionNumber $xmlinput
     $installedOfficeServerLanguages = (Get-Item "HKLM:\Software\Microsoft\Office Server\$env:spVer.0\InstalledLanguages").GetValueNames() | ? {$_ -ne ""}
     $languagePackInstalled = (Get-Item -Path "HKLM:\SOFTWARE\Microsoft\Shared Tools\Web Server Extensions\$env:spVer.0\WSS\").GetValue("LanguagePackInstalled")
     # If there were language packs installed we need to run psconfig to configure them
@@ -2278,6 +2294,7 @@ Function CreateMetadataServiceApp([xml]$xmlinput)
         WriteLine
         Try
         {
+            Get-MajorVersionNumber $xmlinput
             $dbPrefix = Get-DBPrefix $xmlinput
             $metaDataDB = $dbPrefix+$xmlinput.Configuration.ServiceApps.ManagedMetadataServiceApp.Database.Name
             $dbServer = $xmlinput.Configuration.ServiceApps.ManagedMetadataServiceApp.Database.DBServer
@@ -2392,6 +2409,7 @@ Function CreateMetadataServiceApp([xml]$xmlinput)
 Function AssignCert($SSLHostHeader, $SSLPort, $SSLSiteName)
 {
     ImportWebAdministration
+    Get-MajorVersionNumber $xmlinput
     Write-Host -ForegroundColor White " - Assigning certificate to site `"https://$SSLHostHeader`:$SSLPort`""
     # If our SSL host header is a FQDN (contains a dot), look for an existing wildcard cert
     If ($SSLHostHeader -like "*.*")
@@ -2508,6 +2526,7 @@ Function CreateWebApplications([xml]$xmlinput)
 # ===================================================================================
 Function CreateWebApp([System.Xml.XmlElement]$webApp)
 {
+    Get-MajorVersionNumber $xmlinput
     # Look for a managed account that matches the web app type, e.g. "Portal" or "MySiteHost"
     $webAppPoolAccount = Get-SPManagedAccountXML $xmlinput $webApp.Type
     # If no managed account is found matching the web app type, just use the Portal managed account
@@ -2703,7 +2722,7 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
 
                     # Add the Portal Site Connection to the web app, unless of course the current web app *is* the portal
                     # Inspired by http://www.toddklindt.com/blog/Lists/Posts/Post.aspx?ID=264
-                    $portalWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "Portal"}
+                    $portalWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "Portal"} | Select-Object -First 1
                     $portalSiteColl = $portalWebApp.SiteCollections.SiteCollection | Select-Object -First 1
                     If ($site.URL -ne $portalSiteColl.siteURL)
                     {
@@ -2878,6 +2897,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
     # Based on http://sharepoint.microsoft.com/blogs/zach/Lists/Posts/Post.aspx?ID=50
     Try
     {
+        Get-MajorVersionNumber $xmlinput
         $userProfile = $xmlinput.Configuration.ServiceApps.UserProfileServiceApp
         $mySiteWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "MySiteHost"}
         $dbPrefix = Get-DBPrefix $xmlinput
@@ -2897,7 +2917,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
             $mySiteAppPoolAcct = Get-SPManagedAccountXML $xmlinput -CommonName "MySiteHost"
             if ([string]::IsNullOrEmpty($mySiteAppPoolAcct.username)) {throw " - `"MySiteHost`" managed account not found! Check your XML."}
         }
-        $portalWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "Portal"}
+        $portalWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "Portal"} | Select-Object -First 1
         $portalAppPoolAcct = Get-SPManagedAccountXML $xmlinput -CommonName "Portal"
         if ([string]::IsNullOrEmpty($portalAppPoolAcct.username)) {throw " - `"Portal`" managed account not found! Check your XML."}
         $farmAcct = $xmlinput.Configuration.Farm.Account.Username
@@ -3521,6 +3541,7 @@ Function ConfigureIISLogging([xml]$xmlinput)
 Function ConfigureDiagnosticLogging([xml]$xmlinput)
 {
     WriteLine
+    Get-MajorVersionNumber $xmlinput
     $ULSLogConfig = $xmlinput.Configuration.Farm.Logging.ULSLogs
     $ULSLogDir = $ULSLogConfig.LogLocation
     $ULSLogDiskSpace = $ULSLogConfig.LogDiskSpaceUsageGB
@@ -3598,6 +3619,7 @@ Function ConfigureUsageLogging([xml]$xmlinput)
     WriteLine
     If (Get-SPUsageService)
     {
+        Get-MajorVersionNumber $xmlinput
         $usageLogConfig = $xmlinput.Configuration.Farm.Logging.UsageLogs
         $usageLogDir = $usageLogConfig.UsageLogDir
         $usageLogMaxSpaceGB = $usageLogConfig.UsageLogMaxSpaceGB
@@ -3662,6 +3684,7 @@ Function ConfigureUsageLogging([xml]$xmlinput)
 
 Function CreateWebAnalyticsApp([xml]$xmlinput)
 {
+    Get-MajorVersionNumber $xmlinput
     If ((ShouldIProvision $xmlinput.Configuration.ServiceApps.WebAnalyticsService -eq $true) -and ($env:spVer -eq "14"))
     {
         WriteLine
@@ -3969,6 +3992,7 @@ Function ConfigureWorkflowTimerService
 Function ConfigureFoundationSearch ([xml]$xmlinput)
 # Does not actually provision Foundation Search as of yet, just updates the service account it would run under to mitigate Health Analyzer warnings
 {
+    Get-MajorVersionNumber $xmlinput
     # Make sure a credential deployment job doesn't already exist, and that we are running SP2010
     if ((!(Get-SPTimerJob -Identity "windows-service-credentials-SPSearch4")) -and ($env:spVer -eq "14"))
     {
@@ -4062,6 +4086,7 @@ Function ConfigureTracing ([xml]$xmlinput)
 
 Function ConfigureDistributedCacheService ([xml]$xmlinput)
 {
+    Get-MajorVersionNumber $xmlinput
     # Make sure a credential deployment job doesn't already exist, and that we are running SP2013
     if ((!(Get-SPTimerJob -Identity "windows-service-credentials-AppFabricCachingService")) -and ($env:spVer -eq "15"))
     {
@@ -4126,6 +4151,7 @@ Function ConfigureDistributedCacheService ([xml]$xmlinput)
 
 function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
 {
+    Get-MajorVersionNumber $xmlinput
     $searchServiceAccount = Get-SPManagedAccountXML $xmlinput -CommonName "SearchService"
     # Check if the Search Service account username has been specified before we try to convert its password to a secure string
     if (!([string]::IsNullOrEmpty($searchServiceAccount.Username)))
@@ -4142,7 +4168,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
         Write-Host -ForegroundColor White " - Provisioning Enterprise Search..."
         # SLN: Added support for local host
         $svcConfig = $xmlinput.Configuration.ServiceApps.EnterpriseSearchService
-        $portalWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "Portal"}
+        $portalWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "Portal"} | Select-Object -First 1
         $portalURL = $portalWebApp.URL
         $portalPort = $portalWebApp.Port
         if ($xmlinput.Configuration.ServiceApps.UserProfileServiceApp.Provision -ne $false) # We didn't use ShouldIProvision here as we want to know if UPS is being provisioned in this farm, not just on this server
@@ -5117,7 +5143,7 @@ Function CreateExcelServiceApp ([xml]$xmlinput)
             Try
             {
                 $excelAppName = $xmlinput.Configuration.EnterpriseServiceApps.ExcelServices.Name
-                $portalWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "Portal"}
+                $portalWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "Portal"} | Select-Object -First 1
                 $portalURL = $portalWebApp.URL
                 $portalPort = $portalWebApp.Port
                 Write-Host -ForegroundColor White " - Provisioning $excelAppName..."
@@ -5478,11 +5504,12 @@ Function CreateAccess2010ServiceApp ([xml]$xmlinput)
 #Region Create Office Web Apps
 Function CreateExcelOWAServiceApp ([xml]$xmlinput)
 {
+    Get-MajorVersionNumber $xmlinput
     $serviceConfig = $xmlinput.Configuration.OfficeWebApps.ExcelService
     If ((ShouldIProvision $serviceConfig -eq $true) -and (Test-Path "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$env:spVer\TEMPLATE\FEATURES\OfficeWebApps\feature.xml"))
     {
         WriteLine
-        $portalWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "Portal"}
+        $portalWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "Portal"} | Select-Object -First 1
         $portalURL = $portalWebApp.URL
         $portalPort = $portalWebApp.Port
         $serviceInstanceType = "Microsoft.Office.Excel.Server.MossHost.ExcelServerWebServiceInstance"
@@ -5506,6 +5533,7 @@ Function CreateExcelOWAServiceApp ([xml]$xmlinput)
 
 Function CreatePowerPointOWAServiceApp ([xml]$xmlinput)
 {
+    Get-MajorVersionNumber $xmlinput
     $serviceConfig = $xmlinput.Configuration.OfficeWebApps.PowerPointService
     If ((ShouldIProvision $serviceConfig -eq $true) -and (Test-Path "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$env:spVer\TEMPLATE\FEATURES\OfficeWebApps\feature.xml"))
     {
@@ -5525,6 +5553,7 @@ Function CreatePowerPointOWAServiceApp ([xml]$xmlinput)
 
 Function CreateWordViewingOWAServiceApp ([xml]$xmlinput)
 {
+    Get-MajorVersionNumber $xmlinput
     $serviceConfig = $xmlinput.Configuration.OfficeWebApps.WordViewingService
     If ((ShouldIProvision $serviceConfig -eq $true) -and (Test-Path "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$env:spVer\TEMPLATE\FEATURES\OfficeWebApps\feature.xml"))
     {
@@ -5752,7 +5781,7 @@ Function CreateProjectServerServiceApp ([xml]$xmlinput)
             }
         }
         # Create a Project Server DB
-        $portalWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "Portal"}
+        $portalWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "Portal"} | Select-Object -First 1
         Write-Host -ForegroundColor White " - Creating Project Server database `"$serviceDB`"..." -NoNewline
         if (!(Get-SPDatabase | Where-Object {$_.Name -eq $serviceDB}))
         {
@@ -5867,6 +5896,7 @@ Function ConfigureFoundationWebApplicationService
 Function Configure-PDFSearchAndIcon
 {
     WriteLine
+    Get-MajorVersionNumber $xmlinput
     Write-Host -ForegroundColor White " - Configuring PDF file search, display and handling..."
     $sharePointRoot = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$env:spVer"
     $sourceFileLocations = @("$bits\$spYear\PDF\","$bits\PDF\","$bits\AdobePDF\","$((Get-Item $env:TEMP).FullName)\")
@@ -6291,6 +6321,7 @@ Function Start-RemoteInstaller ($server, $password, $inputFile)
         Write-Host -ForegroundColor White " - Starting remote session to $server..."
         $session = New-PSSession -Name "AutoSPInstallerSession-$server" -Authentication Credssp -Credential $credential -ComputerName $server
     }
+    Get-MajorVersionNumber $xmlinput
     # Create a hash table with major version to product year mappings
     $spYears = @{"14" = "2010"; "15" = "2013"}
     $spYear = $spYears.$env:spVer
@@ -6922,11 +6953,11 @@ Function AddToHOSTS ($hosts)
     {
         # Get rid of any path information that may have snuck in here
         $hostname,$null = $hostname -split "/" -replace ("localhost", $env:COMPUTERNAME)
-        If (($file -match " $hostname") -or ($file -match "`t$hostname")) # Added check for a space or tab character before the hostname for better exact matching, also used -match for case-insensitivity
+        if (($file -match " $hostname") -or ($file -match "`t$hostname")) # Added check for a space or tab character before the hostname for better exact matching, also used -match for case-insensitivity
         {Write-Host -ForegroundColor White "  - HOSTS file entry for `"$hostname`" already exists - skipping."}
-        if ($hostname -eq "$env:Computername" -or $hostname -eq "$env:Computername.$env:USERDNSDOMAIN")
+        elseif ($hostname -eq "$env:Computername" -or $hostname -eq "$env:Computername.$env:USERDNSDOMAIN")
         {Write-Host -ForegroundColor Yellow "  - HOSTS file entry for `"$hostname`" matches local computer name - skipping."}
-        Else
+        else
         {
             Write-Host -ForegroundColor White "  - Adding HOSTS file entry for `"$hostname`"..."
             Add-Content -Path $hostsfile -Value "`r"
@@ -7192,6 +7223,16 @@ Function Stop-DefaultWebsite ()
         if ($?) {Write-Host -ForegroundColor White "Done."}
     }
     else {Write-Host -ForegroundColor White "Already stopped."}
+}
+#EndRegion
+
+#Region Get SP Major Version Number
+function Get-MajorVersionNumber ([xml]$xmlinput)
+{
+    # Create hash tables with major version to product year mappings & vice-versa
+    $spYears = @{"14" = "2010"; "15" = "2013"}
+    $spVersions = @{"2010" = "14"; "2013" = "15"}
+    $env:spVer = $spVersions.($xmlinput.Configuration.Install.SPVersion)
 }
 #EndRegion
 
