@@ -84,7 +84,7 @@
         </Account>
         <!-- Which server(s) to provision CentralAdmin on. Specify "true" or a list of servers -->
         <CentralAdmin Provision="localhost">
-            <Database>Content_Admin</Database>
+            <Database>Content_CentralAdmin</Database>
             <Port>2013</Port>
             <UseSSL>false</UseSSL>
         </CentralAdmin>

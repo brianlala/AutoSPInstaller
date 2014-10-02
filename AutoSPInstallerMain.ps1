@@ -18,6 +18,8 @@
 #Region Setup Paths & Environment
 
 $Host.UI.RawUI.WindowTitle = " -- AutoSPInstaller -- $env:COMPUTERNAME --"
+$Host.UI.RawUI.BackgroundColor = "Black"
+Clear-Host
 $0 = $myInvocation.MyCommand.Definition
 $env:dp0 = [System.IO.Path]::GetDirectoryName($0)
 $bits = Get-Item $env:dp0 | Split-Path -Parent
@@ -247,7 +249,7 @@ Function Setup-Services
     if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
     {
         Write-Host -ForegroundColor White " - Installing SMTP Windows feature in a separate PowerShell window..."
-        Start-Process -FilePath "$PSHOME\powershell.exe" -Verb Runas -ArgumentList "-Command `". $env:dp0\AutoSPInstallerFunctions.ps1`; InstallSMTP (Get-Content $inputFile); Start-Sleep 5" -Wait
+        Start-Process -FilePath "$PSHOME\powershell.exe" -Verb Runas -ArgumentList "-Command `". $env:dp0\AutoSPInstallerFunctions.ps1`"; InstallSMTP (Get-Content $inputFile); Start-Sleep 5`"" -Wait
     }
     else {InstallSMTP $xmlinput}
     ConfigureOutgoingEmail $xmlinput

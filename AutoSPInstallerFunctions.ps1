@@ -204,7 +204,7 @@ Function DisableCRLCheck([xml]$xmlinput)
                     }
                     $xml.DocumentElement.SelectSingleNode("runtime/generatePublisherEvidence").SetAttribute("enabled","false") | Out-Null
                     $xml.Save("$env:windir\Microsoft.NET\Framework$bitsize\$frameworkVersion\CONFIG\Machine.config")
-                    if ($bitsize -eq "64") {Write-Host -ForegroundColor White "Done."}
+                    if ($bitsize -eq "64") {Write-Host -ForegroundColor White "OK."}
                 }
                 else
                 {
@@ -578,7 +578,7 @@ Function InstallPrerequisites([xml]$xmlinput)
             If (!(Get-WindowsFeature -Name NET-Framework).Installed)
             {
                 Add-WindowsFeature -Name NET-Framework | Out-Null
-                Write-Host -ForegroundColor White "Done."
+                Write-Host -ForegroundColor Green "Done."
             }
             else {Write-Host -ForegroundColor White "Already installed."}
             # Restore progress preference
@@ -612,13 +612,13 @@ Function InstallPrerequisites([xml]$xmlinput)
                     Write-Host -ForegroundColor White "."
                     Throw " - SharePoint 2010 is officially unsupported on $osName without an updated set of SP2-integrated binaries - see http://support.microsoft.com/kb/2724471"
                 }
-                else {Write-Host -BackgroundColor Blue -ForegroundColor Black "OK."}
+                else {Write-Host -BackgroundColor Green -ForegroundColor Black "OK."}
             }
             # Install using PrerequisiteInstaller as usual
             If ($xmlinput.Configuration.Install.OfflineInstall -eq $true) # Install all prerequisites from local folder
             {
                 # Try to pre-install .Net Framework 3.5.1 on Windows Server 2012 or 2012 R2
-                if ((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*")
+                if ((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.4*")
                 {
                     if (Test-Path -Path "$env:SPbits\PrerequisiteInstallerFiles\sxs")
                     {
@@ -632,7 +632,7 @@ Function InstallPrerequisites([xml]$xmlinput)
                         {
                             Start-Process -FilePath DISM.exe -ArgumentList "/Online /Enable-Feature /FeatureName:NetFx3 /All /LimitAccess /Source:`"$env:SPbits\PrerequisiteInstallerFiles\sxs`"" -NoNewWindow -Wait
                             ##Install-WindowsFeature NET-Framework-Core –Source "$env:SPbits\PrerequisiteInstallerFiles\sxs" | Out-Null
-                            Write-Host -ForegroundColor White "Done."
+                            Write-Host -ForegroundColor Green "Done."
                         }
                         else {Write-Host -ForegroundColor White "Already installed."}
                         # Restore progress preference
@@ -796,7 +796,7 @@ Function InstallPrerequisites([xml]$xmlinput)
                                 $hotfixFileZipNs = $shell.Namespace($hotfixZipPath)
                                 $hotfixLocationNs = $shell.Namespace($hotfixLocation)
                                 $hotfixLocationNs.Copyhere($hotfixFileZipNs.items())
-                                Write-Host -ForegroundColor White "Done."
+                                Write-Host -ForegroundColor Green "Done."
                             }
                         }
                         # Install the hotfix
@@ -810,7 +810,7 @@ Function InstallPrerequisites([xml]$xmlinput)
                         {
                             Start-Process -FilePath "$extractedHotfixPath" -ArgumentList "/passive /norestart" -Wait -NoNewWindow
                         }
-                        Write-Host -ForegroundColor White "Done."
+                        Write-Host -ForegroundColor Green "Done."
                     }
                     Else {Write-Host -ForegroundColor White "Already installed."}
                 }
@@ -951,7 +951,7 @@ Function InstallSharePoint([xml]$xmlinput)
                 Write-Host -ForegroundColor Blue "." -NoNewline
                 Start-Sleep 1
             }
-            Write-Host -ForegroundColor Blue "Done."
+            Write-Host -ForegroundColor Green "Done."
             Write-Host -ForegroundColor White " - Exiting Products and Technologies Wizard - using PowerShell instead!"
             Stop-Process -Name psconfigui
         }
@@ -1020,12 +1020,12 @@ Function InstallOfficeWebApps2010([xml]$xmlinput)
                 Write-Host -ForegroundColor Blue " - Waiting for SharePoint Products and Technologies Wizard to launch..." -NoNewline
                 While ((Get-Process |?{$_.ProcessName -like "psconfigui*"}) -eq $null)
                 {
-                    Write-Host -ForegroundColor Blue "." -NoNewline
+                    Write-Host -ForegroundColor Green "." -NoNewline
                     Start-Sleep 1
                 }
                 # The Connect-SPConfigurationDatabase cmdlet throws an error about an "upgrade required" if we don't at least *launch* the Wizard, so we wait to let it launch, then kill it.
                 Start-Sleep 10
-                Write-Host -ForegroundColor Blue "Done."
+                Write-Host -ForegroundColor White "OK."
                 Write-Host -ForegroundColor White " - Exiting Products and Technologies Wizard - using PowerShell instead!"
                 Stop-Process -Name psconfigui
             }
@@ -1107,7 +1107,7 @@ Function InstallProjectServer([xml]$xmlinput)
                     Write-Host -ForegroundColor Blue "." -NoNewline
                     Start-Sleep 1
                 }
-                Write-Host -ForegroundColor Blue "Done."
+                Write-Host -ForegroundColor White "OK."
                 Write-Host -ForegroundColor White " - Exiting Products and Technologies Wizard - using PowerShell instead!"
                 Stop-Process -Name psconfigui
             }
@@ -1183,12 +1183,12 @@ Function InstallLanguagePacks([xml]$xmlinput)
             $language = $installedOfficeServerLanguages | ? {$_ -eq $languagePackFolder}
             If (!$language)
             {
-                Write-Host -ForegroundColor Blue " - Installing extracted language pack $languagePackFolder..." -NoNewline
+                Write-Host -ForegroundColor Blue "  - Installing extracted language pack $languagePackFolder..." -NoNewline
                 $startTime = Get-Date
                 Start-Process -WorkingDirectory "$bits\$spYear\LanguagePacks\$languagePackFolder\" -FilePath "setup.exe" -ArgumentList "/config $bits\$spYear\LanguagePacks\$languagePackFolder\Files\SetupSilent\config.xml"
                 Show-Progress -Process setup -Color Blue -Interval 5
                 $delta,$null = (New-TimeSpan -Start $startTime -End (Get-Date)).ToString() -split "\."
-                Write-Host -ForegroundColor White " - Language pack $languagePackFolder setup completed in $delta."
+                Write-Host -ForegroundColor White "  - Language pack $languagePackFolder setup completed in $delta."
             }
         }
         Write-Host -ForegroundColor White " - Language Pack installation complete."
@@ -1598,13 +1598,13 @@ Function UpdateProcessIdentity ($serviceToUpdate)
     if ($serviceToUpdate.Service) {$serviceToUpdate = $serviceToUpdate.Service}
     if ($serviceToUpdate.ProcessIdentity.Username -ne $managedAccountGen.UserName)
     {
-        Write-Host -ForegroundColor White " - Updating $($serviceToUpdate.TypeName) to run as $($managedAccountGen.UserName)..."
+        Write-Host -ForegroundColor White " - Updating $($serviceToUpdate.TypeName) to run as $($managedAccountGen.UserName)..." -NoNewline
         # Set the Process Identity to our general App Pool Account; otherwise it's set by default to the Farm Account and gives warnings in the Health Analyzer
         $serviceToUpdate.ProcessIdentity.CurrentIdentityType = "SpecificUser"
         $serviceToUpdate.ProcessIdentity.ManagedAccount = $managedAccountGen
         $serviceToUpdate.ProcessIdentity.Update()
         $serviceToUpdate.ProcessIdentity.Deploy()
-        Write-Host -ForegroundColor White " - Done."
+        Write-Host -ForegroundColor Green "Done."
     }
     else {Write-Host -ForegroundColor White " - $($serviceToUpdate.TypeName) is already configured to run as $($managedAccountGen.UserName)."}
 }
@@ -1726,7 +1726,7 @@ Function CreateCentralAdmin([xml]$xmlinput)
                     $centralAdminServices = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.SharePoint.Administration.SPWebServiceInstance" -and $_.Name -eq "WSS_Administration"}
                     $localCentralAdminService = $centralAdminServices | ? {MatchComputerName $_.Server.Address $env:COMPUTERNAME}
                 }
-                Write-Host -BackgroundColor Blue -ForegroundColor Black $($localCentralAdminService.Status)
+                Write-Host -BackgroundColor Green -ForegroundColor Black $($localCentralAdminService.Status)
                 If ($xmlinput.Configuration.Farm.CentralAdmin.UseSSL -eq $true)
                 {
                     Write-Host -ForegroundColor White " - Enabling SSL for Central Admin..."
@@ -1738,7 +1738,7 @@ Function CreateCentralAdmin([xml]$xmlinput)
                     if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
                     {
                         Write-Host -ForegroundColor White " - Assigning certificate(s) in a separate PowerShell window..."
-                        Start-Process -FilePath "$PSHOME\powershell.exe" -Verb RunAs -ArgumentList "-Command `". $env:dp0\AutoSPInstallerFunctions.ps1`; AssignCert $SSLHostHeader $SSLPort $SSLSiteName; Start-Sleep 2" -Wait
+                        Start-Process -FilePath "$PSHOME\powershell.exe" -Verb RunAs -ArgumentList "-Command `". $env:dp0\AutoSPInstallerFunctions.ps1`; AssignCert $SSLHostHeader $SSLPort $SSLSiteName; Start-Sleep 2`"" -Wait
                     }
                     else {AssignCert $SSLHostHeader $SSLPort $SSLSiteName}
                 }
@@ -1798,7 +1798,7 @@ Function WaitForHelpInstallToFinish
     (
         (Get-SPFarm).TimerService.RunningJobs | Where-Object {$_.JobDefinition.TypeName -eq "Microsoft.SharePoint.Help.HelpCollectionInstallerJob"}
     )
-    Write-Host -ForegroundColor Blue "Started."
+    Write-Host -ForegroundColor Green "Started."
     Write-Host -ForegroundColor Blue "  - Waiting for Help Collection Installation timer job to complete: " -NoNewline
     # Monitor the timer job and display progress
     $helpJob = (Get-SPFarm).TimerService.RunningJobs | Where-Object {$_.JobDefinition.TypeName -eq "Microsoft.SharePoint.Help.HelpCollectionInstallerJob"} | Sort StartTime | Select -Last 1
@@ -1815,7 +1815,7 @@ Function WaitForHelpInstallToFinish
         for ($count = 0; $count -le $backspaceCount; $count++) {Write-Host "`b `b" -NoNewline}
         $helpJob = (Get-SPFarm).TimerService.RunningJobs | Where-Object {$_.JobDefinition.TypeName -eq "Microsoft.SharePoint.Help.HelpCollectionInstallerJob"} | Sort StartTime | Select -Last 1
     }
-    Write-Host -ForegroundColor Blue "Done."
+    Write-Host -ForegroundColor White "OK."
 }
 
 # ===================================================================================
@@ -1934,7 +1934,7 @@ Function ConfigureFarm([xml]$xmlinput)
     if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
     {
         Write-Host -ForegroundColor White " - Stopping Default Web Site in a separate PowerShell window..."
-        Start-Process -FilePath "$PSHOME\powershell.exe" -Verb RunAs -ArgumentList "-Command `". $env:dp0\AutoSPInstallerFunctions.ps1`; Stop-DefaultWebsite; Start-Sleep 2" -Wait
+        Start-Process -FilePath "$PSHOME\powershell.exe" -Verb RunAs -ArgumentList "-Command `". $env:dp0\AutoSPInstallerFunctions.ps1`; Stop-DefaultWebsite; Start-Sleep 2`"" -Wait
     }
     else {Stop-DefaultWebsite}
     Write-Host -ForegroundColor White " - Done initial farm/server config."
@@ -2029,7 +2029,7 @@ Function AddManagedAccounts([xml]$xmlinput)
                     $builtinAdminGroup = Get-AdministratorsGroup
                     Write-Host -ForegroundColor White "   - Adding to local Admins (*temporarily*)..." -NoNewline
                     ([ADSI]"WinNT://$env:COMPUTERNAME/$builtinAdminGroup,group").Add("WinNT://$managedAccountDomain/$managedAccountUser")
-                    Write-Host -ForegroundColor White "Done."
+                    Write-Host -ForegroundColor White "OK."
                 }
                 Else
                 {
@@ -2049,9 +2049,9 @@ Function AddManagedAccounts([xml]$xmlinput)
                         Write-Host -ForegroundColor Yellow "   - Could not remove `"$managedAccountDomain\$managedAccountUser`" from local Admins."
                         Write-Host -ForegroundColor Yellow "   - Please remove it manually."
                     }
-                    else {Write-Host -ForegroundColor White "Done."}
+                    else {Write-Host -ForegroundColor White "OK."}
                 }
-                Write-Host -ForegroundColor White "  - Done."
+                Write-Host -ForegroundColor Green "  - Done."
             }
             Catch
             {
@@ -2171,7 +2171,7 @@ Function CreateGenericServiceApplication()
                 $serviceInstances = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq $serviceInstanceType}
                 $serviceInstance = $serviceInstances | ? {MatchComputerName $_.Server.Address $env:COMPUTERNAME}
             }
-                Write-Host -BackgroundColor Blue -ForegroundColor Black $($serviceInstance.Status)
+                Write-Host -BackgroundColor Green -ForegroundColor Black $($serviceInstance.Status)
         }
         Else
         {
@@ -2271,7 +2271,7 @@ Function ConfigureSandboxedCodeService
                 $sandboxedCodeServices = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.SharePoint.Administration.SPUserCodeServiceInstance"}
                 $sandboxedCodeService = $sandboxedCodeServices | ? {MatchComputerName $_.Server.Address $env:COMPUTERNAME}
             }
-            Write-Host -BackgroundColor Blue -ForegroundColor Black $($sandboxedCodeService.Status)
+            Write-Host -BackgroundColor Green -ForegroundColor Black $($sandboxedCodeService.Status)
         }
         Else
         {
@@ -2330,7 +2330,7 @@ Function CreateMetadataServiceApp([xml]$xmlinput)
                     $metadataServiceInstances = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.SharePoint.Taxonomy.MetadataWebServiceInstance"}
                     $metadataServiceInstance = $metadataServiceInstances | ? {MatchComputerName $_.Server.Address $env:COMPUTERNAME}
                 }
-                Write-Host -BackgroundColor Blue -ForegroundColor Black ($metadataServiceInstance.Status)
+                Write-Host -BackgroundColor Green -ForegroundColor Black ($metadataServiceInstance.Status)
             }
             Else {Write-Host -ForegroundColor White " - Managed Metadata Service already started."}
 
@@ -2626,7 +2626,7 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
         if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
         {
             Write-Host -ForegroundColor White " - Assigning certificate(s) in a separate PowerShell window..."
-            Start-Process -FilePath "$PSHOME\powershell.exe" -Verb RunAs -ArgumentList "-Command `". $env:dp0\AutoSPInstallerFunctions.ps1`; AssignCert $SSLHostHeader $SSLPort $SSLSiteName; Start-Sleep 2" -Wait
+            Start-Process -FilePath "$PSHOME\powershell.exe" -Verb RunAs -ArgumentList "-Command `". $env:dp0\AutoSPInstallerFunctions.ps1`; AssignCert $SSLHostHeader $SSLPort $SSLSiteName; Start-Sleep 2`"" -Wait
         }
         else {AssignCert $SSLHostHeader $SSLPort $SSLSiteName}
     }
@@ -2646,7 +2646,7 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
         Write-Host -ForegroundColor White " - Granting $($spservice.username) rights to `"$webAppName`"..." -NoNewline
         $wa = Get-SPWebApplication | Where-Object {$_.DisplayName -eq $webAppName}
         $wa.GrantAccessToProcessIdentity("$($spservice.username)")
-        Write-Host -ForegroundColor White "Done."
+        Write-Host -ForegroundColor White "OK."
     }
     if ($webApp.GrantCurrentUserFullControl -eq $true)
     {
@@ -2719,6 +2719,14 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
                     }
                     Write-Host -ForegroundColor White " - Creating Site Collection `"$siteURL`"..."
                     $site = New-SPSite -Url $siteURL -OwnerAlias $ownerAlias -SecondaryOwner $env:USERDOMAIN\$env:USERNAME -ContentDatabase $siteDatabase -Description $siteCollectionName -Name $siteCollectionName -Language $LCID @templateSwitch @hostHeaderWebAppSwitch -ErrorAction Stop
+
+                    # JDM Not all Web Templates greate the default SharePoint Croups that are made by the UI
+                    # JDM These lines will insure that the the approproprate SharePoint Groups, Owners, Members, Visitors are created
+                    $primaryUser = $site.RootWeb.EnsureUser($ownerAlias)
+                    $secondaryUser = $site.RootWeb.EnsureUser("$env:USERDOMAIN\$env:USERNAME")
+                    $title = $site.RootWeb.title
+                    Write-Host -ForegroundColor White " - Ensuring default groups are created..."
+                    $site.RootWeb.CreateDefaultAssociatedGroups($primaryUser, $secondaryUser, $title)
 
                     # Add the Portal Site Connection to the web app, unless of course the current web app *is* the portal
                     # Inspired by http://www.toddklindt.com/blog/Lists/Posts/Post.aspx?ID=264
@@ -2984,7 +2992,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
                     $profileServiceInstances = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Administration.UserProfileServiceInstance"}
                     $profileServiceInstance = $profileServiceInstances | ? {MatchComputerName $_.Server.Address $env:COMPUTERNAME}
                 }
-                Write-Host -BackgroundColor Blue -ForegroundColor Black $($profileServiceInstance.Status)
+                Write-Host -BackgroundColor Green -ForegroundColor Black $($profileServiceInstance.Status)
             }
             # Create a Profile Service Application
             If ((Get-SPServiceApplication | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Administration.UserProfileApplication"}) -eq $null)
@@ -3033,7 +3041,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
                             if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
                             {
                                 Write-Host -ForegroundColor White " - Assigning certificate(s) in a separate PowerShell window..."
-                                Start-Process -FilePath "$PSHOME\powershell.exe" -Verb RunAs -ArgumentList "-Command `". $env:dp0\AutoSPInstallerFunctions.ps1`; AssignCert $SSLHostHeader $SSLPort $SSLSiteName; Start-Sleep 2" -Wait
+                                Start-Process -FilePath "$PSHOME\powershell.exe" -Verb RunAs -ArgumentList "-Command `". $env:dp0\AutoSPInstallerFunctions.ps1`; AssignCert $SSLHostHeader $SSLPort $SSLSiteName; Start-Sleep 2`"" -Wait
                             }
                             else {AssignCert $SSLHostHeader $SSLPort $SSLSiteName}
                         }
@@ -3068,7 +3076,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
                     }
                     Else {break}
                 }
-                Write-Host -BackgroundColor Blue -ForegroundColor Black $($profileServiceApp.Status)
+                Write-Host -BackgroundColor Green -ForegroundColor Black $($profileServiceApp.Status)
                 # Wait a few seconds for the CreateUPSAsAdmin function to complete
                 Start-Sleep 30
 
@@ -3196,7 +3204,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
                         }
                         If ($profileSyncService.Status -eq "Provisioning")
                         {
-                            Write-Host -BackgroundColor Blue -ForegroundColor Black $($profileSyncService.Status)
+                            Write-Host -BackgroundColor Green -ForegroundColor Black $($profileSyncService.Status)
                             Write-Host -ForegroundColor Blue " - Provisioning User Profile Sync Service, please wait..." -NoNewline
                         }
                         While($profileSyncService.Status -eq "Provisioning" -and $profileSyncService.Status -ne "Disabled")
@@ -3213,7 +3221,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
                         }
                         Else
                         {
-                            Write-Host -BackgroundColor Blue -ForegroundColor Black $($profileSyncService.Status)
+                            Write-Host -BackgroundColor Green -ForegroundColor Black $($profileSyncService.Status)
                             # Need to recycle the Central Admin app pool before we can do anything with the User Profile Sync Service
                             Write-Host -ForegroundColor White " - Recycling Central Admin app pool..."
                             # From http://sharepoint.nauplius.net/2011/09/iisreset-not-required-after-starting.html
@@ -3790,7 +3798,7 @@ Function CreateSecureStoreServiceApp
                     $secureStoreServiceInstances = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.SecureStoreService.Server.SecureStoreServiceInstance"}
                     $secureStoreServiceInstance = $secureStoreServiceInstances | ? {MatchComputerName $_.Server.Address $env:COMPUTERNAME}
                 }
-                Write-Host -BackgroundColor Blue -ForegroundColor Black $($secureStoreServiceInstance.Status)
+                Write-Host -BackgroundColor Green -ForegroundColor Black $($secureStoreServiceInstance.Status)
             }
             # Create Service Application
             $getSPSecureStoreServiceApplication = Get-SPServiceApplication | ? {$_.GetType().Equals([Microsoft.Office.SecureStoreService.Server.SecureStoreServiceApplication])}
@@ -3857,7 +3865,7 @@ Function StartSearchQueryAndSiteSettingsService
                     $searchQueryAndSiteSettingsServices = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Search.Administration.SearchQueryAndSiteSettingsServiceInstance"}
                     $searchQueryAndSiteSettingsService = $searchQueryAndSiteSettingsServices | ? {MatchComputerName $_.Server.Address $env:COMPUTERNAME}
                 }
-                Write-Host -BackgroundColor Blue -ForegroundColor Black $($searchQueryAndSiteSettingsService.Status)
+                Write-Host -BackgroundColor Green -ForegroundColor Black $($searchQueryAndSiteSettingsService.Status)
             }
             Else {Write-Host -ForegroundColor White " - Search Query and Site Settings Service already started."}
         }
@@ -3924,7 +3932,7 @@ Function ConfigureClaimsToWindowsTokenService
                 $claimsServices = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.SharePoint.Administration.Claims.SPWindowsTokenServiceInstance"}
                 $claimsService = $claimsServices | ? {MatchComputerName $_.Server.Address $env:COMPUTERNAME}
             }
-            Write-Host -BackgroundColor Blue -ForegroundColor Black $($claimsService.Status)
+            Write-Host -BackgroundColor Green -ForegroundColor Black $($claimsService.Status)
         }
         Else
         {
@@ -3961,7 +3969,7 @@ Function StopServiceInstance ($service)
             $serviceInstances = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq $service}
             $serviceInstance = $serviceInstances | ? {MatchComputerName $_.Server.Address $env:COMPUTERNAME}
         }
-        Write-Host -BackgroundColor Blue -ForegroundColor Black $($serviceInstance.Status)
+        Write-Host -BackgroundColor Green -ForegroundColor Black $($serviceInstance.Status -replace "Disabled","Stopped")
     }
     Else {Write-Host -ForegroundColor White " - Already stopped."}
     WriteLine
@@ -4105,7 +4113,7 @@ Function ConfigureDistributedCacheService ([xml]$xmlinput)
             {
                 Stop-SPDistributedCacheServiceInstance -Graceful
                 Remove-SPDistributedCacheServiceInstance
-                Write-Host -ForegroundColor White "Done."
+                Write-Host -ForegroundColor Green "Done."
             }
             else {Write-Host -ForegroundColor White "Already stopped."}
         }
@@ -4117,7 +4125,7 @@ Function ConfigureDistributedCacheService ([xml]$xmlinput)
             {
                 Write-Host -ForegroundColor White " - Starting the Distributed Cache service..." -NoNewline
                 Add-SPDistributedCacheServiceInstance
-                Write-Host -ForegroundColor White "Done."
+                Write-Host -ForegroundColor Green "Done."
             }
             $appPoolAcctDomain,$appPoolAcctUser = $spservice.username -Split "\\"
             Write-Host -ForegroundColor White " - Applying service account $($spservice.username) to service AppFabricCachingService..."
@@ -4220,7 +4228,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
           -AcknowledgementTimeout $svcConfig.AcknowledgementTimeout -ProxyType $svcConfig.ProxyType `
           -IgnoreSSLWarnings $svcConfig.IgnoreSSLWarnings -InternetIdentity $svcConfig.InternetIdentity -PerformanceLevel $svcConfig.PerformanceLevel `
           -ServiceAccount $searchServiceAccount.Username -ServicePassword $secSearchServicePassword
-        If ($?) {Write-Host -ForegroundColor White "Done."}
+        If ($?) {Write-Host -ForegroundColor Green "Done."}
 
 
         If ($env:spVer -eq "14") # SharePoint 2010 steps
@@ -4266,7 +4274,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 {
                     Write-Host -ForegroundColor White "  - Setting default index location on search service instance..." -NoNewline
                     $searchSvc | Set-SPEnterpriseSearchServiceInstance -DefaultIndexLocation $indexLocation -ErrorAction SilentlyContinue
-                    if ($?) {Write-Host -ForegroundColor White "Done."}
+                    if ($?) {Write-Host -ForegroundColor White "OK."}
                 }
 
                 $installCrawlSvc = (($appConfig.CrawlComponent.Server | where {MatchComputerName $_.Name $env:COMPUTERNAME}) -ne $null)
@@ -4292,7 +4300,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                             Start-Sleep 1
                             $adminCmpnt = $searchApp | Get-SPEnterpriseSearchAdministrationComponent
                         }
-                        Write-Host -BackgroundColor Blue -ForegroundColor Black $($adminCmpnt.Initialized -replace "True","Done.")
+                        Write-Host -BackgroundColor Green -ForegroundColor Black $($adminCmpnt.Initialized -replace "True","Done.")
                     }
                     Else {Write-Host -ForegroundColor White " - Administration component already initialized."}
                 }
@@ -4377,7 +4385,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                             $searchQueryAndSiteSettingsServices = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Search.Administration.SearchQueryAndSiteSettingsServiceInstance"}
                             $searchQueryAndSiteSettingsService = $searchQueryAndSiteSettingsServices | ? {MatchComputerName $_.Server.Address $env:COMPUTERNAME}
                         }
-                        Write-Host -BackgroundColor Blue -ForegroundColor Black $($searchQueryAndSiteSettingsService.Status)
+                        Write-Host -BackgroundColor Green -ForegroundColor Black $($searchQueryAndSiteSettingsService.Status)
                     }
                     Else {Write-Host -ForegroundColor White " - Search Query and Site Settings Service already started."}
                     }
@@ -4405,7 +4413,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                         Write-Host -ForegroundColor Blue "." -NoNewLine
                         Start-Sleep 1
                     }
-                    Write-Host -BackgroundColor Blue -ForegroundColor Black $($crawlTopology.State)
+                    Write-Host -BackgroundColor Green -ForegroundColor Black $($crawlTopology.State)
 
                     # Need to delete the original crawl topology that was created by default
                     $searchApp | Get-SPEnterpriseSearchCrawlTopology | where {$_.State -eq "Inactive"} | Remove-SPEnterpriseSearchCrawlTopology -Confirm:$false
@@ -4434,7 +4442,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                         Write-Host -ForegroundColor Blue "." -NoNewLine
                         Start-Sleep 1
                     }
-                    Write-Host -BackgroundColor Blue -ForegroundColor Black $($queryTopology.State)
+                    Write-Host -BackgroundColor Green -ForegroundColor Black $($queryTopology.State)
 
                     # Need to delete the original query topology that was created by default
                     $origQueryTopology = $searchApp | Get-SPEnterpriseSearchQueryTopology | where {$_.QueryComponents.Count -eq 0}
@@ -4523,7 +4531,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 $rule = New-Object System.Security.AccessControl.RegistryAccessRule($person, $access, $inheritance, $propagation, $type)
                 $acl.AddAccessRule($rule)
                 Set-Acl HKLM:\System\CurrentControlSet\Control\ComputerName $acl
-                Write-Host -ForegroundColor White "Done."
+                Write-Host -ForegroundColor White "OK."
 
                 Write-Host -ForegroundColor White "  - Checking Search Service Instance..." -NoNewline
                 If ($searchSvc.Status -eq "Disabled")
@@ -4539,7 +4547,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                         Start-Sleep 1
                         $searchSvc = Get-SPEnterpriseSearchServiceInstance -Local
                     }
-                    Write-Host -BackgroundColor Blue -ForegroundColor Black $($searchSvc.Status)
+                    Write-Host -BackgroundColor Green -ForegroundColor Black $($searchSvc.Status)
                 }
                 Else {Write-Host -ForegroundColor White "Already $($searchSvc.Status)."}
 
@@ -4552,7 +4560,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                         Write-Host -ForegroundColor White "Starting..." -NoNewline
                         $searchQueryAndSiteSettingsService | Start-SPEnterpriseSearchQueryAndSiteSettingsServiceInstance
                         If (!$?) {Throw "  - Could not start the Search Query and Site Settings Service Instance."}
-                        Write-Host -ForegroundColor White "Done."
+                        Write-Host -ForegroundColor Green $($searchQueryAndSiteSettingsService.Status)
                     }
                     Else {Write-Host -ForegroundColor White "Already $($searchQueryAndSiteSettingsService.Status)."}
                 }
@@ -4570,7 +4578,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                         -AdminApplicationPool $adminPool `
                         -Partitioned:([bool]::Parse($appConfig.Partitioned))
                     If (!$?) {Throw "  - An error occurred creating the $($appConfig.Name) application."}
-                    Write-Host -ForegroundColor White "Done."
+                    Write-Host -ForegroundColor Green "Done."
                 }
                 Else {Write-Host -ForegroundColor White "Already exists."}
 
@@ -4582,7 +4590,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 {
                     Write-Host -ForegroundColor White "  - Setting default index location on search service instance..." -NoNewline
                     $searchSvc | Set-SPEnterpriseSearchServiceInstance -DefaultIndexLocation $indexLocation -ErrorAction SilentlyContinue
-                    if ($?) {Write-Host -ForegroundColor White "Done."}
+                    if ($?) {Write-Host -ForegroundColor White "OK."}
                 }
 
                 # Look for a topology that has components, or is still Inactive, because that's probably our $clone
@@ -4590,8 +4598,9 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 if (!$clone)
                 {
                     # Clone the active topology
-                    Write-Host -ForegroundColor White "  - Cloning the active search topology..."
+                    Write-Host -ForegroundColor White "  - Cloning the active search topology..." -NoNewline
                     $clone = $searchApp.ActiveTopology.Clone()
+                    Write-Host -ForegroundColor White "OK."
                 }
                 else
                 {
@@ -4611,7 +4620,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                         New-SPEnterpriseSearchAdminComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
                         If ($?)
                         {
-                            Write-Host -ForegroundColor White "Done."
+                            Write-Host -ForegroundColor White "OK."
                             $newComponentsCreated = $true
                         }
                     }
@@ -4631,7 +4640,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                         New-SPEnterpriseSearchContentProcessingComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
                         If ($?)
                         {
-                            Write-Host -ForegroundColor White "Done."
+                            Write-Host -ForegroundColor White "OK."
                             $newComponentsCreated = $true
                         }
                     }
@@ -4651,7 +4660,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                         New-SPEnterpriseSearchAnalyticsProcessingComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
                         If ($?)
                         {
-                            Write-Host -ForegroundColor White "Done."
+                            Write-Host -ForegroundColor White "OK."
                             $newComponentsCreated = $true
                         }
                     }
@@ -4671,7 +4680,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                         New-SPEnterpriseSearchCrawlComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
                         If ($?)
                         {
-                            Write-Host -ForegroundColor White "Done."
+                            Write-Host -ForegroundColor White "OK."
                             $newComponentsCreated = $true
                         }
                     }
@@ -4695,7 +4704,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                         New-SPEnterpriseSearchIndexComponent –SearchTopology $clone -SearchServiceInstance $searchSvc @rootDirectorySwitch | Out-Null
                         If ($?)
                         {
-                            Write-Host -ForegroundColor White "Done."
+                            Write-Host -ForegroundColor White "OK."
                             $newComponentsCreated = $true
                         }
                     }
@@ -4715,7 +4724,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                         New-SPEnterpriseSearchQueryProcessingComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
                         If ($?)
                         {
-                            Write-Host -ForegroundColor White "Done."
+                            Write-Host -ForegroundColor White "OK."
                             $newComponentsCreated = $true
                         }
                     }
@@ -4737,7 +4746,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                         $clone.Activate()
                         If ($?)
                         {
-                            Write-Host -ForegroundColor White "Done."
+                            Write-Host -ForegroundColor White "OK."
                             # Clean up original or previous unsuccessfully-provisioned search topologies
                             $inactiveTopologies = $searchApp.Topologies | Where {$_.State -eq "Inactive"}
                             if ($inactiveTopologies -ne $null)
@@ -4778,7 +4787,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 {
                     Write-Host -ForegroundColor White "Creating..." -NoNewline
                     $searchAppProxy = New-SPEnterpriseSearchServiceApplicationProxy -Name $appConfig.Proxy.Name -SearchApplication $appConfig.Name
-                    If ($?) {Write-Host -ForegroundColor White "Done."}
+                    If ($?) {Write-Host -ForegroundColor White "OK."}
                 }
                 Else {Write-Host -ForegroundColor White "Already exists."}
 
@@ -4793,7 +4802,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                         Write-Host -ForegroundColor White "Re-provisioning..." -NoNewline
                         $sh.Unprovision()
                         $sh.Provision($true)
-                        Write-Host -ForegroundColor White "Done."
+                        Write-Host -ForegroundColor Green "Done."
                     }
                     else {Write-Host -ForegroundColor White "OK."}
                 }
@@ -4811,7 +4820,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 If (!([string]::IsNullOrEmpty($appConfig.SearchCenterUrl)))
                 {
                     # Set the SP2013 Search Center URL per http://blogs.technet.com/b/speschka/archive/2012/10/29/how-to-configure-the-global-search-center-url-for-sharepoint-2013-using-powershell.aspx
-                    Write-Host -ForegroundColor White "  - Setting the Global Search Center URL to $($appConfig.SearchCenterURL)..."
+                    Write-Host -ForegroundColor White "  - Setting the Global Search Center URL to $($appConfig.SearchCenterURL)..." -NoNewline
                     while ($done -ne $true)
                     {
                         try
@@ -4822,7 +4831,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                             if ($?)
                             {
                                 $done = $true
-                                Write-Host -ForegroundColor White " - Done."
+                                Write-Host -ForegroundColor White "OK."
                             }
                         }
                         catch
@@ -4879,7 +4888,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
         }
         Write-Host -ForegroundColor White " - Setting up crawl addresses for default content source..." -NoNewline
         Get-SPEnterpriseSearchServiceApplication | Get-SPEnterpriseSearchCrawlContentSource | Set-SPEnterpriseSearchCrawlContentSource -StartAddresses $crawlStartAddresses
-        If ($?) {Write-Host -ForegroundColor White "Done."}
+        If ($?) {Write-Host -ForegroundColor White "OK."}
         if ($env:spVer -eq "15") # Invoke-WebRequest requires PowerShell 3.0 but if we're installing SP2013 and we've gotten this far, we must have v3.0
         {
             # Issue a request to the Farm Search Administration page to avoid a Health Analyzer warning about 'Missing Server Side Dependencies'
@@ -4889,9 +4898,8 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
             {
                 try
                 {
-                    Write-Host -ForegroundColor White " - Requesting searchfarmdashboard.aspx (resolves Health Analyzer error)..." -NoNewLine
+                    Write-Host -ForegroundColor White " - Requesting searchfarmdashboard.aspx (resolves Health Analyzer error)..."
                     $null = Invoke-WebRequest -Uri $centralAdminUrl"searchfarmdashboard.aspx" -UseDefaultCredentials -DisableKeepAlive -UseBasicParsing -ErrorAction SilentlyContinue
-                    Write-Host "Done."
                 }
                 catch {}
             }
@@ -5065,7 +5073,7 @@ Function CreateBusinessDataConnectivityServiceApp([xml]$xmlinput)
                     $bdcServiceInstances = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.SharePoint.BusinessData.SharedService.BdcServiceInstance"}
                     $bdcServiceInstance = $bdcServiceInstances | ? {MatchComputerName $_.Server.Address $env:COMPUTERNAME}
                 }
-                Write-Host -BackgroundColor Blue -ForegroundColor Black ($bdcServiceInstance.Status)
+                Write-Host -BackgroundColor Green -ForegroundColor Black ($bdcServiceInstance.Status)
             }
             Else
             {
@@ -5168,7 +5176,7 @@ Function CreateExcelServiceApp ([xml]$xmlinput)
                         $excelServiceInstances = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Excel.Server.MossHost.ExcelServerWebServiceInstance"}
                         $excelServiceInstance = $excelServiceInstances | ? {MatchComputerName $_.Server.Address $env:COMPUTERNAME}
                     }
-                    Write-Host -BackgroundColor Blue -ForegroundColor Black ($excelServiceInstance.Status)
+                    Write-Host -BackgroundColor Green -ForegroundColor Black ($excelServiceInstance.Status)
                 }
                 Else
                 {
@@ -5806,7 +5814,7 @@ Function CreateProjectServerServiceApp ([xml]$xmlinput)
         if (!(Get-SPSite -Identity $projectSiteUrl -ErrorAction SilentlyContinue))
         {
             $projectSite = New-SPSite -Url $projectSiteUrl  -OwnerAlias $env:USERDOMAIN\$env:USERNAME -Template "PROJECTSITE#0"
-            if ($?) {Write-Host -ForegroundColor Black -BackgroundColor Blue "Done."}
+            if ($?) {Write-Host -ForegroundColor Black -BackgroundColor Green "Done."}
             else
             {
                 Write-Host -ForegroundColor White "."
@@ -5821,7 +5829,7 @@ Function CreateProjectServerServiceApp ([xml]$xmlinput)
         if (!(Get-SPProjectWebInstance -Url $projectSiteUrl -ErrorAction SilentlyContinue))
         {
             Mount-SPProjectWebInstance -DatabaseName $serviceDB -SiteCollection $projectSite
-            if ($?) {Write-Host -ForegroundColor Black -BackgroundColor Blue "Done."}
+            if ($?) {Write-Host -ForegroundColor Black -BackgroundColor Green "Done."}
             else
             {
                 Write-Host -ForegroundColor White "."
@@ -6070,7 +6078,7 @@ Function Configure-PDFSearchAndIcon
                 Write-Host -ForegroundColor White "  - "$webAppUrl": Adding "`"$mimeType"`"..." -NoNewline
                 $webApp.AllowedInlineDownloadedMimeTypes.Add($mimeType)
                 $webApp.Update()
-                Write-Host -ForegroundColor White "Done."
+                Write-Host -ForegroundColor White "OK."
             }
             Else
             {
@@ -6142,7 +6150,10 @@ Function Get-FarmServers ([xml]$xmlinput)
             foreach ($serverElement in $node.QueryComponent.Server) {$queryServers += @($serverElement.GetAttribute("Name"))}
             foreach ($serverElement in $node.SearchQueryAndSiteSettingsServers.Server) {$siteQueryAndSSServers += @($serverElement.GetAttribute("Name"))}
             foreach ($serverElement in $node.AdminComponent.Server) {$adminServers += @($serverElement.GetAttribute("Name"))}
-            $servers = $crawlServers+$queryServers+$siteQueryAndSSServers+$adminServers
+            foreach ($serverElement in $node.IndexComponent.Server) {$IndexComponent += @($serverElement.GetAttribute("Name"))}
+            foreach ($serverElement in $node.ContentProcessingComponent.Server) {$ContentProcessingComponent += @($serverElement.GetAttribute("Name"))}
+            foreach ($serverElement in $node.AnalyticsProcessingComponent.Server) {$AnalyticsProcessingComponent += @($serverElement.GetAttribute("Name"))}
+            $servers = $crawlServers+$queryServers+$siteQueryAndSSServers+$adminServers+$IndexComponent+$ContentProcessingComponent+$AnalyticsProcessingComponent
         }
 
         # Accomodate and clean up comma and/or space-separated server names
@@ -7086,7 +7097,7 @@ Function Show-Progress ($process, $color, $interval)
         Write-Host -ForegroundColor $color "." -NoNewline
         Start-Sleep $interval
     }
-    Write-Host -ForegroundColor $color "Done."
+    Write-Host -ForegroundColor Green "Done."
 }
 
 # ====================================================================================
@@ -7220,7 +7231,7 @@ Function Stop-DefaultWebsite ()
     {
         Write-Host -ForegroundColor White "Stopping..." -NoNewline
         $defaultWebsite | Stop-Website
-        if ($?) {Write-Host -ForegroundColor White "Done."}
+        if ($?) {Write-Host -ForegroundColor White "OK."}
     }
     else {Write-Host -ForegroundColor White "Already stopped."}
 }
