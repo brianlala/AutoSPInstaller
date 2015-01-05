@@ -21,7 +21,7 @@
 <!-- The Environment attribute below appears at the top of the installation transcript, and will now also appear at the top of the SharePoint 2013 Central Administration top-left branding bar. It does not affect the SharePoint 2010 installation though.
      Simply leave the Environment attribute blank if you do not want to alter the branding bar in SP2013 Central Admin.
      The Version attribute is now used for comparing the XML schema version with the version of the script (specifically, AutoSPInstallerFunctions.ps1), as there may be dependencies between XML and script elements. -->
-<Configuration Environment="Dev" Version="3.96">
+<Configuration Environment="Dev" Version="3.98">
     <!-- The Install section controls what modifications are made to the Windows OS prior to installation and how the SharePoint installation is run.
          You can also explicitly state the SPVersion of SharePoint being installed, (in case you have binaries for both SP2010/SP2013 in your folder structure).
          Allowed values are "2010" or "2013". If you omit this, the script will attempt to determine the version anyhow, and default to 2013 if both sets of install files are present. -->
@@ -36,9 +36,9 @@
         <!-- DataDir is the location to use to store the SharePoint data files, including (by default) the search index files (on a drive letter that must exist on all SharePoint servers in the farm)
              If you don't specify a value, the default location of %PROGRAMFILES%\Microsoft Office Servers\14.0\Data or %PROGRAMFILES%\Microsoft Office Servers\15.0\Data (based on SharePoint version) is used -->
         <DataDir></DataDir>
-        <!-- If you are referencing an existing config.xml file, enter the your product key in that file. Otherwise, enter your product key as PIDKey below. -->
+        <!-- If you are referencing an existing config.xml file, enter the your product key in that file. Otherwise, enter your product key as PIDKey below, unless you are installing SharePoint Foundation, then no PIDKey is required. -->
         <PIDKey></PIDKey>
-        <!-- SKU can be either Standard or Enterprise. You are responsible for ensuring the PIDKey matches the SKU selected, the script won't/can't validate this. -->
+        <!-- SKU can be either Standard or Enterprise for the full SharePoint Server product, or Foundation for SharePoint Foundation (currently in experimental support). You are responsible for ensuring the PIDKey matches the SKU selected; the script won't/can't validate this (note: no PIDKey required for Foundation). -->
         <SKU>Enterprise</SKU>
         <!-- If true, the SharePoint prerequisite installer will install from the \SharePoint\PrerequisiteInstallerFiles folder.
              If false, the prerequisites will be downloaded during install. In order to use true you must obviously download all the prerequisites in advance.
@@ -390,37 +390,24 @@
                         <DBServer></DBServer>
                         <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
                         <DBAlias Create="false"
-                                 DBInstance="localhost"
+                                 DBInstance=""
                                  DBPort="" />
                     </Database>
                     <ApplicationPool Name="SharePoint Search Application Pool" />
-                    <CrawlComponent>
-                        <Server Name="localhost" />
-                    </CrawlComponent>
-                    <QueryComponent>
-                        <Server Name="localhost" />
-                    </QueryComponent>
-                    <!-- You should specify all the servers you listed in QueryComponent in the SearchQueryAndSiteSettingsServers node below as well -->
-                    <SearchQueryAndSiteSettingsServers>
-                        <Server Name="localhost" />
-                    </SearchQueryAndSiteSettingsServers>
+                    <CrawlComponent Provision="localhost" />
+                    <QueryComponent Provision="localhost" />
+                    <!-- You should specify all the servers you listed in QueryComponent in the SearchQueryAndSiteSettingsComponent node below as well -->
+                    <SearchQueryAndSiteSettingsComponent Provision="localhost" />
                     <!-- You can only run the AdminComponent on one server per Search Service App in a SP2010 farm, so only list one server here unless you are installing SharePoint 2013 and need multiple Admin components. -->
-                    <AdminComponent>
-                        <Server Name="localhost" />
+                    <AdminComponent Provision="localhost">
                         <ApplicationPool Name="SharePoint Search Application Pool" />
                     </AdminComponent>
                     <!-- IndexComponent is only required for SP2013 -->
-                    <IndexComponent>
-                        <Server Name="localhost" />
-                    </IndexComponent>
+                    <IndexComponent Provision="localhost" />
                     <!-- ContentProcessingComponent is only required for SP2013 -->
-                    <ContentProcessingComponent>
-                        <Server Name="localhost" />
-                    </ContentProcessingComponent>
+                    <ContentProcessingComponent Provision="localhost" />
                     <!-- AnalyticsProcessingComponent is only required for SP2013 -->
-                    <AnalyticsProcessingComponent>
-                        <Server Name="localhost" />
-                    </AnalyticsProcessingComponent>
+                    <AnalyticsProcessingComponent Provision="localhost" />
                     <Proxy Name="Search Service Application" Partitioned="false">
                         <ProxyGroup Name="Default" />
                     </Proxy>

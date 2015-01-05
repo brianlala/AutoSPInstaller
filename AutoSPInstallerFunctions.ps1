@@ -7,7 +7,7 @@ Function CheckXMLVersion ([xml]$xmlinput)
 {
     $getXMLVersion = $xmlinput.Configuration.Version
     # The value below will increment whenever there is an update to the format of the AutoSPInstallerInput XML file
-    $scriptVersion = "3.96"
+    $scriptVersion = "3.98"
     if ($getXMLVersion -ne $scriptVersion)
     {
         Write-Host -ForegroundColor Yellow " - Warning! Your versions of the XML ($getXMLVersion) and script ($scriptVersion) are mismatched."
@@ -564,7 +564,6 @@ Function InstallPrerequisites([xml]$xmlinput)
     Else
     {
         Write-Host -ForegroundColor White " - Installing Prerequisite Software:"
-        ##If (($env:spVer -eq "14") -and ((Gwmi Win32_OperatingSystem).Version -eq "6.1.7601")) # SP2010 on Win2008 R2 SP1
         If ((Gwmi Win32_OperatingSystem).Version -eq "6.1.7601") # Win2008 R2 SP1
         {
             # Due to the SharePoint 2010 issue described in http://support.microsoft.com/kb/2581903 (related to installing the KB976462 hotfix)
@@ -923,7 +922,7 @@ Function InstallSharePoint([xml]$xmlinput)
             }
 
             # Parsing most recent SharePoint Server Setup log for errors or restart requirements, since $LASTEXITCODE doesn't seem to work...
-            $setupLog = Get-ChildItem -Path (Get-Item $env:TEMP).FullName | ? {$_.Name -like "SharePoint Server Setup*"} | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
+            $setupLog = Get-ChildItem -Path (Get-Item $env:TEMP).FullName | ? {$_.Name -like "*SharePoint * Setup*"} | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
             If ($setupLog -eq $null)
             {
                 Throw " - Could not find SharePoint Server Setup log file!"
@@ -932,6 +931,8 @@ Function InstallSharePoint([xml]$xmlinput)
             # Get error(s) from log
             $setupLastError = $setupLog | Select-String -SimpleMatch -Pattern "Error:" | Select-Object -Last 1
             $setupSuccess = $setupLog | Select-String -SimpleMatch -Pattern "Successfully installed package: oserver"
+            # Look for a different success message if we are only installing Foundation
+            if ($xmlinput.Configuration.Install.SKU -eq "Foundation") {$setupSuccess = $setupLog | Select-String -SimpleMatch -Pattern "Successfully installed package: wss"}
             If ($setupLastError -and !$setupSuccess)
             {
                 Write-Warning $setupLastError.Line
@@ -1397,7 +1398,7 @@ Function InstallUpdates
         }
     }
     # Get all CUs except the March 2013 PU for SharePoint / Project Server 2013 and the June 2013 CU for SharePoint 2010
-    $cumulativeUpdates = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include office2010*.exe,ubersrv*.exe,ubersts*.exe,*pjsrv*.exe -Recurse -ErrorAction SilentlyContinue | Where-Object {$_ -notlike "*ubersrvsp2013-kb2767999-fullfile-x64-glb.exe" -and $_ -notlike "*ubersrvprjsp2013-kb2768001-fullfile-x64-glb.exe" -and $_ -notlike "*ubersrv2010-kb2817527-fullfile-x64-glb.exe"} | Sort-Object -Descending
+    $cumulativeUpdates = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include office2010*.exe,ubersrv*.exe,ubersts*.exe,*pjsrv*.exe,sharepointsp2013*.exe,coreserver201*.exe -Recurse -ErrorAction SilentlyContinue | Where-Object {$_ -notlike "*ubersrvsp2013-kb2767999-fullfile-x64-glb.exe" -and $_ -notlike "*ubersrvprjsp2013-kb2768001-fullfile-x64-glb.exe" -and $_ -notlike "*ubersrv2010-kb2817527-fullfile-x64-glb.exe"} | Sort-Object -Descending
     # Filter out Project Server updates if we aren't installing Project Server
     if ($xmlinput.Configuration.ProjectServer.Install -ne $true)
     {
@@ -1850,14 +1851,7 @@ Function ConfigureFarm([xml]$xmlinput)
             Write-Host -ForegroundColor White " - Installing Features..."
             $features = Install-SPFeature -AllExistingFeatures -Force
         }
-        ### Detect if Central Admin URL already exists, i.e. if Central Admin web app is already provisioned on the local computer
-        ##$centralAdminPort = $xmlinput.Configuration.Farm.CentralAdmin.Port
-        ##$centralAdmin = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.Url -like "*$($env:COMPUTERNAME)*" -and $_.IsAdministrationWebApplication}
-        ### Provision CentralAdmin if indicated in AutoSPInstallerInput.xml and the CA web app doesn't already exist
-        ##If (ShouldIProvision $xmlinput.Configuration.Farm.CentralAdmin -eq $true) ## -and (!($centralAdmin)))
-        ##{
-            CreateCentralAdmin $xmlinput
-        ##}
+        CreateCentralAdmin $xmlinput
         # Update Central Admin branding text for SharePoint 2013 based on the XML input Environment attribute
         if ($env:spVer -eq "15" -and !([string]::IsNullOrEmpty($xmlinput.Configuration.Environment)))
         {
@@ -2289,7 +2283,7 @@ Function ConfigureSandboxedCodeService
 # ===================================================================================
 Function CreateMetadataServiceApp([xml]$xmlinput)
 {
-    If (ShouldIProvision $xmlinput.Configuration.ServiceApps.ManagedMetadataServiceApp -eq $true)
+    If ((ShouldIProvision $xmlinput.Configuration.ServiceApps.ManagedMetadataServiceApp -eq $true) -and (Get-Command -Name New-SPMetadataServiceApplication -ErrorAction SilentlyContinue))
     {
         WriteLine
         Try
@@ -2968,7 +2962,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
         }
         else {$hostHeaderSwitch = @{HostHeader = $hostHeader}}
 
-        If (ShouldIProvision $userProfile -eq $true)
+        If ((ShouldIProvision $userProfile -eq $true) -and (Get-Command -Name New-SPProfileServiceApplication -ErrorAction SilentlyContinue))
         {
             WriteLine
             Write-Host -ForegroundColor White " - Provisioning $($userProfile.Name)"
@@ -3450,7 +3444,7 @@ Function CreateStateServiceApp([xml]$xmlinput)
 # ===================================================================================
 Function CreateSPUsageApp([xml]$xmlinput)
 {
-    If (ShouldIProvision $xmlinput.Configuration.ServiceApps.SPUsageService -eq $true)
+    If ((ShouldIProvision $xmlinput.Configuration.ServiceApps.SPUsageService -eq $true) -and (Get-Command -Name New-SPUsageApplication -ErrorAction SilentlyContinue))
     {
         WriteLine
         Try
@@ -4107,7 +4101,6 @@ Function ConfigureDistributedCacheService ([xml]$xmlinput)
         $serviceInstance = $serviceInstances | ? {MatchComputerName $_.Server.Address $env:COMPUTERNAME}
         if (($xmlinput.Configuration.Farm.Services.SelectSingleNode("DistributedCache")) -and !(ShouldIProvision $xmlinput.Configuration.Farm.Services.DistributedCache -eq $true))
         {
-            ##StopServiceInstance "Microsoft.SharePoint.DistributedCaching.Utilities.SPDistributedCacheServiceInstance"
             Write-Host -ForegroundColor White " - Stopping the Distributed Cache service..." -NoNewline
             if ($serviceInstance.Status -eq "Online")
             {
@@ -4170,7 +4163,8 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
     {
         Write-Host -ForegroundColor White " - Managed account credentials for Search Service have not been specified."
     }
-    If (ShouldIProvision $xmlinput.Configuration.ServiceApps.EnterpriseSearchService -eq $true)
+    # We now do a check that both Search is being requested for provisioning and that we are not running the Foundation SKU
+    If ((ShouldIProvision $xmlinput.Configuration.ServiceApps.EnterpriseSearchService -eq $true) -and (Get-Command -Name New-SPEnterpriseSearchServiceApplication -ErrorAction SilentlyContinue) -and ($xmlinput.Configuration.Install.SKU -ne "Foundation"))
     {
         WriteLine
         Write-Host -ForegroundColor White " - Provisioning Enterprise Search..."
@@ -4277,10 +4271,11 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                     if ($?) {Write-Host -ForegroundColor White "OK."}
                 }
 
-                $installCrawlSvc = (($appConfig.CrawlComponent.Server | where {MatchComputerName $_.Name $env:COMPUTERNAME}) -ne $null)
-                $installQuerySvc = (($appConfig.QueryComponent.Server | where {MatchComputerName $_.Name $env:COMPUTERNAME}) -ne $null)
-                $installAdminComponent = (($appConfig.AdminComponent.Server | where {MatchComputerName $_.Name $env:COMPUTERNAME}) -ne $null)
-                $installSyncSvc = (($appConfig.SearchQueryAndSiteSettingsServers.Server | where {MatchComputerName $_.Name $env:COMPUTERNAME}) -ne $null)
+                # Finally using ShouldIProvision here like everywhere else in the script...
+                $installCrawlSvc = ShouldIProvision $appConfig.CrawlComponent
+                $installQuerySvc = ShouldIProvision $appConfig.QueryComponent
+                $installAdminComponent = ShouldIProvision $appConfig.AdminComponent
+                $installSyncSvc = ShouldIProvision $appConfig.SearchQueryAndSiteSettingsComponent
 
                 If ($searchSvc.Status -ne "Online" -and ($installCrawlSvc -or $installQuerySvc)) {
                     $searchSvc | Start-SPEnterpriseSearchServiceInstance
@@ -4392,8 +4387,10 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
 
                 # Don't activate until we've added all components
                 $allCrawlServersDone = $true
-                $appConfig.CrawlComponent.Server | ForEach-Object {
-                    $crawlServer = $_.Name
+                # Put any comma- or space-delimited servers we find in the "Provision" attribute into an array
+                [array]$crawlServersToProvision = $appConfig.CrawlComponent.Provision -split "," -split " "
+                $crawlServersToProvision | ForEach-Object {
+                    $crawlServer = $_
                     $top = $crawlTopology.CrawlComponents | where {$_.ServerName -eq $crawlServer}
                     If ($top -eq $null) { $allCrawlServersDone = $false }
                 }
@@ -4420,8 +4417,10 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 }
 
                 $allQueryServersDone = $true
-                $appConfig.QueryComponent.Server | ForEach-Object {
-                    $queryServer = $_.Name
+                # Put any comma- or space-delimited servers we find in the "Provision" attribute into an array
+                [array]$queryServersToProvision = $appConfig.QueryComponent.Provision -split "," -split " "
+                $queryServersToProvision | ForEach-Object {
+                    $queryServer = $_
                     $top = $queryTopology.QueryComponents | where {$_.ServerName -eq $queryServer}
                     If ($top -eq $null) { $allQueryServersDone = $false }
                 }
@@ -4460,12 +4459,10 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 } Else {
                     Write-Host -ForegroundColor White " - Enterprise search service application proxy already exists, skipping creation."
                 }
-
                 If ($proxy.Status -ne "Online") {
                     $proxy.Status = "Online"
                     $proxy.Update()
                 }
-
                 $proxy | Set-ProxyGroupsMembership $appConfig.Proxy.ProxyGroup
             }
             WriteLine
@@ -4484,14 +4481,16 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                     $dbServer = $xmlinput.Configuration.Farm.Database.DBServer
                 }
                 $secContentAccessAcctPWD = ConvertTo-SecureString -String $appConfig.ContentAccessAccountPassword -AsPlainText -Force
-                $installAdminComponent = (($appConfig.AdminComponent.Server | where {MatchComputerName $_.Name $env:COMPUTERNAME}) -ne $null)
-                $installCrawlComponent = (($appConfig.CrawlComponent.Server | where {MatchComputerName $_.Name $env:COMPUTERNAME}) -ne $null)
-                $installQueryComponent = (($appConfig.QueryComponent.Server | where {MatchComputerName $_.Name $env:COMPUTERNAME}) -ne $null)
-                $installSyncSvc = (($appConfig.SearchQueryAndSiteSettingsServers.Server | where {MatchComputerName $_.Name $env:COMPUTERNAME}) -ne $null)
-                $installAnalyticsProcessingComponent = (($appConfig.AnalyticsProcessingComponent.Server | where {MatchComputerName $_.Name $env:COMPUTERNAME}) -ne $null)
-                $installContentProcessingComponent = (($appConfig.ContentProcessingComponent.Server | where {MatchComputerName $_.Name $env:COMPUTERNAME}) -ne $null)
-                $installIndexComponent = (($appConfig.IndexComponent.Server | where {MatchComputerName $_.Name $env:COMPUTERNAME}) -ne $null)
 
+                # Finally using ShouldIProvision here like everywhere else in the script...
+                $installCrawlComponent = ShouldIProvision $appConfig.CrawlComponent
+                $installQueryComponent = ShouldIProvision $appConfig.QueryComponent
+                $installAdminComponent = ShouldIProvision $appConfig.AdminComponent
+                $installSyncSvc = ShouldIProvision $appConfig.SearchQueryAndSiteSettingsComponent
+                $installAnalyticsProcessingComponent = ShouldIProvision $appConfig.AnalyticsProcessingComponent
+                $installContentProcessingComponent = ShouldIProvision $appConfig.ContentProcessingComponent
+                $installIndexComponent = ShouldIProvision $appConfig.IndexComponent
+                
                 $pool = Get-ApplicationPool $appConfig.ApplicationPool
                 $adminPool = Get-ApplicationPool $appConfig.AdminComponent.ApplicationPool
                 $appPoolUserName = $searchServiceAccount.Username
@@ -4872,11 +4871,6 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
             {
                 $crawlStartAddresses += ","+$($webAppConfig.url)+":"+$($webAppConfig.Port)
             }
-            ## Removing this as it seems host header site collections will automatically be crawled if the "parent" web application's URL is present in the content source
-            ##foreach ($siteCollectionConfig in $webAppConfig.SiteCollections.SiteCollection | Where-Object {$_.HostNamedSiteCollection -eq $true})
-            ##{
-            ##    $crawlStartAddresses += ","+$($siteCollectionConfig.siteUrl)
-            ##}
         }
 
         If ($mySiteHostHeaderAndPort)
@@ -5036,7 +5030,7 @@ Function Get-ApplicationPool([System.Xml.XmlElement]$appPoolConfig) {
 # ===================================================================================
 Function CreateBusinessDataConnectivityServiceApp([xml]$xmlinput)
 {
-    If (ShouldIProvision $xmlinput.Configuration.ServiceApps.BusinessDataConnectivity -eq $true)
+    If ((ShouldIProvision $xmlinput.Configuration.ServiceApps.BusinessDataConnectivity -eq $true) -and (Get-Command -Name New-SPBusinessDataCatalogServiceApplication -ErrorAction SilentlyContinue))
     {
         WriteLine
         Try
@@ -5115,7 +5109,7 @@ Function CreateWordAutomationServiceApp ([xml]$xmlinput)
     }
     $dbPrefix = Get-DBPrefix $xmlinput
     $serviceDB = $dbPrefix+$($serviceConfig.Database.Name)
-    If (ShouldIProvision $serviceConfig -eq $true)
+    If ((ShouldIProvision $serviceConfig -eq $true) -and (Get-Command -Name New-SPWordConversionServiceApplication -ErrorAction SilentlyContinue))
     {
         WriteLine
         $serviceInstanceType = "Microsoft.Office.Word.Server.Service.WordServiceInstance"
@@ -5287,7 +5281,7 @@ Function CreateExcelServiceApp ([xml]$xmlinput)
     }
         else
         {
-            Write-Warning "You have specified a Standard SKU in `"$(Split-Path -Path $inputFile -Leaf)`". However, you require the Enterprise SKU and corresponding PIDKey to provision Excel Services."
+            Write-Warning "You have specified a non-Enterprise SKU in `"$(Split-Path -Path $inputFile -Leaf)`". However, SharePoint requires the Enterprise SKU and corresponding PIDKey to provision Excel Services."
         }
         WriteLine
     }
@@ -5391,7 +5385,7 @@ Function CreateVisioServiceApp ([xml]$xmlinput)
         }
         else
         {
-            Write-Warning "You have specified a Standard SKU in `"$(Split-Path -Path $inputFile -Leaf)`". However, you require the Enterprise SKU and corresponding PIDKey to provision Visio Services."
+            Write-Warning "You have specified a non-Enterprise SKU in `"$(Split-Path -Path $inputFile -Leaf)`". However, SharePoint requires the Enterprise SKU and corresponding PIDKey to provision Visio Services."
         }
         WriteLine
     }
@@ -5471,7 +5465,7 @@ Function CreatePerformancePointServiceApp ([xml]$xmlinput)
         }
         else
         {
-            Write-Warning " You have specified a Standard SKU in `"$(Split-Path -Path $inputFile -Leaf)`". However, you require the Enterprise SKU and corresponding PIDKey to provision PerformancePoint Services."
+            Write-Warning " You have specified a non-Enterprise SKU in `"$(Split-Path -Path $inputFile -Leaf)`". However, SharePoint requires the Enterprise SKU and corresponding PIDKey to provision PerformancePoint Services."
         }
         WriteLine
     }
@@ -5500,7 +5494,7 @@ Function CreateAccess2010ServiceApp ([xml]$xmlinput)
         }
         else
         {
-            Write-Warning "You have specified a Standard SKU in `"$(Split-Path -Path $inputFile -Leaf)`". However, you require the Enterprise SKU and corresponding PIDKey to provision Access Services 2010."
+            Write-Warning "You have specified a non-Enterprise SKU in `"$(Split-Path -Path $inputFile -Leaf)`". However, SharePoint requires the Enterprise SKU and corresponding PIDKey to provision Access Services 2010."
         }
         WriteLine
     }
@@ -5585,7 +5579,7 @@ Function CreateWordViewingOWAServiceApp ([xml]$xmlinput)
 Function CreateAppManagementServiceApp ([xml]$xmlinput)
 {
     $serviceConfig = $xmlinput.Configuration.ServiceApps.AppManagementService
-    If (ShouldIProvision $serviceConfig -eq $true)
+    If ((ShouldIProvision $serviceConfig -eq $true) -and (Get-Command -Name New-SPAppManagementServiceApplication -ErrorAction SilentlyContinue))
     {
         WriteLine
         $dbPrefix = Get-DBPrefix $xmlinput
@@ -5616,7 +5610,7 @@ Function CreateAppManagementServiceApp ([xml]$xmlinput)
 Function CreateSubscriptionSettingsServiceApp ([xml]$xmlinput)
 {
     $serviceConfig = $xmlinput.Configuration.ServiceApps.SubscriptionSettingsService
-    If (ShouldIProvision $serviceConfig -eq $true)
+    If ((ShouldIProvision $serviceConfig -eq $true) -and (Get-Command -Name New-SPSubscriptionSettingsServiceApplication -ErrorAction SilentlyContinue))
     {
         WriteLine
         $dbPrefix = Get-DBPrefix $xmlinput
@@ -5656,7 +5650,7 @@ Function CreateAccessServicesApp ([xml]$xmlinput)
     $dbPrefix = Get-DBPrefix $xmlinput
     $serviceDB = $dbPrefix+$($serviceConfig.Database.Name)
     $serviceConfig = $xmlinput.Configuration.EnterpriseServiceApps.AccessServices
-    If (ShouldIProvision $serviceConfig -eq $true)
+    If ((ShouldIProvision $serviceConfig -eq $true) -and (Get-Command -Name New-SPAccessServicesApplication -ErrorAction SilentlyContinue))
     {
         WriteLine
         if ($officeServerPremium -eq "1")
@@ -5673,7 +5667,7 @@ Function CreateAccessServicesApp ([xml]$xmlinput)
         }
         else
         {
-            Write-Warning "You have specified a Standard SKU in `"$(Split-Path -Path $inputFile -Leaf)`". However, you require the Enterprise SKU and corresponding PIDKey to provision Access Services 2010."
+            Write-Warning "You have specified a non-Enterprise SKU in `"$(Split-Path -Path $inputFile -Leaf)`". However, SharePoint requires the Enterprise SKU and corresponding PIDKey to provision Access Services 2010."
         }
         WriteLine
     }
@@ -5685,7 +5679,7 @@ Function CreateAccessServicesApp ([xml]$xmlinput)
 Function CreatePowerPointConversionServiceApp ([xml]$xmlinput)
 {
     $serviceConfig = $xmlinput.Configuration.ServiceApps.PowerPointConversionService
-    If (ShouldIProvision $serviceConfig -eq $true)
+    If ((ShouldIProvision $serviceConfig -eq $true) -and (Get-Command -Name New-SPPowerPointConversionServiceApplication -ErrorAction SilentlyContinue))
     {
         WriteLine
         $serviceInstanceType = "Microsoft.Office.Server.PowerPoint.Administration.PowerPointConversionServiceInstance"
@@ -5714,7 +5708,7 @@ Function CreateMachineTranslationServiceApp ([xml]$xmlinput)
     }
     $dbPrefix = Get-DBPrefix $xmlinput
     $translationDatabase = $dbPrefix+$($serviceConfig.Database.Name)
-    If (ShouldIProvision $serviceConfig -eq $true)
+    If ((ShouldIProvision $serviceConfig -eq $true) -and (Get-Command -Name New-SPTranslationServiceApplication -ErrorAction SilentlyContinue))
     {
         WriteLine
         $serviceInstanceType = "Microsoft.Office.TranslationServices.TranslationServiceInstance"
@@ -5735,7 +5729,7 @@ Function CreateMachineTranslationServiceApp ([xml]$xmlinput)
 Function CreateWorkManagementServiceApp ([xml]$xmlinput)
 {
     $serviceConfig = $xmlinput.Configuration.ServiceApps.WorkManagementService
-    If (ShouldIProvision $serviceConfig -eq $true)
+    If ((ShouldIProvision $serviceConfig -eq $true) -and (Get-Command -Name New-SPWorkManagementServiceApplication -ErrorAction SilentlyContinue))
     {
         WriteLine
         $serviceInstanceType = "Microsoft.Office.Server.WorkManagement.WorkManagementServiceInstance"
@@ -5757,7 +5751,7 @@ Function CreateWorkManagementServiceApp ([xml]$xmlinput)
 Function CreateProjectServerServiceApp ([xml]$xmlinput)
 {
     $serviceConfig = $xmlinput.Configuration.ProjectServer.ServiceApp
-    If ((ShouldIProvision $serviceConfig -eq $true) -and $xmlinput.Configuration.ProjectServer.Install -eq $true) # We need to check that Project Server has been requested for install, not just if the service app should be provisioned
+    If ((ShouldIProvision $serviceConfig -eq $true) -and ($xmlinput.Configuration.ProjectServer.Install -eq $true) -and (Get-Command -Name New-SPProjectServiceApplication -ErrorAction SilentlyContinue)) # We need to check that Project Server has been requested for install, not just if the service app should be provisioned
     {
         WriteLine
         $dbPrefix = Get-DBPrefix $xmlinput
@@ -6138,13 +6132,14 @@ Function Get-FarmServers ([xml]$xmlinput)
     $servers = $null
     $farmServers = @()
     # Look for server name references in the XML
-    ForEach ($node in $xmlinput.SelectNodes("//*[@Provision]|//*[@Install]|//*[CrawlComponent]|//*[QueryComponent]|//*[SearchQueryAndSiteSettingsServers]|//*[AdminComponent]|//*[IndexComponent]|//*[ContentProcessingComponent]|//*[AnalyticsProcessingComponent]|//*[@Start]"))
+    ForEach ($node in $xmlinput.SelectNodes("//*[@Provision]|//*[@Install]|//*[CrawlComponent]|//*[QueryComponent]|//*[SearchQueryAndSiteSettingsComponent]|//*[AdminComponent]|//*[IndexComponent]|//*[ContentProcessingComponent]|//*[AnalyticsProcessingComponent]|//*[@Start]"))
     {
         # Try to set the server name from the various elements/attributes
         $servers = @(GetFromNode $node "Provision")
         If ([string]::IsNullOrEmpty($servers)) { $servers = @(GetFromNode $node "Install") }
         If ([string]::IsNullOrEmpty($servers)) { $servers = @(GetFromNode $node "Start") }
-        If ([string]::IsNullOrEmpty($servers))
+        ## No longer required now that we are using ShouldIProvision to get Search Service component server names
+<#        If ([string]::IsNullOrEmpty($servers))
         {
             foreach ($serverElement in $node.CrawlComponent.Server) {$crawlServers += @($serverElement.GetAttribute("Name"))}
             foreach ($serverElement in $node.QueryComponent.Server) {$queryServers += @($serverElement.GetAttribute("Name"))}
@@ -6155,7 +6150,7 @@ Function Get-FarmServers ([xml]$xmlinput)
             foreach ($serverElement in $node.AnalyticsProcessingComponent.Server) {$AnalyticsProcessingComponent += @($serverElement.GetAttribute("Name"))}
             $servers = $crawlServers+$queryServers+$siteQueryAndSSServers+$adminServers+$IndexComponent+$ContentProcessingComponent+$AnalyticsProcessingComponent
         }
-
+#>
         # Accomodate and clean up comma and/or space-separated server names
         # First get rid of any recurring spaces or commas
         While ($servers -match "  ")
@@ -6632,7 +6627,9 @@ Function CheckSQLAccess
                 $errText = $error[0].ToString()
                 If ($errText.Contains("network-related"))
                 {
-                    Throw " - Connection Error. Check server name, port, firewall."
+                    Write-Warning "Connection Error. Check server name, port, firewall."
+                    Write-Host -ForegroundColor White " - This may be expected if e.g. SQL server isn't installed yet, and you are just installing SharePoint binaries for now."
+                    Pause "continue without checking SQL Server connection, or Ctrl-C to exit" "y"
                 }
                 ElseIf ($errText.Contains("Login failed"))
                 {

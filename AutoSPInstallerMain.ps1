@@ -33,29 +33,32 @@ $bits = Get-Item $env:dp0 | Split-Path -Parent
 $spYears = @{"14" = "2010"; "15" = "2013"}
 $spVersions = @{"2010" = "14"; "2013" = "15"}
 
-# Check if SharePoint binaries are in the \SP20xx\SharePoint subfolder as per new folder structure
+if ($xmlinput.Configuration.Install.SKU -eq "Foundation") {$product = "Foundation"}
+else {$product = "SharePoint"}
+
+# Check if SharePoint binaries are in the \SP20xx\$product subfolder as per new folder structure
 # Look for SP2013
 If ($xmlinput.Configuration.Install.SPVersion -eq "2013")
 {
-    if (Test-Path -Path "$bits\2013\SharePoint\setup.exe")
+    if (Test-Path -Path "$bits\2013\$product\setup.exe")
     {
-        $env:SPbits = $bits+"\2013\SharePoint"
+        $env:SPbits = $bits+"\2013\$product"
     }
-    else {Write-Host -ForegroundColor Yellow " - SP2013 was specified in $($inputfile.replace($bits,'')),`n - but $bits\2013\SharePoint\setup.exe was not found. Looking for SP2010..."}
+    else {Write-Host -ForegroundColor Yellow " - SP2013 was specified in $($inputfile.replace($bits,'')),`n - but $bits\2013\$product\setup.exe was not found. Looking for SP2010..."}
 }
 # If 2013 bits aren't found, look for SP2010 bits and ensure they match the value specified in $xmlinput
-ElseIf ((Test-Path -Path "$bits\2010\SharePoint\setup.exe") -and ($xmlinput.Configuration.Install.SPVersion -eq "2010"))
+ElseIf ((Test-Path -Path "$bits\2010\$product\setup.exe") -and ($xmlinput.Configuration.Install.SPVersion -eq "2010"))
 {
-    $env:SPbits = $bits+"\2010\SharePoint"
+    $env:SPbits = $bits+"\2010\$product"
 }
-Elseif (Test-Path -Path "$bits\SharePoint\setup.exe") # Use old path convention
+Elseif (Test-Path -Path "$bits\$product\setup.exe") # Use old path convention
 {
-    $env:SPbits = $bits+"\SharePoint"
+    $env:SPbits = $bits+"\$product"
 }
 if ([string]::IsNullOrEmpty($env:SPbits))
 {
     # Changed this to a warning in case we just want to create/configure a farm and are sure that SharePoint is pre-installed
-    Write-Warning "Cannot locate SharePoint binaries; please check that the files are in the \SharePoint subfolder as per new folder structure."
+    Write-Warning "Cannot locate SharePoint binaries; please check that the files are in the \$product subfolder as per new folder structure."
     Pause "proceed if you know that SharePoint is already installed, or Ctrl-C to exit" "y"
     # If no setup binaries are present, this might be OK if SharePoint is already installed and we've specified the version in the XML
     $spInstalled = $true
