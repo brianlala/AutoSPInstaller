@@ -21,7 +21,7 @@
 <!-- The Environment attribute below appears at the top of the installation transcript, and will now also appear at the top of the SharePoint 2013 Central Administration top-left branding bar. It does not affect the SharePoint 2010 installation though.
      Simply leave the Environment attribute blank if you do not want to alter the branding bar in SP2013 Central Admin.
      The Version attribute is now used for comparing the XML schema version with the version of the script (specifically, AutoSPInstallerFunctions.ps1), as there may be dependencies between XML and script elements. -->
-<Configuration Environment="Dev" Version="3.98">
+<Configuration Environment="Dev" Version="3.99">
     <!-- The Install section controls what modifications are made to the Windows OS prior to installation and how the SharePoint installation is run.
          You can also explicitly state the SPVersion of SharePoint being installed, (in case you have binaries for both SP2010/SP2013 in your folder structure).
          Allowed values are "2010" or "2013". If you omit this, the script will attempt to determine the version anyhow, and default to 2013 if both sets of install files are present. -->
@@ -57,7 +57,9 @@
              In combination with the RunOnce entry, it gives a better unattended experience (as there can be several reboots now with SharePoint 2013).
              Only the dedicated install account is supported; you can enter its password below. Note that it will be stored in PLAIN TEXT, both here and in the registry so be sure to change it afterwards (or disable the account).
              Otherwise, you can leave the password blank in order to be prompted at run-time (though it will still be stored in plain text in the registry, at least until the server is rebooted once more after the install. -->
-        <AutoAdminLogon Enable="false" Password="" />
+        <AutoAdminLogon Enable="false">
+            <Password></Password>
+        </AutoAdminLogon>
         <Disable>
             <!-- Disables network loopback checks. This prevents the OS blocking access to your server under names other than its actual host name,
                  which SharePoint needs to do for WebDAV requests. -->
@@ -78,7 +80,9 @@
         <!-- The "Farm" account that will be used to run Central Administration and the timer service. If AddToLocalAdminsDuringSetup is true, it will be
              added to the server's local administrators group for the duration of the execution of the script. This is required for some steps, such as
              configuring the User Profile Synchronization service. If for some reason you need to leave the Farm account in the Administrators group after setup, set LeaveInLocalAdmins to true -->
-        <Account AddToLocalAdminsDuringSetup="true" LeaveInLocalAdmins="false">
+        <Account>
+            <AddToLocalAdminsDuringSetup>true</AddToLocalAdminsDuringSetup>
+            <LeaveInLocalAdmins>false</LeaveInLocalAdmins>
             <Username>CONTOSO\SP_Farm</Username>
             <Password></Password>
         </Account>
@@ -93,9 +97,10 @@
                  If you leave <DBServer> blank or specify localhost, script will assume the local server for SQL databases -->
             <DBServer></DBServer>
             <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
-            <DBAlias Create="true"
-                     DBInstance="SERVER\INSTANCE"
-                     DBPort="" />
+            <DBAlias Create="true">
+                <DBInstance>SERVER\INSTANCE</DBInstance>
+                <DBPort></DBPort>
+            </DBAlias>
             <!-- The DBPrefix is prepended to all database names. e.g. If you set this to TEST, your config DB will be TEST_ConfigDB.
                  If you set the prefix to localhost, script will prepend each database with the name of the server on which the script is run. 
                  Leave this blank for no prefix.
@@ -208,17 +213,17 @@
         useClaims: false = disable claims based authentication. true = enable claims based authentication.
         useBasicAuthentication: false = only accept Kerberos/NTLM claims. true = also accept Basic authentication claims. Has no effect if useClaims is false.
         useOnlineWebPartCatalog: false = disable use of the online webpart gallery on the web application. true (default) enable it. -->
-        <WebApplication type="Portal"
-                        name="Portal"
-                        applicationPool="Portal"
-                        url="http://portal.contoso.com"
-                        port="80"
-                        UseHostHeader="false"
-                        AddURLToLocalIntranetZone="true"
-                        GrantCurrentUserFullControl="true"
-                        useClaims="true"
-                        useBasicAuthentication="false"
-                        useOnlineWebPartCatalog="false">
+        <WebApplication Name="Portal Home">
+            <Type>Portal</Type>
+            <ApplicationPool>portal.contoso.com</ApplicationPool>
+            <Url>http://portal.contoso.com</Url>
+            <Port>80</Port>
+            <UseHostHeader>false</UseHostHeader>
+            <AddURLToLocalIntranetZone>true</AddURLToLocalIntranetZone>
+            <GrantCurrentUserFullControl>true</GrantCurrentUserFullControl>
+            <UseClaims>true</UseClaims>
+            <UseBasicAuthentication>false</UseBasicAuthentication>
+            <UseOnlineWebPartCatalog>false</UseOnlineWebPartCatalog>
             <!-- You can now specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
                 <!-- Name: Name of the first content database for this web application. -->
@@ -227,9 +232,10 @@
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
-                <DBAlias Create="false"
-                         DBInstance="SERVER\INSTANCE"
-                         DBPort="" />
+                <DBAlias Create="false">
+                    <DBInstance>SERVER\INSTANCE</DBInstance>
+                    <DBPort></DBPort>
+                </DBAlias>
             </Database>
             <ManagedPaths>
                 <ManagedPath relativeUrl="help" explicit="true" />
@@ -249,32 +255,31 @@
                 Locale: Actual locale of the site for regional settings. e.g. for UK English you use the US English LCID of 1033 but the locale en-gb.
                         If omitted, the default locale of the LCID is used.
                 Time24: If true, times are displayed using a 24 hour clock. If false, AM/PM is used. If omitted, the default for the LCID is applied. -->
-                <SiteCollection siteUrl="http://portal.contoso.com"
-                                HostNamedSiteCollection="false"
-                                Owner=""
-                                Name="Portal Home"
-                                Description="Portal Home Site"
-                                CustomDatabase=""
-                                SearchUrl="http://portal.contoso.com/search"
-                                CustomTemplate="false"
-                                Template="SPSPORTAL#0"
-                                LCID="1033"
-                                Locale="en-us"
-                                Time24="false">
+                <SiteCollection siteUrl="http://portal.contoso.com">
+                    <Name>Portal Home</Name>
+                    <Description>Portal Home Site</Description>
+                    <HostNamedSiteCollection>false</HostNamedSiteCollection>
+                    <Owner></Owner>
+                    <CustomDatabase></CustomDatabase>
+                    <SearchUrl>http://portal.contoso.com/search</SearchUrl>
+                    <Template>SPSPORTAL#0</Template>
+                    <LCID>1033</LCID>
+                    <Locale>en-us</Locale>
+                    <Time24>false</Time24>
                 </SiteCollection>
             </SiteCollections>
         </WebApplication>
-        <WebApplication type="MySiteHost"
-                        name="MySite Host"
-                        applicationPool="MySites"
-                        url="http://mysites.contoso.com"
-                        port="80"
-                        UseHostHeader="true"
-                        AddURLToLocalIntranetZone="true"
-                        GrantCurrentUserFullControl="true"
-                        useClaims="true"
-                        useBasicAuthentication="false"
-                        useOnlineWebPartCatalog="false">
+        <WebApplication name="MySite Host">
+            <type>MySiteHost</type>
+            <applicationPool>mysites.contoso.com</applicationPool>
+            <url>http://mysites.contoso.com</url>
+            <port>80</port>
+            <UseHostHeader>true</UseHostHeader>
+            <AddURLToLocalIntranetZone>true</AddURLToLocalIntranetZone>
+            <GrantCurrentUserFullControl>true</GrantCurrentUserFullControl>
+            <useClaims>true</useClaims>
+            <useBasicAuthentication>false</useBasicAuthentication>
+            <useOnlineWebPartCatalog>false</useOnlineWebPartCatalog>
             <!-- You can now specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
                 <!-- Name: Name of the first content database for this web application. -->
@@ -283,26 +288,26 @@
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
-                <DBAlias Create="false"
-                         DBInstance="SERVER\INSTANCE"
-                         DBPort="" />
+                <DBAlias Create="false">
+                    <DBInstance>SERVER\INSTANCE</DBInstance>
+                    <DBPort></DBPort>
+                </DBAlias>
             </Database>
             <ManagedPaths>
                 <ManagedPath relativeUrl="personal" explicit="false"/>
             </ManagedPaths>
             <SiteCollections>
-                <SiteCollection siteUrl="http://mysites.contoso.com"
-                                HostNamedSiteCollection="false"
-                                Owner=""
-                                Name="My Site Host"
-                                Description="My Site Host"
-                                CustomDatabase=""
-                                SearchUrl="http://portal.contoso.com/search"
-                                CustomTemplate="false"
-                                Template="SPSMSITEHOST#0"
-                                LCID="1033"
-                                Locale="en-us"
-                                Time24="false">
+                <SiteCollection siteUrl="http://mysites.contoso.com">
+                    <Name>My Site Host</Name>
+                    <Description>My Site Host</Description>
+                    <HostNamedSiteCollection>false</HostNamedSiteCollection>
+                    <Owner></Owner>
+                    <CustomDatabase></CustomDatabase>
+                    <SearchUrl>http://portal.contoso.com/search</SearchUrl>
+                    <Template>SPSMSITEHOST#0</Template>
+                    <LCID>1033</LCID>
+                    <Locale>en-us</Locale>
+                    <Time24>false</Time24>
                 </SiteCollection>
             </SiteCollections>
         </WebApplication>
@@ -313,9 +318,9 @@
         Name: Name of the application
         ProxyName: name of the application proxy -->
     <ServiceApps>
-        <ManagedMetadataServiceApp Provision="localhost"
-                                   Name="Managed Metadata Service"
-                                   ProxyName="Managed Metadata Service">
+        <ManagedMetadataServiceApp Provision="localhost">
+            <Name>Managed Metadata Service</Name>
+            <ProxyName>Managed Metadata Service</ProxyName>
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
@@ -324,9 +329,10 @@
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
-                <DBAlias Create="false"
-                         DBInstance="SERVER\INSTANCE"
-                         DBPort="" />
+                <DBAlias Create="false">
+                    <DBInstance>SERVER\INSTANCE</DBInstance>
+                    <DBPort></DBPort>
+                </DBAlias>
             </Database>
         </ManagedMetadataServiceApp>
         <!-- MySiteHostLocation and MySiteManagedPath are for when you are NOT provisioning a dedicated MySite host web application and would instead like to specify a MySite host site collection and the managed path at which personal sites will be created.
@@ -338,16 +344,16 @@
              If you are running SP2010 SP1, you can set CreateDefaultSyncConnection to true and specify the SyncConnectionAccount credentials; 
              the script will attempt to create a default Sync connection using the new (although unsupported) Add-SPProfileSyncConnection cmdlet.
              NOTE: Add-SPProfileSyncConnection may be useful for experimental/non-production builds but as per http://www.harbar.net/archive/2011/07/12/332.aspx it's UNSUPPORTED in on-premises deployments -->
-        <UserProfileServiceApp Provision="localhost"
-                               Name="User Profile Service Application"
-                               ProxyName="User Profile Service Application"
-                               MySiteHostLocation=""
-                               MySiteManagedPath="personal"
-                               EnableNetBIOSDomainNames="false"
-                               StartProfileSync="true"
-                               CreateDefaultSyncConnection="false"
-                               SyncConnectionAccount="CONTOSO\SP_ProfileSync"
-                               SyncConnectionAccountPassword="" >
+        <UserProfileServiceApp Provision="localhost">
+            <Name>User Profile Service Application</Name>
+            <ProxyName>User Profile Service Application</ProxyName>
+            <MySiteHostLocation></MySiteHostLocation>
+            <MySiteManagedPath>personal</MySiteManagedPath>
+            <EnableNetBIOSDomainNames>false</EnableNetBIOSDomainNames>
+            <StartProfileSync>true</StartProfileSync>
+            <CreateDefaultSyncConnection>false</CreateDefaultSyncConnection>
+            <SyncConnectionAccount>CONTOSO\SP_ProfileSync</SyncConnectionAccount>
+            <SyncConnectionAccountPassword></SyncConnectionAccountPassword>
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
                 <!-- <*DB> below designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
@@ -358,30 +364,31 @@
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
-                <DBAlias Create="false"
-                         DBInstance="SERVER\INSTANCE"
-                         DBPort="" />
+                <DBAlias Create="false">
+                    <DBInstance>SERVER\INSTANCE</DBInstance>
+                    <DBPort></DBPort>
+                </DBAlias>
             </Database>
         </UserProfileServiceApp>
         <!-- Note the change below for CustomIndexLocation; you only need to specify a path here if you would like to specify a non-default path for the search index (e.g. D:\SearchIndex) otherwise the default value will be applied: "$env:ProgramFiles\Microsoft Office Servers\$env:spVer.0\Data\Office Server\Applications" (where $env:spVer is either 14 or 15) -->
-        <EnterpriseSearchService Provision="localhost"
-                                 ContactEmail=""
-                                 ConnectionTimeout="60"
-                                 AcknowledgementTimeout="60"
-                                 ProxyType="Default"
-                                 IgnoreSSLWarnings="false"
-                                 InternetIdentity="Mozilla/4.0 (compatible; MSIE 4.01; Windows NT; MS Search 6.0 Robot)"
-                                 CustomIndexLocation=""
-                                 PerformanceLevel="PartlyReduced"
-                                 ShareName="SearchIndex">
+        <EnterpriseSearchService Provision="localhost">
+            <ContactEmail></ContactEmail>
+            <ConnectionTimeout>60</ConnectionTimeout>
+            <AcknowledgementTimeout>60</AcknowledgementTimeout>
+            <ProxyType>Default</ProxyType>
+            <IgnoreSSLWarnings>true</IgnoreSSLWarnings>
+            <InternetIdentity>Mozilla/4.0 (compatible; MSIE 4.01; Windows NT; MS Search 6.0 Robot)</InternetIdentity>
+            <CustomIndexLocation></CustomIndexLocation>
+            <PerformanceLevel>PartlyReduced</PerformanceLevel>
+            <ShareName>SearchIndex</ShareName>
             <EnterpriseSearchServiceApplications>
-                <EnterpriseSearchServiceApplication Name="Search Service Application"
-                                                    FailoverDatabaseServer=""
-                                                    Partitioned="false"
-                                                    Partitions="1"
-                                                    SearchServiceApplicationType="Regular"
-                                                    ContentAccessAccount="CONTOSO\SP_SearchContent"
-                                                    ContentAccessAccountPassword="">
+                <EnterpriseSearchServiceApplication Name="Search Service Application">
+                    <FailoverDatabaseServer></FailoverDatabaseServer>
+                    <Partitioned>false</Partitioned>
+                    <Partitions>1</Partitions>
+                    <SearchServiceApplicationType>Regular</SearchServiceApplicationType>
+                    <ContentAccessAccount>CONTOSO\SP_SearchContent</ContentAccessAccount>
+                    <ContentAccessAccountPassword></ContentAccessAccountPassword>
                     <Database>
                         <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                         <Name>Search</Name>
@@ -389,9 +396,10 @@
                              If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                         <DBServer></DBServer>
                         <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
-                        <DBAlias Create="false"
-                                 DBInstance=""
-                                 DBPort="" />
+                        <DBAlias Create="false">
+                            <DBInstance>SERVER\INSTANCE</DBInstance>
+                            <DBPort></DBPort>
+                        </DBAlias>
                     </Database>
                     <ApplicationPool Name="SharePoint Search Application Pool" />
                     <CrawlComponent Provision="localhost" />
@@ -408,8 +416,9 @@
                     <ContentProcessingComponent Provision="localhost" />
                     <!-- AnalyticsProcessingComponent is only required for SP2013 -->
                     <AnalyticsProcessingComponent Provision="localhost" />
-                    <Proxy Name="Search Service Application" Partitioned="false">
-                        <ProxyGroup Name="Default" />
+                    <Proxy Name="Search Service Application">
+                        <Partitioned>false</Partitioned>
+                        <ProxyGroup>Default</ProxyGroup>
                     </Proxy>
                     <!-- SearchCenterUrl is for SharePoint 2013 only and is used to set the global search center URL per http://autospinstaller.codeplex.com/workitem/18944. 
                          The url you enter MUST end with /Pages or a localized variant of it (i.e. /Seiten in German, /Paginas in Dutch) in order for it to work correctly from MySites. 
@@ -418,9 +427,9 @@
                 </EnterpriseSearchServiceApplication>
             </EnterpriseSearchServiceApplications>
         </EnterpriseSearchService>
-        <StateService Provision="localhost"
-                      Name="State Service"
-                      ProxyName="State Service">
+        <StateService Provision="localhost">
+            <Name>State Service</Name>
+            <ProxyName>State Service</ProxyName>
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
@@ -429,14 +438,15 @@
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
-                <DBAlias Create="false"
-                         DBInstance="SERVER\INSTANCE"
-                         DBPort="" />
+                <DBAlias Create="false">
+                    <DBInstance>SERVER\INSTANCE</DBInstance>
+                    <DBPort></DBPort>
+                </DBAlias>
             </Database>
         </StateService>
         <!--If you want to provision the WebAnalyticsService then you should also ensure that StateService Provision="true" as well-->
-        <WebAnalyticsService Provision="localhost"
-                             Name="Web Analytics Service Application">
+        <WebAnalyticsService Provision="localhost">
+            <Name>Web Analytics Service Application</Name>
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
                 <!-- <*DB> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
@@ -446,13 +456,14 @@
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
-                <DBAlias Create="false"
-                         DBInstance="SERVER\INSTANCE"
-                         DBPort="" />
+                <DBAlias Create="false">
+                    <DBInstance>SERVER\INSTANCE</DBInstance>
+                    <DBPort></DBPort>
+                </DBAlias>
             </Database>
         </WebAnalyticsService>
-        <SPUsageService Provision="localhost"
-                        Name="Usage and Health Data Collection">
+        <SPUsageService Provision="localhost">
+            <Name>Usage and Health Data Collection</Name>
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
@@ -461,14 +472,15 @@
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
-                <DBAlias Create="false"
-                         DBInstance="SERVER\INSTANCE"
-                         DBPort="" />
+                <DBAlias Create="false">
+                    <DBInstance>SERVER\INSTANCE</DBInstance>
+                    <DBPort></DBPort>
+                </DBAlias>
             </Database>
         </SPUsageService>
-        <SecureStoreService Provision="localhost"
-                            Name="Secure Store Service"
-                            ProxyName="Secure Store Service">
+        <SecureStoreService Provision="localhost">
+            <Name>Secure Store Service</Name>
+            <ProxyName>Secure Store Service</ProxyName>
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
@@ -477,14 +489,15 @@
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
-                <DBAlias Create="false"
-                         DBInstance="SERVER\INSTANCE"
-                         DBPort="" />
+                <DBAlias Create="false">
+                    <DBInstance>SERVER\INSTANCE</DBInstance>
+                    <DBPort></DBPort>
+                </DBAlias>
             </Database>
         </SecureStoreService>
-        <BusinessDataConnectivity Provision="false"
-                                  Name="Business Data Connectivity Service"
-                                  ProxyName="Business Data Connectivity Service">
+        <BusinessDataConnectivity Provision="false">
+            <Name>Business Data Connectivity Service</Name>
+            <ProxyName>Business Data Connectivity Service</ProxyName>
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
@@ -493,14 +506,15 @@
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
-                <DBAlias Create="false"
-                         DBInstance="SERVER\INSTANCE"
-                         DBPort="" />
+                <DBAlias Create="false">
+                    <DBInstance>SERVER\INSTANCE</DBInstance>
+                    <DBPort></DBPort>
+                </DBAlias>
             </Database>
         </BusinessDataConnectivity>
-        <WordAutomationService Provision="false"
-                               Name="Word Automation Services"
-                               ProxyName="Word Automation Services">
+        <WordAutomationService Provision="false">
+            <Name>Word Automation Services</Name>
+            <ProxyName>Word Automation Services</ProxyName>
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
@@ -509,16 +523,17 @@
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
-                <DBAlias Create="false"
-                         DBInstance="SERVER\INSTANCE"
-                         DBPort="" />
+                <DBAlias Create="false">
+                    <DBInstance>SERVER\INSTANCE</DBInstance>
+                    <DBPort></DBPort>
+                </DBAlias>
             </Database>
         </WordAutomationService>
         <!-- AppManagementService is only for SharePoint 2013. Ensure your DNS is pre-configured to match the AppDomain value, per http://sharepointchick.com/archive/2012/07/29/setting-up-your-app-domain-for-sharepoint-2013.aspx -->
-        <AppManagementService Provision="localhost"
-                              Name="App Management Service"
-                              ProxyName="App Management Service"
-                              AppDomain="apps.domain.com">
+        <AppManagementService Provision="localhost">
+            <Name>App Management Service</Name>
+            <ProxyName>App Management Service</ProxyName>
+            <AppDomain>apps.contoso.com</AppDomain>
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
@@ -527,15 +542,16 @@
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
-                <DBAlias Create="false"
-                         DBInstance="SERVER\INSTANCE"
-                         DBPort="" />
+                <DBAlias Create="false">
+                    <DBInstance>SERVER\INSTANCE</DBInstance>
+                    <DBPort></DBPort>
+                </DBAlias>
             </Database>
         </AppManagementService>
         <!-- SubscriptionSettingsService is only for SharePoint 2013, and does not support ProxyName -->
-        <SubscriptionSettingsService Provision="localhost"
-                                     Name="Subscription Settings Service"
-                                     AppSiteSubscriptionName="app">
+        <SubscriptionSettingsService Provision="localhost">
+            <Name>Subscription Settings Service</Name>
+            <AppSiteSubscriptionName>app</AppSiteSubscriptionName>
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
@@ -544,20 +560,21 @@
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
-                <DBAlias Create="false"
-                         DBInstance="SERVER\INSTANCE"
-                         DBPort="" />
+                <DBAlias Create="false">
+                    <DBInstance>SERVER\INSTANCE</DBInstance>
+                    <DBPort></DBPort>
+                </DBAlias>
             </Database>
         </SubscriptionSettingsService>
         <!-- WorkManagementService is only for SharePoint 2013 -->
-        <WorkManagementService Provision="localhost"
-                               Name="Work Management Service Application"
-                               ProxyName="Work Management Service Application">
+        <WorkManagementService Provision="localhost">
+            <Name>Work Management Service Application</Name>
+            <ProxyName>Work Management Service Application</ProxyName>
         </WorkManagementService>
         <!-- MachineTranslationService is only for SharePoint 2013 -->
-        <MachineTranslationService Provision="localhost"
-                               Name="Machine Translation Service"
-                               ProxyName="Machine Translation Service">
+        <MachineTranslationService Provision="localhost">
+            <Name>Machine Translation Service</Name>
+            <ProxyName>Machine Translation Service</ProxyName>
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
@@ -566,15 +583,16 @@
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
-                <DBAlias Create="false"
-                         DBInstance="SERVER\INSTANCE"
-                         DBPort="" />
+                <DBAlias Create="false">
+                    <DBInstance>SERVER\INSTANCE</DBInstance>
+                    <DBPort></DBPort>
+                </DBAlias>
             </Database>
         </MachineTranslationService>
         <!-- PowerPointConversionService is only for SharePoint 2013 -->
-        <PowerPointConversionService Provision="localhost"
-                           Name="PowerPoint Conversion Service Application"
-                           ProxyName="PowerPoint Conversion Service Application">
+        <PowerPointConversionService Provision="false">
+            <Name>PowerPoint Conversion Service Application</Name>
+            <ProxyName>PowerPoint Conversion Service Application</ProxyName>
         </PowerPointConversionService>
     </ServiceApps>
     <!-- The EnterpriseSeviceApps section configures services only available with an Enterprise licence.
@@ -582,26 +600,26 @@
          UnattendedIDUser: DOMAIN\UserName of the unattended user account. This does not have to be SharePoint managed account, and the same account can be re-used for all services.
          UnattendedIDPassword: Password of the unattended user account.	-->
     <EnterpriseServiceApps>
-        <ExcelServices Provision="false"
-                       Name="Excel Services Application"
-                       UnattendedIDUser="CONTOSO\SP_ExcelUser"
-                       UnattendedIDPassword="">
+        <ExcelServices Provision="false">
+            <Name>Excel Services Application</Name>
+            <UnattendedIDUser>CONTOSO\SP_ExcelUser</UnattendedIDUser>
+            <UnattendedIDPassword></UnattendedIDPassword>
         </ExcelServices>
-        <VisioService Provision="false"
-                      Name="Visio Graphics Service"
-                      ProxyName="Visio Graphics Service"
-                      UnattendedIDUser="CONTOSO\SP_VisioUser"
-                      UnattendedIDPassword="">
+        <VisioService Provision="false">
+            <Name>Visio Graphics Service</Name>
+            <ProxyName>Visio Graphics Service</ProxyName>
+            <UnattendedIDUser>CONTOSO\SP_VisioUser</UnattendedIDUser>
+            <UnattendedIDPassword></UnattendedIDPassword>
         </VisioService>
         <!-- AccessService is the version found in SP2010, or the version called 'Access 2010 Service' in SharePoint 2013. In SharePoint 2013 you can actually provision both. -->
-        <AccessService Provision="false"
-                       Name="Access 2010 Service"
-                       ProxyName="Access 2010 Service">
+        <AccessService Provision="false">
+            <Name>Access 2010 Service</Name>
+            <ProxyName>Access 2010 Service</ProxyName>
         </AccessService>
         <!-- AccessServices is the new 2013 version, and is therefore only applicable to SharePoint 2013 -->
-        <AccessServices Provision="false"
-                        Name="Access Services"
-                        ProxyName="Access Services">
+        <AccessServices Provision="false">
+            <Name>Access Services</Name>
+            <ProxyName>Access Services</ProxyName>
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
@@ -610,17 +628,18 @@
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
-                <DBAlias Create="false"
-                         DBInstance="SERVER\INSTANCE"
-                         DBPort="" />
+                <DBAlias Create="false">
+                    <DBInstance>SERVER\INSTANCE</DBInstance>
+                    <DBPort></DBPort>
+                </DBAlias>
             </Database>
         </AccessServices>
         <!-- If you choose to provision Performance Point Services, the user running the script must be in the sysadmin role of the SQL server whilst the script runs. This can be revoked afterwards. -->
-        <PerformancePointService Provision="false"
-                                 Name="PerformancePoint Service"
-                                 ProxyName="PerformancePoint Service"
-                                 UnattendedIDUser="CONTOSO\SP_PerfPointUser"
-                                 UnattendedIDPassword="">
+        <PerformancePointService Provision="false">
+            <Name>PerformancePoint Service</Name>
+            <ProxyName>PerformancePoint Service</ProxyName>
+            <UnattendedIDUser>CONTOSO\SP_PerfPointUser</UnattendedIDUser>
+            <UnattendedIDPassword></UnattendedIDPassword>
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
@@ -629,44 +648,45 @@
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
-                <DBAlias Create="false"
-                         DBInstance="SERVER\INSTANCE"
-                         DBPort="" />
+                <DBAlias Create="false">
+                    <DBInstance>SERVER\INSTANCE</DBInstance>
+                    <DBPort></DBPort>
+                </DBAlias>
             </Database>
         </PerformancePointService>
     </EnterpriseServiceApps>
     <!-- The OfficeWebApps section controls the installation of Office Web Apps 2010. Setting Install="true" requires the office web apps installation files to be present.
          Note: OfficeWebApps Install can only be "true" or "false" - server names are not supported here because it's all or nothing for OWA in a 2010 farm -->
-    <OfficeWebApps Install="false"
-                   ConfigFile="config-OWA-2010.xml"
-                   PIDKeyOWA="">
-        <ExcelService Provision="false"
-                      Name="Excel Web App"
-                      ProxyName="Excel Web App"
-                      UnattendedIDUser="CONTOSO\SP_ExcelUser"
-                      UnattendedIDPassword="">
+    <OfficeWebApps Install="false">
+        <ConfigFile>config-OWA-2010.xml</ConfigFile>
+        <PIDKeyOWA></PIDKeyOWA>
+        <ExcelService Provision="false">
+            <Name>Excel Web App</Name>
+            <ProxyName>Excel Web App</ProxyName>
+            <UnattendedIDUser>CONTOSO\SP_ExcelUser</UnattendedIDUser>
+            <UnattendedIDPassword></UnattendedIDPassword>
         </ExcelService>
-        <WordViewingService Provision="false"
-                            Name="Word Viewing Service"
-                            ProxyName="Word Viewing Service">
+        <WordViewingService Provision="false">
+            <Name>Word Viewing Service</Name>
+            <ProxyName>Word Viewing Service</ProxyName>
         </WordViewingService>
-        <PowerPointService Provision="false"
-                           Name="PowerPoint Service Application"
-                           ProxyName="PowerPoint Service Application">
+        <PowerPointService Provision="false">
+            <Name>PowerPoint Service Application</Name>
+            <ProxyName>PowerPoint Service Application</ProxyName>
         </PowerPointService>
     </OfficeWebApps>
     <!-- The ProjectServer section controls the installation of Project Server 2013. Setting Install="true" requires the Project Server installation files to be present.
          Note: ProjectServer Install can only be "true" or "false" - server names are not allowed here because the bits must be installed on every server in a SharePoint farm.
          ProjectServerServiceApp Provision however works as usual, with comma-separated server names, or true/false. -->
-    <ProjectServer Install="false"
-                   ConfigFile="config-ProjectServer2013.xml"
-                   PIDKeyProjectServer="">
-        <ServiceApp Provision="false"
-                    Name="Project Server Service Application"
-                    ProxyName="Project Server Service Application"
-                    ManagedPath="PWA"
-                    ServiceAccount="CONTOSO\SP_ProjectServer"
-                    ServiceAccountPassword="">
+    <ProjectServer Install="false">
+        <ConfigFile>config-ProjectServer2013.xml</ConfigFile>
+        <PIDKeyProjectServer></PIDKeyProjectServer>
+        <ServiceApp Provision="localhost">
+            <Name>Project Server Service Application</Name>
+            <ProxyName>Project Server Service Application</ProxyName>
+            <ManagedPath>PWA</ManagedPath>
+            <ServiceAccount>CONTOSO\SP_ProjectServer</ServiceAccount>
+            <ServiceAccountPassword></ServiceAccountPassword>
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
@@ -675,9 +695,10 @@
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
-                <DBAlias Create="false"
-                         DBInstance="SERVER\INSTANCE"
-                         DBPort="" />
+                <DBAlias Create="false">
+                    <DBInstance>SERVER\INSTANCE</DBInstance>
+                    <DBPort></DBPort>
+                </DBAlias>
             </Database>
         </ServiceApp>
     </ProjectServer>
@@ -692,6 +713,7 @@
     </AdobePDF>
     <!-- Install ForeFront Protection for SharePoint 2010.
          Configuration and licensing of ForeFront is performed by running its administration program from the Start Menu after installation. -->
-    <ForeFront Install="false"
-               ConfigFile="answerfile-ForeFront.xml" />
+    <ForeFront Install="false">
+        <ConfigFile>answerfile-ForeFront-2010.xml</ConfigFile>
+    </ForeFront>
 </Configuration>

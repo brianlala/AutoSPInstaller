@@ -7,7 +7,7 @@ Function CheckXMLVersion ([xml]$xmlinput)
 {
     $getXMLVersion = $xmlinput.Configuration.Version
     # The value below will increment whenever there is an update to the format of the AutoSPInstallerInput XML file
-    $scriptVersion = "3.98"
+    $scriptVersion = "3.99"
     if ($getXMLVersion -ne $scriptVersion)
     {
         Write-Host -ForegroundColor Yellow " - Warning! Your versions of the XML ($getXMLVersion) and script ($scriptVersion) are mismatched."
@@ -1503,7 +1503,7 @@ Function InstallSpecifiedUpdate ($updateFile, $updateName)
 Function ConfigureFarmAdmin([xml]$xmlinput)
 {
     # Per Spencer Harbar, the farm account needs to be a local admin when provisioning distributed cache, so if it's being requested for provisioning we'll add it to Administrators here
-    If (($xmlinput.Configuration.Farm.Account.getAttribute("AddToLocalAdminsDuringSetup") -eq $true) -or (ShouldIProvision $xmlinput.Configuration.ServiceApps.UserProfileServiceApp -eq $true) -or (ShouldIProvision $xmlinput.Configuration.Farm.Services.DistributedCache -eq $true))
+    If (($xmlinput.Configuration.Farm.Account.AddToLocalAdminsDuringSetup -eq $true) -or (ShouldIProvision $xmlinput.Configuration.ServiceApps.UserProfileServiceApp -eq $true) -or (ShouldIProvision $xmlinput.Configuration.Farm.Services.DistributedCache -eq $true))
     {
         WriteLine
         # Add to Admins Group
@@ -1739,7 +1739,7 @@ Function CreateCentralAdmin([xml]$xmlinput)
                     if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
                     {
                         Write-Host -ForegroundColor White " - Assigning certificate(s) in a separate PowerShell window..."
-                        Start-Process -FilePath "$PSHOME\powershell.exe" -Verb RunAs -ArgumentList "-Command `". $env:dp0\AutoSPInstallerFunctions.ps1`; AssignCert $SSLHostHeader $SSLPort $SSLSiteName; Start-Sleep 2`"" -Wait
+                        Start-Process -FilePath "$PSHOME\powershell.exe" -Verb RunAs -ArgumentList "-Command `". $env:dp0\AutoSPInstallerFunctions.ps1`; AssignCert $SSLHostHeader $SSLPort $SSLSiteName; Start-Sleep 10`"" -Wait
                     }
                     else {AssignCert $SSLHostHeader $SSLPort $SSLSiteName}
                 }
@@ -1928,7 +1928,7 @@ Function ConfigureFarm([xml]$xmlinput)
     if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
     {
         Write-Host -ForegroundColor White " - Stopping Default Web Site in a separate PowerShell window..."
-        Start-Process -FilePath "$PSHOME\powershell.exe" -Verb RunAs -ArgumentList "-Command `". $env:dp0\AutoSPInstallerFunctions.ps1`; Stop-DefaultWebsite; Start-Sleep 2`"" -Wait
+        Start-Process -FilePath "$PSHOME\powershell.exe" -Verb RunAs -ArgumentList "-Command `". $env:dp0\AutoSPInstallerFunctions.ps1`; Stop-DefaultWebsite; Start-Sleep 10`"" -Wait
     }
     else {Stop-DefaultWebsite}
     Write-Host -ForegroundColor White " - Done initial farm/server config."
@@ -2403,7 +2403,7 @@ Function CreateMetadataServiceApp([xml]$xmlinput)
 Function AssignCert($SSLHostHeader, $SSLPort, $SSLSiteName)
 {
     ImportWebAdministration
-    Get-MajorVersionNumber $xmlinput
+    if (!$env:spVer) {Get-MajorVersionNumber $xmlinput}
     Write-Host -ForegroundColor White " - Assigning certificate to site `"https://$SSLHostHeader`:$SSLPort`""
     # If our SSL host header is a FQDN (contains a dot), look for an existing wildcard cert
     If ($SSLHostHeader -like "*.*")
@@ -2620,7 +2620,7 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
         if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
         {
             Write-Host -ForegroundColor White " - Assigning certificate(s) in a separate PowerShell window..."
-            Start-Process -FilePath "$PSHOME\powershell.exe" -Verb RunAs -ArgumentList "-Command `". $env:dp0\AutoSPInstallerFunctions.ps1`; AssignCert $SSLHostHeader $SSLPort $SSLSiteName; Start-Sleep 2`"" -Wait
+            Start-Process -FilePath "$PSHOME\powershell.exe" -Verb RunAs -ArgumentList "-Command `". $env:dp0\AutoSPInstallerFunctions.ps1`; AssignCert $SSLHostHeader $SSLPort $SSLSiteName; Start-Sleep 10`"" -Wait
         }
         else {AssignCert $SSLHostHeader $SSLPort $SSLSiteName}
     }
@@ -2660,6 +2660,12 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
             $getSPSiteCollection = $null
             $siteCollectionName = $siteCollection.Name
             $siteURL = $siteCollection.siteURL
+            $CompatibilityLevel = $siteCollection.CompatibilityLevel
+            if (!([string]::IsNullOrEmpty($CompatibilityLevel))) # Check the Compatibility Level if it's been specified
+            {
+                $CompatibilityLevelSwitch = @{CompatibilityLevel = $CompatibilityLevel}
+            }
+            else {$CompatibilityLevelSwitch = @{}}
             if (!([string]::IsNullOrEmpty($($siteCollection.CustomDatabase)))) # Check if we have specified a non-default content database for this site collection
             {
                 $siteDatabase = $dbPrefix+$siteCollection.CustomDatabase
@@ -2668,7 +2674,6 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
             {
                 $siteDatabase = $database
             }
-            $template = $siteCollection.template
             # If an OwnerAlias has been specified, make it the primary, and the currently logged-in account the secondary. Otherwise, make the app pool account for the web app the primary owner
             if (!([string]::IsNullOrEmpty($($siteCollection.Owner))))
             {
@@ -2682,6 +2687,7 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
             $siteCollectionLocale = $siteCollection.Locale
             $siteCollectionTime24 = $siteCollection.Time24
             # If a template has been pre-specified, use it when creating the Portal site collection; otherwise, leave it blank so we can select one when the portal first loads
+            $template = $siteCollection.template
             If (($template -ne $null) -and ($template -ne ""))
             {
                 $templateSwitch = @{Template = $template}
@@ -2712,7 +2718,7 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
                         New-SPContentDatabase -Name $siteDatabase -WebApplication (Get-SPWebApplication $webApp.url) | Out-Null
                     }
                     Write-Host -ForegroundColor White " - Creating Site Collection `"$siteURL`"..."
-                    $site = New-SPSite -Url $siteURL -OwnerAlias $ownerAlias -SecondaryOwner $env:USERDOMAIN\$env:USERNAME -ContentDatabase $siteDatabase -Description $siteCollectionName -Name $siteCollectionName -Language $LCID @templateSwitch @hostHeaderWebAppSwitch -ErrorAction Stop
+                    $site = New-SPSite -Url $siteURL -OwnerAlias $ownerAlias -SecondaryOwner $env:USERDOMAIN\$env:USERNAME -ContentDatabase $siteDatabase -Description $siteCollectionName -Name $siteCollectionName -Language $LCID @templateSwitch @hostHeaderWebAppSwitch @CompatibilityLevelSwitch -ErrorAction Stop
 
                     # JDM Not all Web Templates greate the default SharePoint Croups that are made by the UI
                     # JDM These lines will insure that the the approproprate SharePoint Groups, Owners, Members, Visitors are created
@@ -2827,14 +2833,14 @@ Function ConfigureObjectCache([System.Xml.XmlElement]$webApp)
 # ===================================================================================
 Function ConfigureOnlineWebPartCatalog([System.Xml.XmlElement]$webApp)
 {
-    If ($webapp.GetAttribute("useOnlineWebPartCatalog") -ne "")
+    If ($webapp.UseOnlineWebPartCatalog -ne "")
     {
         $url = $webApp.Url + ":" + $webApp.Port
         If ($url -like "*localhost*") {$url = $url -replace "localhost","$env:COMPUTERNAME"}
         Write-Host -ForegroundColor White " - Setting online webpart catalog access for `"$url`""
 
         $wa = Get-SPWebApplication | Where-Object {$_.DisplayName -eq $webApp.Name}
-        If ($webapp.GetAttribute("useOnlineWebPartCatalog") -eq "True")
+        If ($webapp.UseOnlineWebPartCatalog -eq "True")
         {
             $wa.AllowAccessToWebpartCatalog=$true
         }
@@ -3035,7 +3041,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
                             if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
                             {
                                 Write-Host -ForegroundColor White " - Assigning certificate(s) in a separate PowerShell window..."
-                                Start-Process -FilePath "$PSHOME\powershell.exe" -Verb RunAs -ArgumentList "-Command `". $env:dp0\AutoSPInstallerFunctions.ps1`; AssignCert $SSLHostHeader $SSLPort $SSLSiteName; Start-Sleep 2`"" -Wait
+                                Start-Process -FilePath "$PSHOME\powershell.exe" -Verb RunAs -ArgumentList "-Command `". $env:dp0\AutoSPInstallerFunctions.ps1`; AssignCert $SSLHostHeader $SSLPort $SSLSiteName; Start-Sleep 10`"" -Wait
                             }
                             else {AssignCert $SSLHostHeader $SSLPort $SSLSiteName}
                         }
@@ -4490,7 +4496,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 $installAnalyticsProcessingComponent = ShouldIProvision $appConfig.AnalyticsProcessingComponent
                 $installContentProcessingComponent = ShouldIProvision $appConfig.ContentProcessingComponent
                 $installIndexComponent = ShouldIProvision $appConfig.IndexComponent
-                
+
                 $pool = Get-ApplicationPool $appConfig.ApplicationPool
                 $adminPool = Get-ApplicationPool $appConfig.AdminComponent.ApplicationPool
                 $appPoolUserName = $searchServiceAccount.Username
@@ -4951,10 +4957,10 @@ function Set-ProxyGroupsMembership([System.Xml.XmlElement[]]$groups, [Microsoft.
     begin {}
     process {
         $proxy = $_
-
         # Clear any existing proxy group assignments
         Get-SPServiceApplicationProxyGroup | where {$_.Proxies -contains $proxy} | ForEach-Object {
-            $proxyGroupName = $_.Name
+            $proxyGroupName = $_
+            if ([string]::IsNullOrEmpty($proxyGroupName)) {$proxyGroupName = $_.Name} # Look for the name using the old XML schema
             If ([string]::IsNullOrEmpty($proxyGroupName)) { $proxyGroupName = "Default" }
             $group = $null
             [bool]$matchFound = $false
@@ -6000,62 +6006,73 @@ Function Configure-PDFSearchAndIcon
         }
         Write-Host -ForegroundColor White " - Done configuring PDF iFilter and indexing."
     }
-    # Only configure PDF icon if we are running SP2010 (as SP2013 includes one)
-    If (($xmlinput.Configuration.AdobePDF.Icon.Configure -eq $true) -and ($env:spVer -eq "14"))
+    If ($xmlinput.Configuration.AdobePDF.Icon.Configure -eq $true)
     {
-        $pdfIconUrl = "http://www.adobe.com/images/pdficon_small.png"
         $docIconFolderPath = "$sharePointRoot\TEMPLATE\XML"
         $docIconFilePath = "$docIconFolderPath\DOCICON.XML"
-        Write-Host -ForegroundColor White " - Configuring PDF Icon..."
-        $pdfIcon = "pdficon_small.png"
-        If (!(Get-Item $sharePointRoot\Template\Images\$pdfIcon -ErrorAction SilentlyContinue))
-        {
-            ForEach ($sourceFileLocation in $sourceFileLocations)
-            {
-                # Check each possible source file location for the PDF icon
-                $copyIcon = Copy-Item -Path $sourceFileLocation\$pdfIcon -Destination $sharePointRoot\Template\Images\$pdfIcon -PassThru -ErrorAction SilentlyContinue
-                If ($copyIcon)
-                {
-                    Write-Host -ForegroundColor White " - PDF icon found at $sourceFileLocation\$pdfIcon"
-                    Break
-                }
-            }
-            If (!($copyIcon))
-            {
-                Write-Host -ForegroundColor White " - `"$pdfIcon`" not found; downloading it now..."
-                If (Confirm-LocalSession)
-                {
-                    Import-Module BitsTransfer | Out-Null
-                    Start-BitsTransfer -Source $pdfIconUrl -Destination "$sharePointRoot\Template\Images\$pdfIcon" -DisplayName "Downloading PDF Icon..." -Priority Foreground -Description "From $pdfIconUrl..." -ErrorVariable err
-                    If ($err) {Write-Warning "Could not download PDF Icon!"; Pause "exit"; break}
-                }
-                Else {Write-Warning "The remote use of BITS is not supported. Please pre-download the PDF icon and try again."}
-            }
-            If (Get-Item $sharePointRoot\Template\Images\$pdfIcon) {Write-Host -ForegroundColor White " - PDF icon copied successfully."}
-            Else {Throw}
-        }
         $xml = New-Object XML
         $xml.Load($docIconFilePath)
-        If ($xml.SelectSingleNode("//Mapping[@Key='pdf']") -eq $null)
+        # Only configure PDF icon if we are running SP2010 (as SP2013 includes one)
+        if ($env:spVer -eq "14")
         {
-            Try
+            $pdfIconUrl = "http://www.adobe.com/images/pdficon_small.png"
+            Write-Host -ForegroundColor White " - Configuring PDF Icon..."
+            $pdfIcon = "pdficon_small.png"
+            If (!(Get-Item $sharePointRoot\Template\Images\$pdfIcon -ErrorAction SilentlyContinue))
             {
-                Write-Host -ForegroundColor White " - Creating backup of DOCICON.XML file..."
-                $backupFile = "$docIconFolderPath\DOCICON_Backup.xml"
-                Copy-Item $docIconFilePath $backupFile
-                Write-Host -ForegroundColor White " - Writing new DOCICON.XML..."
-                $pdf = $xml.CreateElement("Mapping")
-                $pdf.SetAttribute("Key","pdf")
-                $pdf.SetAttribute("Value",$pdfIcon)
-                $pdf.SetAttribute("EditText","Adobe Acrobat or Reader X")
-                $pdf.SetAttribute("OpenControl","AdobeAcrobat.OpenDocuments")
-                $xml.DocIcons.ByExtension.AppendChild($pdf) | Out-Null
-                $xml.Save($docIconFilePath)
-                Write-Host -ForegroundColor White " - Restarting IIS..."
-                iisreset
+                ForEach ($sourceFileLocation in $sourceFileLocations)
+                {
+                    # Check each possible source file location for the PDF icon
+                    $copyIcon = Copy-Item -Path $sourceFileLocation\$pdfIcon -Destination $sharePointRoot\Template\Images\$pdfIcon -PassThru -ErrorAction SilentlyContinue
+                    If ($copyIcon)
+                    {
+                        Write-Host -ForegroundColor White " - PDF icon found at $sourceFileLocation\$pdfIcon"
+                        Break
+                    }
+                }
+                If (!($copyIcon))
+                {
+                    Write-Host -ForegroundColor White " - `"$pdfIcon`" not found; downloading it now..."
+                    If (Confirm-LocalSession)
+                    {
+                        Import-Module BitsTransfer | Out-Null
+                        Start-BitsTransfer -Source $pdfIconUrl -Destination "$sharePointRoot\Template\Images\$pdfIcon" -DisplayName "Downloading PDF Icon..." -Priority Foreground -Description "From $pdfIconUrl..." -ErrorVariable err
+                        If ($err) {Write-Warning "Could not download PDF Icon!"; Pause "exit"; break}
+                    }
+                    Else {Write-Warning "The remote use of BITS is not supported. Please pre-download the PDF icon and try again."}
+                }
+                If (Get-Item $sharePointRoot\Template\Images\$pdfIcon) {Write-Host -ForegroundColor White " - PDF icon copied successfully."}
+                Else {Throw}
             }
-            Catch {$_; Pause "exit"; Break}
+            If ($xml.SelectSingleNode("//Mapping[@Key='pdf']") -eq $null)
+            {
+                Try
+                {
+                    $pdf = $xml.CreateElement("Mapping")
+                    $pdf.SetAttribute("Key","pdf")
+                    $pdf.SetAttribute("Value",$pdfIcon)
+                }
+                Catch {$_; Pause "exit"; Break}
+            }
         }
+        # Perform the rest of the DOCICON.XML modifications to allow PDF edit etc., and write out the new DOCICON.XML file
+        Try
+        {
+            $date = Get-Date -UFormat "%y%m%d%H%M%S"
+            Write-Host -ForegroundColor White " - Creating backup of DOCICON.XML file..."
+            $backupFile = "$docIconFolderPath\DOCICON_Backup_$date.xml"
+            Copy-Item $docIconFilePath $backupFile
+            Write-Host -ForegroundColor White " - Writing new DOCICON.XML..."
+            if (!$pdf) {$pdf = $xml.SelectSingleNode("//Mapping[@Key='pdf']")}
+            if (!$pdf) {$pdf = $xml.CreateElement("Mapping")}
+            $pdf.SetAttribute("EditText","Adobe Acrobat or Reader X")
+            $pdf.SetAttribute("OpenControl","AdobeAcrobat.OpenDocuments")
+            $xml.DocIcons.ByExtension.AppendChild($pdf) | Out-Null
+            $xml.Save($docIconFilePath)
+            Write-Host -ForegroundColor White " - Restarting IIS..."
+            iisreset
+        }
+        Catch {$_; Pause "exit"; Break}
     }
     If ($xmlinput.Configuration.AdobePDF.MIMEType.Configure -eq $true)
     {
@@ -6063,6 +6080,7 @@ Function Configure-PDFSearchAndIcon
         # More granular and generally preferable to setting the whole web app to "Permissive" file handling
         $mimeType = "application/pdf"
         Write-Host -ForegroundColor White " - Adding PDF MIME type `"$mimeType`" web apps..."
+        Load-SharePoint-PowerShell
         ForEach ($webAppConfig in $xmlinput.Configuration.WebApplications.WebApplication)
         {
             $webAppUrl = $($webAppConfig.url)+":"+$($webAppConfig.Port)

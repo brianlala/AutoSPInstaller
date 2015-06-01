@@ -274,7 +274,7 @@ Function Finalize-Install
         # But only if the script actually put it there, and we want to leave it there
         # (e.g. to work around the issue with native SharePoint backups deprovisioning UPS per http://www.toddklindt.com/blog/Lists/Posts/Post.aspx?ID=275)
         $farmAcct = $xmlinput.Configuration.Farm.Account.Username
-        If (!($runningAsFarmAcct) -and ($xmlinput.Configuration.Farm.Account.getAttribute("AddToLocalAdminsDuringSetup") -eq $true) -and ($xmlinput.Configuration.Farm.Account.LeaveInLocalAdmins -eq $false))
+        If (!($runningAsFarmAcct) -and ($xmlinput.Configuration.Farm.Account.AddToLocalAdminsDuringSetup -eq $true) -and ($xmlinput.Configuration.Farm.Account.LeaveInLocalAdmins -eq $false))
         {
             $builtinAdminGroup = Get-AdministratorsGroup
             Write-Host -ForegroundColor White " - Removing $farmAcct from local group `"$builtinAdminGroup`"..."
