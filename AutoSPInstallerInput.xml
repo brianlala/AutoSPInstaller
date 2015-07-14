@@ -202,8 +202,8 @@
             "MySiteHost" is the host web application for mysites.
             Any additional web applications that you create should have a type of your own choice such as "Other"
         name: Name of the web application
-        applicationPool: Application pool name
-        applicationPoolAccount: <removed> No longer used; we now look for a managed account based on the WebApplication type. If no match is found, we just use the Portal managed account.
+        ApplicationPool: Application pool name
+        ApplicationPoolAccount: <removed> No longer used; we now look for a managed account based on the WebApplication type. If no match is found, we just use the Portal managed account.
         url: URL of the root site collection in the application pool. Do not include the port number, but do set http/https correctly.
         port: Port on which the web application runs.
         UseHostHeader: true = indicates that this web app's IIS site will be configured with a host header. false = host header field in IIS will be blank
@@ -211,8 +211,8 @@
         GrantCurrentUserFullControl: true = will grant the current user (i.e. the setup account) Full Control to the entire web app via the web application's policy
         databaseName: Name of the first content database.
         useClaims: false = disable claims based authentication. true = enable claims based authentication.
-        useBasicAuthentication: false = only accept Kerberos/NTLM claims. true = also accept Basic authentication claims. Has no effect if useClaims is false.
-        useOnlineWebPartCatalog: false = disable use of the online webpart gallery on the web application. true (default) enable it. -->
+        UseBasicAuthentication: false = only accept Kerberos/NTLM claims. true = also accept Basic authentication claims. Has no effect if useClaims is false.
+        UseOnlineWebPartCatalog: false = disable use of the online webpart gallery on the web application. true (default) enable it. -->
         <WebApplication Name="Portal Home">
             <Type>Portal</Type>
             <ApplicationPool>portal.contoso.com</ApplicationPool>
@@ -270,16 +270,16 @@
             </SiteCollections>
         </WebApplication>
         <WebApplication name="MySite Host">
-            <type>MySiteHost</type>
-            <applicationPool>mysites.contoso.com</applicationPool>
-            <url>http://mysites.contoso.com</url>
-            <port>80</port>
+            <Type>MySiteHost</Type>
+            <ApplicationPool>mysites.contoso.com</ApplicationPool>
+            <Url>http://mysites.contoso.com</Url>
+            <Port>80</Port>
             <UseHostHeader>true</UseHostHeader>
             <AddURLToLocalIntranetZone>true</AddURLToLocalIntranetZone>
             <GrantCurrentUserFullControl>true</GrantCurrentUserFullControl>
-            <useClaims>true</useClaims>
-            <useBasicAuthentication>false</useBasicAuthentication>
-            <useOnlineWebPartCatalog>false</useOnlineWebPartCatalog>
+            <UseClaims>true</UseClaims>
+            <UseBasicAuthentication>false</UseBasicAuthentication>
+            <UseOnlineWebPartCatalog>false</UseOnlineWebPartCatalog>
             <!-- You can now specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
                 <!-- Name: Name of the first content database for this web application. -->

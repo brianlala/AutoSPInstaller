@@ -7,12 +7,22 @@ Function CheckXMLVersion ([xml]$xmlinput)
 {
     $getXMLVersion = $xmlinput.Configuration.Version
     # The value below will increment whenever there is an update to the format of the AutoSPInstallerInput XML file
-    $scriptVersion = "3.99"
-    if ($getXMLVersion -ne $scriptVersion)
+    $scriptCurrentVersion = "3.99"
+    $scriptPreviousVersion = "3.98"
+    if ($getXMLVersion -ne $scriptCurrentVersion)
     {
-        Write-Host -ForegroundColor Yellow " - Warning! Your versions of the XML ($getXMLVersion) and script ($scriptVersion) are mismatched."
-        Write-Host -ForegroundColor Yellow " - You should compare against the latest AutoSPInstallerInput.XML for missing/updated elements."
-        Pause "proceed if you are sure this is OK, or Ctrl-C to exit" "y"
+        if ($getXMLVersion -eq $scriptPreviousVersion)
+        {
+            Write-Host -ForegroundColor Yellow " - Warning! Your input XML version ($getXMLVersion) is one level behind the script's version."
+            Write-Host -ForegroundColor Yellow " - Visit https://autospinstaller.com to update it to the current version before proceeding."            
+        }
+        else
+        {
+            Write-Host -ForegroundColor Yellow " - Warning! Your versions of the XML ($getXMLVersion) and script ($scriptCurrentVersion) are mismatched."
+            Write-Host -ForegroundColor Yellow " - You should compare against the latest AutoSPInstallerInput.XML for missing/updated elements."
+            Write-Host -ForegroundColor Yellow " - Or, try to validate/update your XML input at https://autospinstaller.com"
+        }
+        Pause "proceed with running AutoSPInstaller if you are sure this is OK, or Ctrl-C to exit" "y"
     }
 }
 
@@ -276,9 +286,9 @@ Function CheckConfigFiles([xml]$xmlinput)
         # Set $installDir to the default value if it's not specified in $xmlinput
         if ([string]::IsNullOrEmpty($installDir)) {$installDir = "%PROGRAMFILES%\Microsoft Office Servers\"}
         $dataDir = $xmlinput.Configuration.Install.DataDir
-        $dataDir = $dataDir.TrimEnd("\")
         # Set $dataDir to the default value if it's not specified in $xmlinput
         if ([string]::IsNullOrEmpty($dataDir)) {$dataDir = "%PROGRAMFILES%\Microsoft Office Servers\$env:spVer.0\Data"}
+        $dataDir = $dataDir.TrimEnd("\")
         $xmlConfig = @"
 <Configuration>
   <Package Id="sts">
@@ -3047,6 +3057,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
                         }
                     }
                 }
+
                 # Create Service App
                 Write-Host -ForegroundColor White " - Creating $userProfileServiceName..."
                 CreateUPSAsAdmin $xmlinput
@@ -3164,7 +3175,6 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
                     $profileServiceApp.NetBIOSDomainNamesEnabled = 1
                     $profileServiceApp.Update()
                 }
-
                 # Get User Profile Synchronization Service
                 Write-Host -ForegroundColor White " - Checking User Profile Synchronization Service..." -NoNewline
                 $profileSyncServices = @(Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Administration.ProfileSynchronizationServiceInstance"})
@@ -3271,6 +3281,32 @@ Else {Write-Host -ForegroundColor White " - Done.";Start-Sleep 15}
                     }
                 }
                 Else {Write-Host -ForegroundColor White "Already started."}
+                # Make the FIM services dependent on the SQL Server service if we are provisioning User Profile Sync and SQL is co-located with SharePoint on this machine
+                $dbServerUPSA = $xmlinput.Configuration.ServiceApps.UserProfileServiceApp.Database.DBServer
+                if ([string]::IsNullOrEmpty($dbServerUPSA))
+                {
+                    $dbServerUPSA = $xmlinput.Configuration.Farm.Database.DBServer
+                }
+                $upAlias = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\MSSQLServer\Client\ConnectTo" -Name $dbServerUPSA -ErrorAction SilentlyContinue
+                # Grab the values for the SQL alias, if one exists
+                $upDBInstance = $upAlias.$dbServerUPSA
+                if ([string]::IsNullOrEmpty($upDBInstance)) # Alias not found; maybe we are using an actual machine name
+                {
+                    $upDBInstance = $dbServerUPSA
+                }
+                # Proceed if the database instance specified for the UPSA maps to the local machine name and the service was provisioned successfully
+                $profileSyncServices = @(Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Administration.ProfileSynchronizationServiceInstance"})
+                if ($upDBInstance -like "*$env:COMPUTERNAME*" -and ($profileSyncServices | ? {$_.Status -eq "Online"}))
+                {
+                    # Sets the Forefront Identity Manager Services to depend on the SQL Server service
+                    # For all-in-one environments where FIM may not start automatically, e.g. Development VMs
+                    Write-Host -ForegroundColor White " - Setting Forefront Identity Manager services to depend on SQL Server."
+                    Write-Host -ForegroundColor White " - This is helpful when the SQL instance for the User Profile Service is co-located."
+                    & "$env:windir\System32\sc.exe" config FIMService depend= MSSQLSERVER
+                    & "$env:windir\System32\sc.exe" config FIMService start= delayed-auto
+                    & "$env:windir\System32\sc.exe" config FIMSynchronizationService depend= Winmgmt/FIMService
+                    & "$env:windir\System32\sc.exe" config FIMSynchronizationService start= delayed-auto
+                }
             }
             Else
             {
@@ -4469,7 +4505,8 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                     $proxy.Status = "Online"
                     $proxy.Update()
                 }
-                $proxy | Set-ProxyGroupsMembership $appConfig.Proxy.ProxyGroup
+                Write-Host -ForegroundColor White " - Setting proxy group membership..."
+                $proxy | Set-ProxyGroupsMembership $appConfig.Proxy
             }
             WriteLine
         }
@@ -4604,7 +4641,10 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                 {
                     # Clone the active topology
                     Write-Host -ForegroundColor White "  - Cloning the active search topology..." -NoNewline
-                    $clone = $searchApp.ActiveTopology.Clone()
+                    $activeTopology = Get-SPEnterpriseSearchTopology -SearchApplication $searchApp -Active
+                    $clone = New-SPEnterpriseSearchTopology -SearchApplication $searchApp -Clone –SearchTopology $activeTopology
+                    ##Old way that generates bogus 0000-0000... IDs
+                    ##$clone = $searchApp.ActiveTopology.Clone()
                     Write-Host -ForegroundColor White "OK."
                 }
                 else
@@ -4626,13 +4666,31 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                         If ($?)
                         {
                             Write-Host -ForegroundColor White "OK."
-                            $newComponentsCreated = $true
+                            $componentsModified = $true
                         }
                     }
                     else {Write-Host -ForegroundColor White "Already exists on this server."}
                     $adminComponentReady = $true
                 }
-                else {Write-Host -ForegroundColor White "Not requested for this server."}
+                else
+                {
+                    Write-Host -ForegroundColor White "Not requested for this server."
+                    [array]$componentsToRemove = $adminComponents | Where-Object {MatchComputerName $_.ServerName $env:COMPUTERNAME}
+                    if ($componentsToRemove)
+                    {
+                        foreach ($componentToRemove in $componentsToRemove)
+                        {
+                            Write-Host -ForegroundColor White "   - Removing component $($componentToRemove.ComponentId)..." -NoNewline
+                            $componentToRemove | Remove-SPEnterpriseSearchComponent -SearchTopology $clone -Confirm:$false
+                            If ($?)
+                            {
+                                Write-Host -ForegroundColor White "OK."
+                                $componentsModified = $true
+                            }
+                        }
+                    }
+                    $componentsToRemove = $null
+                }
                 if ($adminComponents) {Write-Host -ForegroundColor White "  - Admin component(s) already exist(s) in the farm."; $adminComponentReady = $true}
 
                 Write-Host -ForegroundColor White "  - Checking content processing component..." -NoNewline
@@ -4646,13 +4704,31 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                         If ($?)
                         {
                             Write-Host -ForegroundColor White "OK."
-                            $newComponentsCreated = $true
+                            $componentsModified = $true
                         }
                     }
                     else {Write-Host -ForegroundColor White "Already exists on this server."}
                     $contentProcessingComponentReady = $true
                 }
-                else {Write-Host -ForegroundColor White "Not requested for this server."}
+                else
+                {
+                    Write-Host -ForegroundColor White "Not requested for this server."
+                    [array]$componentsToRemove = $contentProcessingComponents | Where-Object {MatchComputerName $_.ServerName $env:COMPUTERNAME}
+                    if ($componentsToRemove)
+                    {
+                        foreach ($componentToRemove in $componentsToRemove)
+                        {
+                            Write-Host -ForegroundColor White "   - Removing component $($componentToRemove.ComponentId)..." -NoNewline
+                            $componentToRemove | Remove-SPEnterpriseSearchComponent -SearchTopology $clone -Confirm:$false
+                            If ($?)
+                            {
+                                Write-Host -ForegroundColor White "OK."
+                                $componentsModified = $true
+                            }
+                        }
+                    }
+                    $componentsToRemove = $null
+                }
                 if ($contentProcessingComponents) {Write-Host -ForegroundColor White "  - Content processing component(s) already exist(s) in the farm."; $contentProcessingComponentReady = $true}
 
                 Write-Host -ForegroundColor White "  - Checking analytics processing component..." -NoNewline
@@ -4666,13 +4742,31 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                         If ($?)
                         {
                             Write-Host -ForegroundColor White "OK."
-                            $newComponentsCreated = $true
+                            $componentsModified = $true
                         }
                     }
                     else {Write-Host -ForegroundColor White "Already exists on this server."}
                     $analyticsProcessingComponentReady = $true
                 }
-                else {Write-Host -ForegroundColor White "Not requested for this server."}
+                else
+                {
+                    Write-Host -ForegroundColor White "Not requested for this server."
+                    [array]$componentsToRemove = $analyticsProcessingComponents | Where-Object {MatchComputerName $_.ServerName $env:COMPUTERNAME}
+                    if ($componentsToRemove)
+                    {
+                        foreach ($componentToRemove in $componentsToRemove)
+                        {
+                            Write-Host -ForegroundColor White "   - Removing component $($componentToRemove.ComponentId)..." -NoNewline
+                            $componentToRemove | Remove-SPEnterpriseSearchComponent -SearchTopology $clone -Confirm:$false
+                            If ($?)
+                            {
+                                Write-Host -ForegroundColor White "OK."
+                                $componentsModified = $true
+                            }
+                        }
+                    }
+                    $componentsToRemove = $null
+                }
                 if ($analyticsProcessingComponents) {Write-Host -ForegroundColor White "  - Analytics processing component(s) already exist(s) in the farm."; $analyticsProcessingComponentReady = $true}
 
                 Write-Host -ForegroundColor White "  - Checking crawl component..." -NoNewline
@@ -4686,13 +4780,31 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                         If ($?)
                         {
                             Write-Host -ForegroundColor White "OK."
-                            $newComponentsCreated = $true
+                            $componentsModified = $true
                         }
                     }
                     else {Write-Host -ForegroundColor White "Already exists on this server."}
                     $crawlComponentReady = $true
                 }
-                else {Write-Host -ForegroundColor White "Not requested for this server."}
+                else
+                {
+                    Write-Host -ForegroundColor White "Not requested for this server."
+                    [array]$componentsToRemove = $crawlComponents | Where-Object {MatchComputerName $_.ServerName $env:COMPUTERNAME}
+                    if ($componentsToRemove)
+                    {
+                        foreach ($componentToRemove in $componentsToRemove)
+                        {
+                            Write-Host -ForegroundColor White "   - Removing component $($componentToRemove.ComponentId)..." -NoNewline
+                            $componentToRemove | Remove-SPEnterpriseSearchComponent -SearchTopology $clone -Confirm:$false
+                            If ($?)
+                            {
+                                Write-Host -ForegroundColor White "OK."
+                                $componentsModified = $true
+                            }
+                        }
+                    }
+                    $componentsToRemove = $null
+                }
                 if ($crawlComponents) {Write-Host -ForegroundColor White "  - Crawl component(s) already exist(s) in the farm."; $crawlComponentReady = $true}
 
                 Write-Host -ForegroundColor White "  - Checking index component..." -NoNewline
@@ -4710,13 +4822,31 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                         If ($?)
                         {
                             Write-Host -ForegroundColor White "OK."
-                            $newComponentsCreated = $true
+                            $componentsModified = $true
                         }
                     }
                     else {Write-Host -ForegroundColor White "Already exists on this server."}
                     $indexComponentReady = $true
                 }
-                else {Write-Host -ForegroundColor White "Not requested for this server."}
+                else
+                {
+                    Write-Host -ForegroundColor White "Not requested for this server."
+                    [array]$componentsToRemove = $indexingComponents | Where-Object {MatchComputerName $_.ServerName $env:COMPUTERNAME}
+                    if ($componentsToRemove)
+                    {
+                        foreach ($componentToRemove in $componentsToRemove)
+                        {
+                            Write-Host -ForegroundColor White "   - Removing component $($componentToRemove.ComponentId)..." -NoNewline
+                            $componentToRemove | Remove-SPEnterpriseSearchComponent -SearchTopology $clone -Confirm:$false
+                            If ($?)
+                            {
+                                Write-Host -ForegroundColor White "OK."
+                                $componentsModified = $true
+                            }
+                        }
+                    }
+                    $componentsToRemove = $null
+                }
                 if ($indexingComponents) {Write-Host -ForegroundColor White "  - Index component(s) already exist(s) in the farm."; $indexComponentReady = $true}
 
                 Write-Host -ForegroundColor White "  - Checking query processing component..." -NoNewline
@@ -4730,20 +4860,38 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
                         If ($?)
                         {
                             Write-Host -ForegroundColor White "OK."
-                            $newComponentsCreated = $true
+                            $componentsModified = $true
                         }
                     }
                     else {Write-Host -ForegroundColor White "Already exists on this server."}
                     $queryComponentReady = $true
                 }
-                else {Write-Host -ForegroundColor White "Not requested for this server."}
+                else
+                {
+                    Write-Host -ForegroundColor White "Not requested for this server."
+                    [array]$componentsToRemove = $queryComponents | Where-Object {MatchComputerName $_.ServerName $env:COMPUTERNAME}
+                    if ($componentsToRemove)
+                    {
+                        foreach ($componentToRemove in $componentsToRemove)
+                        {
+                            Write-Host -ForegroundColor White "   - Removing component $($componentToRemove.ComponentId)..." -NoNewline
+                            $componentToRemove | Remove-SPEnterpriseSearchComponent -SearchTopology $clone -Confirm:$false
+                            If ($?)
+                            {
+                                Write-Host -ForegroundColor White "OK."
+                                $componentsModified = $true
+                            }
+                        }
+                    }
+                    $componentsToRemove = $null
+                }
                 if ($queryComponents) {Write-Host -ForegroundColor White "  - Query component(s) already exist(s) in the farm."; $queryComponentReady = $true}
 
                 $searchApp | Get-SPEnterpriseSearchAdministrationComponent | Set-SPEnterpriseSearchAdministrationComponent -SearchServiceInstance $searchSvc
 
                 if ($adminComponentReady -and $contentProcessingComponentReady -and $analyticsProcessingComponentReady -and $indexComponentReady -and $crawlComponentReady -and $queryComponentReady) {$activateTopology = $true}
                 # Check if any new search components were added (or if we have a clone with more components than the current active topology) and if we're ready to activate the topology
-                if ($newComponentsCreated -or ($clone.ComponentCount -gt $searchApp.ActiveTopology.ComponentCount))
+                if ($componentsModified -or ($clone.ComponentCount -gt $searchApp.ActiveTopology.ComponentCount))
                 {
                     if ($activateTopology)
                     {
@@ -4959,13 +5107,12 @@ function Set-ProxyGroupsMembership([System.Xml.XmlElement[]]$groups, [Microsoft.
         $proxy = $_
         # Clear any existing proxy group assignments
         Get-SPServiceApplicationProxyGroup | where {$_.Proxies -contains $proxy} | ForEach-Object {
-            $proxyGroupName = $_
-            if ([string]::IsNullOrEmpty($proxyGroupName)) {$proxyGroupName = $_.Name} # Look for the name using the old XML schema
+            $proxyGroupName = $_.Name
             If ([string]::IsNullOrEmpty($proxyGroupName)) { $proxyGroupName = "Default" }
             $group = $null
             [bool]$matchFound = $false
             ForEach ($g in $groups) {
-                $group = $g.Name
+                $group = $g.ProxyGroup
                 If ($group -eq $proxyGroupName) {
                     $matchFound = $true
                     break
@@ -4976,10 +5123,8 @@ function Set-ProxyGroupsMembership([System.Xml.XmlElement[]]$groups, [Microsoft.
                 $_ | Remove-SPServiceApplicationProxyGroupMember -Member $proxy -Confirm:$false -ErrorAction SilentlyContinue
             }
         }
-
         ForEach ($g in $groups) {
-            $group = $g.Name
-
+            $group = $g.ProxyGroup
             $pg = $null
             If ($group -eq "Default" -or [string]::IsNullOrEmpty($group)) {
                 $pg = [Microsoft.SharePoint.Administration.SPServiceApplicationProxyGroup]::Default
@@ -4989,11 +5134,10 @@ function Set-ProxyGroupsMembership([System.Xml.XmlElement[]]$groups, [Microsoft.
                     $pg = New-SPServiceApplicationProxyGroup -Name $name
                 }
             }
-
             $pg = $pg | where {$_.Proxies -notcontains $proxy}
             If ($pg -ne $null) {
                 Write-Host -ForegroundColor White " - Adding ""$($proxy.DisplayName)"" to ""$($pg.DisplayName)"""
-                $pg | Add-SPServiceApplicationProxyGroupMember -Member $proxy
+                $pg | Add-SPServiceApplicationProxyGroupMember -Member $proxy | Out-Null
             }
         }
     }
@@ -6511,7 +6655,7 @@ Function Add-SQLAlias()
 
 	If ((MatchComputerName $SQLInstance $env:COMPUTERNAME) -or ($SQLInstance.StartsWith($env:ComputerName +"\"))) {
 		$protocol = "dbmslpcn" # Shared Memory
-	}
+        }
 	else {
 		$protocol = "DBMSSOCN" # TCP/IP
 	}
