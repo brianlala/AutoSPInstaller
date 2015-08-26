@@ -18,13 +18,13 @@
        This allows you to configure an entire multi-server farm with different servers fulfilling different roles
        using a single configuration file.
        e.g. <ExcelServices Provision="Server1 Server2"> would provision excel services only on Server1 and Server2. -->
-<!-- The Environment attribute below appears at the top of the installation transcript, and will now also appear at the top of the SharePoint 2013 Central Administration top-left branding bar. It does not affect the SharePoint 2010 installation though.
-     Simply leave the Environment attribute blank if you do not want to alter the branding bar in SP2013 Central Admin.
+<!-- The Environment attribute below appears at the top of the installation transcript, and will now also appear at the top of the SharePoint 2013+ Central Administration top-left branding bar. It does not affect the SharePoint 2010 installation though.
+     Simply leave the Environment attribute blank if you do not want to alter the branding bar in SP2013+ Central Admin.
      The Version attribute is now used for comparing the XML schema version with the version of the script (specifically, AutoSPInstallerFunctions.ps1), as there may be dependencies between XML and script elements. -->
-<Configuration Environment="Dev" Version="3.99">
+<Configuration Environment="Dev" Version="3.99.5">
     <!-- The Install section controls what modifications are made to the Windows OS prior to installation and how the SharePoint installation is run.
-         You can also explicitly state the SPVersion of SharePoint being installed, (in case you have binaries for both SP2010/SP2013 in your folder structure).
-         Allowed values are "2010" or "2013". If you omit this, the script will attempt to determine the version anyhow, and default to 2013 if both sets of install files are present. -->
+         You can also explicitly state the SPVersion of SharePoint being installed, (in case you have binaries for SP2010/SP2013/SP2016 in your folder structure).
+         Allowed values are "2010", "2013" or "2016". If you omit this, the script will attempt to determine the version anyhow, and default to 2013 if multiple sets of install files are present. -->
     <Install SPVersion="2013">
         <!-- The following few elements are parameters for the file containing the unattended install settings for SharePoint's setup.exe. Normally this is called config.xml.
              AutoSPInstaller can now create this file if it doesn't already exist (based on the ConfigFile name), and use the values below for PIDKey and SKU. -->
@@ -38,7 +38,7 @@
         <DataDir></DataDir>
         <!-- If you are referencing an existing config.xml file, enter the your product key in that file. Otherwise, enter your product key as PIDKey below, unless you are installing SharePoint Foundation, then no PIDKey is required. -->
         <PIDKey></PIDKey>
-        <!-- SKU can be either Standard or Enterprise for the full SharePoint Server product, or Foundation for SharePoint Foundation (currently in experimental support). You are responsible for ensuring the PIDKey matches the SKU selected; the script won't/can't validate this (note: no PIDKey required for Foundation). -->
+        <!-- SKU can be either Standard or Enterprise for the full SharePoint Server product, or Foundation for SharePoint Foundation 2013 (currently in experimental support). You are responsible for ensuring the PIDKey matches the SKU selected; the script won't/can't validate this (note: no PIDKey required for Foundation). -->
         <SKU>Enterprise</SKU>
         <!-- If true, the SharePoint prerequisite installer will install from the \SharePoint\PrerequisiteInstallerFiles folder.
              If false, the prerequisites will be downloaded during install. In order to use true you must obviously download all the prerequisites in advance.
@@ -53,8 +53,8 @@
                  Note that if ParallelInstall is set to true, it will override PauseAfterInstall above such that the script will *always* pause after install. -->
             <ParallelInstall>false</ParallelInstall>
         </RemoteInstall>
-        <!-- AutoAdminLogon tells the script to place values in the registry that allow automatic logon with the install account credentials (only), should the installation proces require reboot(s).
-             In combination with the RunOnce entry, it gives a better unattended experience (as there can be several reboots now with SharePoint 2013).
+        <!-- AutoAdminLogon tells the script to place values in the registry that allow automatic logon with the install account credentials (only), should the installation process require reboot(s).
+             In combination with the RunOnce entry, it gives a better unattended experience (as there can be several reboots now with SharePoint 2013+).
              Only the dedicated install account is supported; you can enter its password below. Note that it will be stored in PLAIN TEXT, both here and in the registry so be sure to change it afterwards (or disable the account).
              Otherwise, you can leave the password blank in order to be prompted at run-time (though it will still be stored in plain text in the registry, at least until the server is rebooted once more after the install. -->
         <AutoAdminLogon Enable="false">
@@ -124,7 +124,7 @@
                 <ReplyToEmail></ReplyToEmail>
             </OutgoingEmail>
             <IncomingEmail Start="localhost" />
-            <!-- DistributedCache (SharePoint 2013 only) - Start should never be set to "false", only either "true" for ALL servers (usually not recommended either), or a comma-delimited list of specific servers (maximum 4 cache host servers per farm). -->
+            <!-- DistributedCache (SharePoint 2013+ only) - Start should never be set to "false", only either "true" for ALL servers (usually not recommended either), or a comma-delimited list of specific servers (maximum 4 cache host servers per farm). -->
             <DistributedCache Start="localhost" />
             <!-- As a general rule WorkflowTimer - Start should never be set to "false", only either "true" for all servers, or a comma-delimited list of specific servers.
                  Normally you would specify the same servers to provision WorkflowTimer as you would FoundationWebApplication below. -->
@@ -133,6 +133,16 @@
                  *Note* if you want to remotely install dedicated WFEs in your farm (i.e. RemoteInstall Enable="true") you should name the servers here, in a comma separated list - e.g. Start="WFE1,WFE2,WFEx" -->
             <FoundationWebApplication Start="localhost" />
         </Services>
+      <!-- ServerRoles is for SharePoint 2016 only. Valid choices are: SpecialLoad, WebFrontEnd, SingleServerFarm, Search, Application, DistributedCache
+           A server name can only be provisioned in ONE role, so make sure you don't repeat server names within the elements below. -->
+      <ServerRoles>
+        <SpecialLoad Provision="false" />
+        <WebFrontEnd Provision="false" />
+        <SingleServerFarm Provision="false" />
+        <Search Provision="false" />
+        <Application Provision="false" />
+        <DistributedCache Provision="false" />
+      </ServerRoles>
         <!-- The ManagedAccounts section configures all accounts that will be added to SharePoint as managed accounts. -->
         <ManagedAccounts>
             <!-- The CommonName values should remain unchanged for these first 4 accounts; you can add additional managed accounts, but the script expects certain static values for the CommonName of these 4 managed accounts.
@@ -358,8 +368,8 @@
             <Database>
                 <!-- <*DB> below designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <ProfileDB>Profile</ProfileDB>
-                <SyncDB>Sync</SyncDB>
-                <SocialDB>Social</SocialDB>
+                <SyncDB>Profile_Sync</SyncDB>
+                <SocialDB>Profile_Social</SocialDB>
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
@@ -406,21 +416,21 @@
                     <QueryComponent Provision="localhost" />
                     <!-- You should specify all the servers you listed in QueryComponent in the SearchQueryAndSiteSettingsComponent node below as well -->
                     <SearchQueryAndSiteSettingsComponent Provision="localhost" />
-                    <!-- You can only run the AdminComponent on one server per Search Service App in a SP2010 farm, so only list one server here unless you are installing SharePoint 2013 and need multiple Admin components. -->
+                    <!-- You can only run the AdminComponent on one server per Search Service App in a SP2010 farm, so only list one server here unless you are installing SharePoint 2013+ and need multiple Admin components. -->
                     <AdminComponent Provision="localhost">
                         <ApplicationPool Name="SharePoint Search Application Pool" />
                     </AdminComponent>
-                    <!-- IndexComponent is only required for SP2013 -->
+                    <!-- IndexComponent is only required for SP2013+ -->
                     <IndexComponent Provision="localhost" />
-                    <!-- ContentProcessingComponent is only required for SP2013 -->
+                    <!-- ContentProcessingComponent is only required for SP2013+ -->
                     <ContentProcessingComponent Provision="localhost" />
-                    <!-- AnalyticsProcessingComponent is only required for SP2013 -->
+                    <!-- AnalyticsProcessingComponent is only required for SP2013+ -->
                     <AnalyticsProcessingComponent Provision="localhost" />
                     <Proxy Name="Search Service Application">
                         <Partitioned>false</Partitioned>
                         <ProxyGroup>Default</ProxyGroup>
                     </Proxy>
-                    <!-- SearchCenterUrl is for SharePoint 2013 only and is used to set the global search center URL per http://autospinstaller.codeplex.com/workitem/18944. 
+                    <!-- SearchCenterUrl is for SharePoint 2013+ only and is used to set the global search center URL per http://autospinstaller.codeplex.com/workitem/18944. 
                          The url you enter MUST end with /Pages or a localized variant of it (i.e. /Seiten in German, /Paginas in Dutch) in order for it to work correctly from MySites. 
                          Do not add a trailing slash. i.e.: https://search.zomers.eu/Pages when your Search Center site collection is deployed as a host named site collection to https://search.zomers.eu -->
                     <SearchCenterUrl></SearchCenterUrl>
@@ -529,7 +539,7 @@
                 </DBAlias>
             </Database>
         </WordAutomationService>
-        <!-- AppManagementService is only for SharePoint 2013. Ensure your DNS is pre-configured to match the AppDomain value, per http://sharepointchick.com/archive/2012/07/29/setting-up-your-app-domain-for-sharepoint-2013.aspx -->
+        <!-- AppManagementService is only for SharePoint 2013+. Ensure your DNS is pre-configured to match the AppDomain value, per http://sharepointchick.com/archive/2012/07/29/setting-up-your-app-domain-for-sharepoint-2013.aspx -->
         <AppManagementService Provision="localhost">
             <Name>App Management Service</Name>
             <ProxyName>App Management Service</ProxyName>
@@ -548,7 +558,7 @@
                 </DBAlias>
             </Database>
         </AppManagementService>
-        <!-- SubscriptionSettingsService is only for SharePoint 2013, and does not support ProxyName -->
+        <!-- SubscriptionSettingsService is only for SharePoint 2013+, and does not support ProxyName -->
         <SubscriptionSettingsService Provision="localhost">
             <Name>Subscription Settings Service</Name>
             <AppSiteSubscriptionName>app</AppSiteSubscriptionName>
@@ -566,12 +576,12 @@
                 </DBAlias>
             </Database>
         </SubscriptionSettingsService>
-        <!-- WorkManagementService is only for SharePoint 2013 -->
+        <!-- WorkManagementService is only for SharePoint 2013+ -->
         <WorkManagementService Provision="localhost">
             <Name>Work Management Service Application</Name>
             <ProxyName>Work Management Service Application</ProxyName>
         </WorkManagementService>
-        <!-- MachineTranslationService is only for SharePoint 2013 -->
+        <!-- MachineTranslationService is only for SharePoint 2013+ -->
         <MachineTranslationService Provision="localhost">
             <Name>Machine Translation Service</Name>
             <ProxyName>Machine Translation Service</ProxyName>
@@ -589,8 +599,8 @@
                 </DBAlias>
             </Database>
         </MachineTranslationService>
-        <!-- PowerPointConversionService is only for SharePoint 2013 -->
-        <PowerPointConversionService Provision="false">
+        <!-- PowerPointConversionService is only for SharePoint 2013+ -->
+        <PowerPointConversionService Provision="localhost">
             <Name>PowerPoint Conversion Service Application</Name>
             <ProxyName>PowerPoint Conversion Service Application</ProxyName>
         </PowerPointConversionService>
@@ -611,12 +621,12 @@
             <UnattendedIDUser>CONTOSO\SP_VisioUser</UnattendedIDUser>
             <UnattendedIDPassword></UnattendedIDPassword>
         </VisioService>
-        <!-- AccessService is the version found in SP2010, or the version called 'Access 2010 Service' in SharePoint 2013. In SharePoint 2013 you can actually provision both. -->
+        <!-- AccessService is the version found in SP2010, or the version called 'Access 2010 Service' in SharePoint 2013+. In SharePoint 2013+ you can actually provision both. -->
         <AccessService Provision="false">
             <Name>Access 2010 Service</Name>
             <ProxyName>Access 2010 Service</ProxyName>
         </AccessService>
-        <!-- AccessServices is the new 2013 version, and is therefore only applicable to SharePoint 2013 -->
+        <!-- AccessServices is the new 2013+ version, and is therefore only applicable to SharePoint 2013+ -->
         <AccessServices Provision="false">
             <Name>Access Services</Name>
             <ProxyName>Access Services</ProxyName>

@@ -30,23 +30,23 @@ $bits = Get-Item $env:dp0 | Split-Path -Parent
 #EndRegion
 
 # Create hash tables with major version to product year mappings & vice-versa
-$spYears = @{"14" = "2010"; "15" = "2013"}
-$spVersions = @{"2010" = "14"; "2013" = "15"}
+$spYears = @{"14" = "2010"; "15" = "2013"; "16" = "2016"}
+$spVersions = @{"2010" = "14"; "2013" = "15"; "2016" = "16"}
 
 if ($xmlinput.Configuration.Install.SKU -eq "Foundation") {$product = "Foundation"}
 else {$product = "SharePoint"}
 
 # Check if SharePoint binaries are in the \SP20xx\$product subfolder as per new folder structure
-# Look for SP2013
-If ($xmlinput.Configuration.Install.SPVersion -eq "2013")
+# Look for SP2013 or SP2016
+If (($xmlinput.Configuration.Install.SPVersion -eq "2013") -or ($xmlinput.Configuration.Install.SPVersion -eq "2016"))
 {
-    if (Test-Path -Path "$bits\2013\$product\setup.exe")
+    if (Test-Path -Path "$bits\$($xmlinput.Configuration.Install.SPVersion)\$product\setup.exe")
     {
-        $env:SPbits = $bits+"\2013\$product"
+        $env:SPbits = $bits+"\$($xmlinput.Configuration.Install.SPVersion)\$product"
     }
-    else {Write-Host -ForegroundColor Yellow " - SP2013 was specified in $($inputfile.replace($bits,'')),`n - but $bits\2013\$product\setup.exe was not found. Looking for SP2010..."}
+    else {Write-Host -ForegroundColor Yellow " - SP$($xmlinput.Configuration.Install.SPVersion) was specified in $($inputfile.replace($bits,'')),`n - but $bits\$($xmlinput.Configuration.Install.SPVersion)\$product\setup.exe was not found. Looking for SP2010..."}
 }
-# If 2013 bits aren't found, look for SP2010 bits and ensure they match the value specified in $xmlinput
+# If 2013/2016 bits aren't found, look for SP2010 bits and ensure they match the value specified in $xmlinput
 ElseIf ((Test-Path -Path "$bits\2010\$product\setup.exe") -and ($xmlinput.Configuration.Install.SPVersion -eq "2010"))
 {
     $env:SPbits = $bits+"\2010\$product"
@@ -239,7 +239,7 @@ Function Setup-Services
         CreatePowerPointOWAServiceApp $xmlinput
         CreateWordViewingOWAServiceApp $xmlinput
     }
-    if ($env:spVer -eq "15") # These are for SP2013 only
+    if ($env:spVer -ge "15") # These are for SP2013+ only
 	{
 		CreateAppManagementServiceApp $xmlinput
 		CreateSubscriptionSettingsServiceApp $xmlinput

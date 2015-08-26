@@ -7,8 +7,8 @@ Function CheckXMLVersion ([xml]$xmlinput)
 {
     $getXMLVersion = $xmlinput.Configuration.Version
     # The value below will increment whenever there is an update to the format of the AutoSPInstallerInput XML file
-    $scriptCurrentVersion = "3.99"
-    $scriptPreviousVersion = "3.98"
+    $scriptCurrentVersion = "3.99.5"
+    $scriptPreviousVersion = "3.99"
     if ($getXMLVersion -ne $scriptCurrentVersion)
     {
         if ($getXMLVersion -eq $scriptPreviousVersion)
@@ -359,7 +359,7 @@ Function CheckConfigFiles([xml]$xmlinput)
     #EndRegion
 
     #Region Project Server config file
-    if ($xmlinput.Configuration.ProjectServer.Install -eq $true)
+    if (($xmlinput.Configuration.ProjectServer.Install -eq $true) -and ($env:spVer -eq "15")) # We only need this config file for Project Server 2013 / SP2013
     {
         if (Test-Path -Path (Join-Path -Path $env:dp0 -ChildPath $($xmlinput.Configuration.ProjectServer.ConfigFile)))
         {
@@ -564,7 +564,7 @@ Function InstallPrerequisites([xml]$xmlinput)
     Remove-ItemProperty -Path "HKLM:\SOFTWARE\AutoSPInstaller\" -Name "UACWasEnabled" -ErrorAction SilentlyContinue
     Get-MajorVersionNumber $xmlinput
     # Create a hash table with major version to product year mappings
-    $spYears = @{"14" = "2010"; "15" = "2013"}
+    $spYears = @{"14" = "2010"; "15" = "2013"; "16" = "2016"}
     $spYear = $spYears.$env:spVer
     $spInstalled = Get-SharePointInstall
     If ($spInstalled)
@@ -709,8 +709,26 @@ Function InstallPrerequisites([xml]$xmlinput)
                         If (-not $?) {Throw}
                     }
                 }
+                elseif ($env:spVer -eq "16") #SP2016
+                {
+                    Write-Host -ForegroundColor Blue "  - Running Prerequisite Installer (offline mode)..." -NoNewline
+                    $startTime = Get-Date
+                    Start-Process "$env:SPbits\PrerequisiteInstaller.exe" -ArgumentList "/unattended `
+                                                                                            /SQLNCli:`"$env:SPbits\PrerequisiteInstallerFiles\sqlncli.msi`" `
+                                                                                            /DotNet452:`"$env:SPbits\PrerequisiteInstallerFiles\NDP452-KB2901907-x86-x64-AllOS-ENU.exe`" `
+                                                                                            /IDFX11:`"$env:SPbits\PrerequisiteInstallerFiles\MicrosoftIdentityExtensions-64.msi`" `
+                                                                                            /Sync:`"$env:SPbits\PrerequisiteInstallerFiles\Synchronization.msi`" `
+                                                                                            /AppFabric:`"$env:SPbits\PrerequisiteInstallerFiles\WindowsServerAppFabricSetup_x64.exe`" `
+                                                                                            /KB2671763:`"$env:SPbits\PrerequisiteInstallerFiles\AppFabric1.1-RTM-KB2671763-x64-ENU.exe`" `
+                                                                                            /MSIPCClient:`"$env:SPbits\PrerequisiteInstallerFiles\setup_msipc_x64.exe`" `
+                                                                                            /KB2898850:`"$env:SPbits\PrerequisiteInstallerFiles\Windows8.1-KB2898850-x64.msu`" `
+                                                                                            /ODBC:`"$env:SPbits\PrerequisiteInstallerFiles\msodbcsql.msi`" `
+                                                                                            /MSVCRT12:`"$env:SPbits\PrerequisiteInstallerFiles\vcredist_x64.exe`" `
+                                                                                            /WCFDataServices56:`"$env:SPbits\PrerequisiteInstallerFiles\WcfDataServices56.exe`""
+                    If (-not $?) {Throw}
+                }
             }
-            Else # Regular prerequisite install - download required files
+            else # Regular prerequisite install - download required files
             {
                 Write-Host -ForegroundColor Blue "  - Running Prerequisite Installer (online mode)..." -NoNewline
                 $startTime = Get-Date
@@ -850,32 +868,36 @@ Function InstallPrerequisites([xml]$xmlinput)
             {
                 ForEach ($preReqError in ($preReqLastError | ForEach {$_.Line})) {Write-Warning $preReqError}
                 $preReqLastReturncode = $preReqLog | Select-String -SimpleMatch -Pattern "Last return code" -Encoding Unicode | Select-Object -Last 1
-                If ($preReqLastReturnCode) {Write-Warning $preReqLastReturncode.Line}
-                If (($preReqLastReturncode -like "*-2145124329*") -or ($preReqLastReturncode -like "*2359302*") -or ($preReqLastReturncode -eq "5"))
+                If ($preReqLastReturnCode) {Write-Verbose $preReqLastReturncode.Line}
+                If (!($preReqLastReturncode -like "*(0)"))
                 {
-                    Write-Host -ForegroundColor White " - A known issue occurred installing one of the prerequisites - retrying..."
-                    InstallPreRequisites ([xml]$xmlinput)
-                }
-                ElseIf (($preReqLog | Select-String -SimpleMatch -Pattern "Error when enabling ASP.NET v4.0.30319" -Encoding Unicode) -or ($preReqLog | Select-String -SimpleMatch -Pattern "Error when enabling ASP.NET v4.5 with IIS" -Encoding Unicode))
-                {
-                    # Account for new issue with Win2012 RC / R2 and SP2013
-                    Write-Host -ForegroundColor White " - A known issue occurred configuring .NET 4 / IIS."
-                    $preReqKnownIssueRestart = $true
-                }
-                ElseIf ($preReqLog | Select-String -SimpleMatch -Pattern "pending restart blocks the installation" -Encoding Unicode)
-                {
-                    Write-Host -ForegroundColor White " - A pending restart blocks the installation."
-                    $preReqKnownIssueRestart = $true
-                }
-                ElseIf ($preReqLog | Select-String -SimpleMatch -Pattern "Error: This tool supports Windows Server version 6.1 and version 6.2" -Encoding Unicode)
-                {
-                    Write-Host -ForegroundColor White " - A known issue occurred (due to Win2012 R2), continuing."
-                    ##$preReqKnownIssueRestart = $true
-                }
-                Else
-                {
-                    Invoke-Item -Path "$((Get-Item $env:TEMP).FullName)\$preReqLog"
-                    Throw " - Review the log file and try to correct any error conditions."
+                    Write-Warning $preReqLastReturncode.Line
+                    If (($preReqLastReturncode -like "*-2145124329*") -or ($preReqLastReturncode -like "*2359302*") -or ($preReqLastReturncode -eq "5"))
+                    {
+                        Write-Host -ForegroundColor White " - A known issue occurred installing one of the prerequisites - retrying..."
+                        InstallPreRequisites ([xml]$xmlinput)
+                    }
+                    ElseIf (($preReqLog | Select-String -SimpleMatch -Pattern "Error when enabling ASP.NET v4.0.30319" -Encoding Unicode) -or ($preReqLog | Select-String -SimpleMatch -Pattern "Error when enabling ASP.NET v4.5 with IIS" -Encoding Unicode))
+                    {
+                        # Account for new issue with Win2012 RC / R2 and SP2013
+                        Write-Host -ForegroundColor White " - A known issue occurred configuring .NET 4 / IIS."
+                        $preReqKnownIssueRestart = $true
+                    }
+                    ElseIf ($preReqLog | Select-String -SimpleMatch -Pattern "pending restart blocks the installation" -Encoding Unicode)
+                    {
+                        Write-Host -ForegroundColor White " - A pending restart blocks the installation."
+                        $preReqKnownIssueRestart = $true
+                    }
+                    ElseIf ($preReqLog | Select-String -SimpleMatch -Pattern "Error: This tool supports Windows Server version 6.1 and version 6.2" -Encoding Unicode)
+                    {
+                        Write-Host -ForegroundColor White " - A known issue occurred (due to Win2012 R2), continuing."
+                        ##$preReqKnownIssueRestart = $true
+                    }
+                    Else
+                    {
+                        Invoke-Item -Path "$((Get-Item $env:TEMP).FullName)\$preReqLog"
+                        Throw " - Review the log file and try to correct any error conditions."
+                    }
                 }
             }
             # Look for restart requirement in log
@@ -908,7 +930,7 @@ Function InstallSharePoint([xml]$xmlinput)
     WriteLine
     Get-MajorVersionNumber $xmlinput
     # Create a hash table with major version to product year mappings
-    $spYears = @{"14" = "2010"; "15" = "2013"}
+    $spYears = @{"14" = "2010"; "15" = "2013"; "16" = "2016"}
     $spYear = $spYears.$env:spVer
     $spInstalled = Get-SharePointInstall
     If ($spInstalled)
@@ -994,7 +1016,7 @@ Function InstallOfficeWebApps2010([xml]$xmlinput)
         }
         Else
         {
-            $spYears = @{"14" = "2010"; "15" = "2013"}
+            $spYears = @{"14" = "2010"; "15" = "2013"; "16" = "2016"}
             $spYear = $spYears.$env:spVer
             # Install Office Web Apps Binaries
             If (Test-Path "$bits\$spYear\OfficeWebApps\setup.exe")
@@ -1058,11 +1080,11 @@ Function InstallOfficeWebApps2010([xml]$xmlinput)
 Function InstallProjectServer([xml]$xmlinput)
 {
     Get-MajorVersionNumber $xmlinput
-    If ($xmlinput.Configuration.ProjectServer.Install -eq $true -and $env:SPVer -eq "15") # Check for SP2013 since we don't support installing Project Server 2010 at this point
+    If ($xmlinput.Configuration.ProjectServer.Install -eq $true -and $env:SPVer -eq "15") # Check for SP2013 since we don't support installing Project Server 2010 at this point, and it's included with SP2016
     {
         WriteLine
         # Create a hash table with major version to product year mappings
-        $spYears = @{"14" = "2010"; "15" = "2013"}
+        $spYears = @{"14" = "2010"; "15" = "2013"; "16" = "2016"}
         $spYear = $spYears.$env:spVer
         # There has to be a better way to check whether Project Server is installed...
         $projectServerInstalled = Test-Path -Path "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$env:spVer\CONFIG\BIN\Microsoft.ProjectServer.dll"
@@ -1159,7 +1181,7 @@ Function ConfigureOfficeWebApps([xml]$xmlinput)
             If (!$?) {Throw}
             # Install (all) features
             Write-Host -ForegroundColor White " - Installing Features..."
-            $features = Install-SPFeature -AllExistingFeatures -Force
+            Install-SPFeature -AllExistingFeatures | Out-Null
         }
         Catch
         {
@@ -1180,7 +1202,7 @@ Function InstallLanguagePacks([xml]$xmlinput)
 {
     WriteLine
     Get-MajorVersionNumber $xmlinput
-    $spYears = @{"14" = "2010"; "15" = "2013"}
+    $spYears = @{"14" = "2010"; "15" = "2013"; "16" = "2016"}
     $spYear = $spYears.$env:spVer
     #Get installed languages from registry (HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Office Server\$env:spVer.0\InstalledLanguages)
     $installedOfficeServerLanguages = (Get-Item "HKLM:\Software\Microsoft\Office Server\$env:spVer.0\InstalledLanguages").GetValueNames() | ? {$_ -ne ""}   # Look for extracted language packs
@@ -1276,7 +1298,7 @@ Function InstallUpdates
     WriteLine
     Write-Host -ForegroundColor White " - Looking for SharePoint updates to install..."
     Get-MajorVersionNumber $xmlinput
-    $spYears = @{"14" = "2010"; "15" = "2013"}
+    $spYears = @{"14" = "2010"; "15" = "2013"; "16" = "2016"}
     $spYear = $spYears.$env:spVer
     # Result codes below are from http://technet.microsoft.com/en-us/library/cc179058(v=office.14).aspx
     $oPatchInstallResultCodes = @{"17301" = "Error: General Detection error";
@@ -1652,14 +1674,40 @@ Function CreateOrJoinFarm([xml]$xmlinput, $secPhrase, $farmCredential)
             Write-Host -ForegroundColor White " - This host has been requested to be excluded from the Distributed Cache cluster."
         }
         else {$distCacheSwitch = @{}}
+        if ($env:spVer -ge "16")
+        {
+            if (ShouldIProvision ($xmlinput.Configuration.Farm.ServerRoles.SpecialLoad)) {$serverRole = "SpecialLoad"}
+            elseif (ShouldIProvision ($xmlinput.Configuration.Farm.ServerRoles.WebFrontEnd)) {$serverRole = "WebFrontEnd"}
+            elseif (ShouldIProvision ($xmlinput.Configuration.Farm.ServerRoles.Search)) {$serverRole = "Search"}
+            elseif (ShouldIProvision ($xmlinput.Configuration.Farm.ServerRoles.Application)) {$serverRole = "Application"}
+            elseif (ShouldIProvision ($xmlinput.Configuration.Farm.ServerRoles.DistributedCache)) {$serverRole = "DistributedCache"}
+            elseif (ShouldIProvision ($xmlinput.Configuration.Farm.ServerRoles.SingleServerFarm)) {$serverRole = "SingleServerFarm"}
+            if ($serverRole) # If the role has been specified, let's apply it
+            {
+                $serverRoleSwitch = @{LocalServerRole = $serverRole}
+                $serverRoleOptionalSwitch = @{}
+                Write-Host -ForegroundColor Green " - This host has been requested to have the `"$serverRole`" LocalServerRole."
+            }
+            else # Otherwise we'll just go with Custom or SpecialLoad
+            {
+                $serverRoleSwitch = @{}
+                $serverRoleOptionalSwitch = @{ServerRoleOptional = $true}
+                Write-Host -ForegroundColor Green " - ServerRole was not specified; assuming `"Custom/SpecialLoad`"."
+            }
+        }
+        else
+        {
+            $serverRoleSwitch = @{}
+            $serverRoleOptionalSwitch = @{}
+        }
         Write-Host -ForegroundColor White " - Attempting to join farm on `"$configDB`"..."
-        $connectFarm = Connect-SPConfigurationDatabase -DatabaseName "$configDB" -Passphrase $secPhrase -DatabaseServer "$dbServer" @distCacheSwitch -ErrorAction SilentlyContinue
+        $connectFarm = Connect-SPConfigurationDatabase -DatabaseName "$configDB" -Passphrase $secPhrase -DatabaseServer "$dbServer" @distCacheSwitch @serverRoleSwitch -ErrorAction SilentlyContinue
         If (-not $?)
         {
             Write-Host -ForegroundColor White " - No existing farm found.`n - Creating config database `"$configDB`"..."
             # Waiting a few seconds seems to help with the Connect-SPConfigurationDatabase barging in on the New-SPConfigurationDatabase command; not sure why...
             Start-Sleep 5
-            New-SPConfigurationDatabase -DatabaseName "$configDB" -DatabaseServer "$dbServer" -AdministrationContentDatabaseName "$centralAdminContentDB" -Passphrase $secPhrase -FarmCredentials $farmCredential @distCacheSwitch
+            New-SPConfigurationDatabase -DatabaseName "$configDB" -DatabaseServer "$dbServer" -AdministrationContentDatabaseName "$centralAdminContentDB" -Passphrase $secPhrase -FarmCredentials $farmCredential @distCacheSwitch @serverRoleSwitch @serverRoleOptionalSwitch
             If (-not $?) {Throw " - Error creating new farm configuration database"}
             Else {$farmMessage = " - Done creating configuration database for farm."}
         }
@@ -1684,7 +1732,7 @@ Function CreateOrJoinFarm([xml]$xmlinput, $secPhrase, $farmCredential)
 #Region PSConfig
 Function Run-PSConfig
 {
-    Start-Process -FilePath $PSConfig -ArgumentList "-cmd upgrade -inplace b2b -force -cmd applicationcontent -install -cmd installfeatures" -NoNewWindow -Wait
+    Start-Process -FilePath $PSConfig -ArgumentList "-cmd upgrade -inplace b2b -force -cmd applicationcontent -install -cmd installfeatures -cmd secureresources" -NoNewWindow -Wait
 }
 Function Check-PSConfig
 {
@@ -1859,11 +1907,11 @@ Function ConfigureFarm([xml]$xmlinput)
         {
             # Install (all) features
             Write-Host -ForegroundColor White " - Installing Features..."
-            $features = Install-SPFeature -AllExistingFeatures -Force
+            Install-SPFeature -AllExistingFeatures | Out-Null
         }
         CreateCentralAdmin $xmlinput
         # Update Central Admin branding text for SharePoint 2013 based on the XML input Environment attribute
-        if ($env:spVer -eq "15" -and !([string]::IsNullOrEmpty($xmlinput.Configuration.Environment)))
+        if ($env:spVer -ge "15" -and !([string]::IsNullOrEmpty($xmlinput.Configuration.Environment)))
         {
             # From http://www.wictorwilen.se/sharepoint-2013-central-administration-productivity-tip?utm_source=feedburner&utm_medium=feed&utm_campaign=Feed%3A+WictorWilen+%28Wictor+Wil%C3%A9n+-+SharePoint+MCA%2C+MCM+and+MVP%29
             Write-Host -ForegroundColor White " - Updating Central Admin branding text to `"$($xmlinput.Configuration.Environment)`"..."
@@ -2437,25 +2485,36 @@ Function AssignCert($SSLHostHeader, $SSLPort, $SSLSiteName)
     If (!$cert)
     {
         Write-Host -ForegroundColor White " - None found."
-        # Get the actual location of makecert.exe in case we installed SharePoint in the non-default location
-        $spInstallPath = (Get-Item -Path "HKLM:\SOFTWARE\Microsoft\Office Server\$env:spVer.0").GetValue("InstallPath")
-        $makeCert = "$spInstallPath\Tools\makecert.exe"
-        If (Test-Path "$makeCert")
+        if (Get-Command -Name New-SelfSignedCertificate -ErrorAction SilentlyContinue) # SP2016 no longer seems to ship with makecert.exe, but we should be able to use PowerShell native commands instead in Windows 2012 R2 / PowerShell 4.0 and higher
         {
+            # New PowerShelly way to create self-signed certs, so we don't need makecert.exe
+            # From http://windowsitpro.com/blog/creating-self-signed-certificates-powershell
             Write-Host -ForegroundColor White " - Creating new self-signed certificate $certCommonName..."
-            Start-Process -NoNewWindow -Wait -FilePath "$makeCert" -ArgumentList "-r -pe -n `"CN=$certCommonName`" -eku 1.3.6.1.5.5.7.3.1 -ss My -sr localMachine -sky exchange -sp `"Microsoft RSA SChannel Cryptographic Provider`" -sy 12"
-            $cert = Get-ChildItem cert:\LocalMachine\My | ? {$_.Subject -like "CN=``*$certCommonName"}
-            if (!$cert) {$cert = Get-ChildItem cert:\LocalMachine\My | ? {$_.Subject -eq "CN=$SSLHostHeader"}}
+            $cert = New-SelfSignedCertificate -certstorelocation cert:\localmachine\my -dnsname $certCommonName
+            ##$cert = Get-ChildItem cert:\LocalMachine\My | ? {$_.Subject -like "CN=``*$certCommonName"}
         }
-        Else
+        else # Try to create the cert using makecert.exe instead
         {
-            Write-Host -ForegroundColor White " - `"$makeCert`" not found."
-            Write-Host -ForegroundColor White " - Looking for any machine-named certificates we can use..."
-            # Select the first certificate with the most recent valid date
-            $cert = Get-ChildItem cert:\LocalMachine\My | ? {$_.Subject -like "*$env:COMPUTERNAME"} | Sort-Object NotBefore -Desc | Select-Object -First 1
-            If (!$cert)
+            # Get the actual location of makecert.exe in case we installed SharePoint in the non-default location
+            $spInstallPath = (Get-Item -Path "HKLM:\SOFTWARE\Microsoft\Office Server\$env:spVer.0").GetValue("InstallPath")
+            $makeCert = "$spInstallPath\Tools\makecert.exe"
+            If (Test-Path "$makeCert")
             {
-                Write-Host -ForegroundColor White " - None found, skipping certificate creation."
+                Write-Host -ForegroundColor White " - Creating new self-signed certificate $certCommonName..."
+                Start-Process -NoNewWindow -Wait -FilePath "$makeCert" -ArgumentList "-r -pe -n `"CN=$certCommonName`" -eku 1.3.6.1.5.5.7.3.1 -ss My -sr localMachine -sky exchange -sp `"Microsoft RSA SChannel Cryptographic Provider`" -sy 12"
+                $cert = Get-ChildItem cert:\LocalMachine\My | ? {$_.Subject -like "CN=``*$certCommonName"}
+                if (!$cert) {$cert = Get-ChildItem cert:\LocalMachine\My | ? {$_.Subject -eq "CN=$SSLHostHeader"}}
+            }
+            Else
+            {
+                Write-Host -ForegroundColor Yellow " - `"$makeCert`" not found."
+                Write-Host -ForegroundColor White " - Looking for any machine-named certificates we can use..."
+                # Select the first certificate with the most recent valid date
+                $cert = Get-ChildItem cert:\LocalMachine\My | ? {$_.Subject -like "*$env:COMPUTERNAME"} | Sort-Object NotBefore -Desc | Select-Object -First 1
+                If (!$cert)
+                {
+                    Write-Host -ForegroundColor Yellow " - None found, skipping certificate creation."
+                }
             }
         }
     }
@@ -3097,7 +3156,7 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
 
                 # Create Proxy
                 Write-Host -ForegroundColor White " - Creating $userProfileServiceName Proxy..."
-                $profileServiceAppProxy  = New-SPProfileServiceApplicationProxy -Name "$userProfileServiceProxyName" -ServiceApplication $profileServiceApp -DefaultProxyGroup
+                $profileServiceAppProxy = New-SPProfileServiceApplicationProxy -Name "$userProfileServiceProxyName" -ServiceApplication $profileServiceApp -DefaultProxyGroup
                 If (-not $?) { Throw " - Failed to create $userProfileServiceName Proxy" }
 
                 Write-Host -ForegroundColor White " - Granting rights to ($userProfileServiceName):"
@@ -3177,84 +3236,86 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
                 }
                 # Get User Profile Synchronization Service
                 Write-Host -ForegroundColor White " - Checking User Profile Synchronization Service..." -NoNewline
-                $profileSyncServices = @(Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Administration.ProfileSynchronizationServiceInstance"})
-                $profileSyncService = $profileSyncServices | ? {MatchComputerName $_.Parent.Address $env:COMPUTERNAME}
-                # Attempt to start only if there are no online Profile Sync Service instances in the farm as we don't want to start multiple Sync instances (running against the same Profile Service at least)
-                If (!($profileSyncServices | ? {$_.Status -eq "Online"}))
+                if ($env:SPVer -lt "16") # Since User Profile Sync seems to only apply to SP2010/2013
                 {
-                    # Inspired by http://technet.microsoft.com/en-us/library/ee721049.aspx
-                    If (!($farmAcct)) {$farmAcct = (Get-SPFarm).DefaultServiceAccount}
-                    If (!($farmAcctPWD))
+                    $profileSyncServices = @(Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Administration.ProfileSynchronizationServiceInstance"})
+                    $profileSyncService = $profileSyncServices | ? {MatchComputerName $_.Parent.Address $env:COMPUTERNAME}
+                    # Attempt to start only if there are no online Profile Sync Service instances in the farm as we don't want to start multiple Sync instances (running against the same Profile Service at least)
+                    If (!($profileSyncServices | ? {$_.Status -eq "Online"}))
                     {
+                        # Inspired by http://technet.microsoft.com/en-us/library/ee721049.aspx
+                        If (!($farmAcct)) {$farmAcct = (Get-SPFarm).DefaultServiceAccount}
+                        If (!($farmAcctPWD))
+                        {
+                            Write-Host -ForegroundColor White "`n"
+                            $farmAcctPWD = Read-Host -Prompt " - Please (re-)enter the Farm Account Password" -AsSecureString
+                        }
                         Write-Host -ForegroundColor White "`n"
-                        $farmAcctPWD = Read-Host -Prompt " - Please (re-)enter the Farm Account Password" -AsSecureString
-                    }
-                    Write-Host -ForegroundColor White "`n"
-                    # Check for an existing UPS credentials timer job (e.g. from a prior provisioning attempt), and delete it
-                    $UPSCredentialsJob = Get-SPTimerJob | ? {$_.Name -eq "windows-service-credentials-FIMSynchronizationService"}
-                    If ($UPSCredentialsJob.Status -eq "Online")
-                    {
-                        Write-Host -ForegroundColor White " - Deleting existing sync credentials timer job..."
-                        $UPSCredentialsJob.Delete()
-                    }
-                    UpdateProcessIdentity $profileSyncService
-                    $profileSyncService.Update()
-                    Write-Host -ForegroundColor White " - Waiting for User Profile Synchronization Service..." -NoNewline
-                    # Provision the User Profile Sync Service
-                    $profileServiceApp.SetSynchronizationMachine($env:COMPUTERNAME, $profileSyncService.Id, $farmAcct, (ConvertTo-PlainText $farmAcctPWD))
-                    If (($profileSyncService.Status -ne "Provisioning") -and ($profileSyncService.Status -ne "Online")) {Write-Host -ForegroundColor Blue "`n - Waiting for User Profile Synchronization Service to start..." -NoNewline}
-                    # Monitor User Profile Sync service status
-                    While ($profileSyncService.Status -ne "Online")
-                    {
-                        While ($profileSyncService.Status -ne "Provisioning")
+                        # Check for an existing UPS credentials timer job (e.g. from a prior provisioning attempt), and delete it
+                        $UPSCredentialsJob = Get-SPTimerJob | ? {$_.Name -eq "windows-service-credentials-FIMSynchronizationService"}
+                        If ($UPSCredentialsJob.Status -eq "Online")
                         {
-                            Write-Host -ForegroundColor Blue "." -NoNewline
-                            Start-Sleep 1
-                            $profileSyncService = @(Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Administration.ProfileSynchronizationServiceInstance"}) | ? {MatchComputerName $_.Parent.Address $env:COMPUTERNAME}
+                            Write-Host -ForegroundColor White " - Deleting existing sync credentials timer job..."
+                            $UPSCredentialsJob.Delete()
                         }
-                        If ($profileSyncService.Status -eq "Provisioning")
+                        UpdateProcessIdentity $profileSyncService
+                        $profileSyncService.Update()
+                        Write-Host -ForegroundColor White " - Waiting for User Profile Synchronization Service..." -NoNewline
+                        # Provision the User Profile Sync Service
+                        $profileServiceApp.SetSynchronizationMachine($env:COMPUTERNAME, $profileSyncService.Id, $farmAcct, (ConvertTo-PlainText $farmAcctPWD))
+                        If (($profileSyncService.Status -ne "Provisioning") -and ($profileSyncService.Status -ne "Online")) {Write-Host -ForegroundColor Blue "`n - Waiting for User Profile Synchronization Service to start..." -NoNewline}
+                        # Monitor User Profile Sync service status
+                        While ($profileSyncService.Status -ne "Online")
                         {
-                            Write-Host -BackgroundColor Green -ForegroundColor Black $($profileSyncService.Status)
-                            Write-Host -ForegroundColor Blue " - Provisioning User Profile Sync Service, please wait..." -NoNewline
-                        }
-                        While($profileSyncService.Status -eq "Provisioning" -and $profileSyncService.Status -ne "Disabled")
-                        {
-                            Write-Host -ForegroundColor Blue "." -NoNewline
-                            Start-Sleep 1
-                            $profileSyncService = @(Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Administration.ProfileSynchronizationServiceInstance"}) | ? {MatchComputerName $_.Parent.Address $env:COMPUTERNAME}
-                        }
-                        If ($profileSyncService.Status -ne "Online")
-                        {
-                            Write-Host -ForegroundColor Red ".`a`a"
-                            Write-Host -BackgroundColor Red -ForegroundColor Black " - User Profile Synchronization Service could not be started!"
-                            break
-                        }
-                        Else
-                        {
-                            Write-Host -BackgroundColor Green -ForegroundColor Black $($profileSyncService.Status)
-                            # Need to recycle the Central Admin app pool before we can do anything with the User Profile Sync Service
-                            Write-Host -ForegroundColor White " - Recycling Central Admin app pool..."
-                            # From http://sharepoint.nauplius.net/2011/09/iisreset-not-required-after-starting.html
-                            $appPool = gwmi -Namespace "root\MicrosoftIISv2" -class "IIsApplicationPool" | where {$_.Name -eq "W3SVC/APPPOOLS/SharePoint Central Administration v4"}
-                            If ($appPool)
+                            While ($profileSyncService.Status -ne "Provisioning")
                             {
-                                $appPool.Recycle()
+                                Write-Host -ForegroundColor Blue "." -NoNewline
+                                Start-Sleep 1
+                                $profileSyncService = @(Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Administration.ProfileSynchronizationServiceInstance"}) | ? {MatchComputerName $_.Parent.Address $env:COMPUTERNAME}
                             }
-                            $newlyProvisionedSync = $true
+                            If ($profileSyncService.Status -eq "Provisioning")
+                            {
+                                Write-Host -BackgroundColor Green -ForegroundColor Black $($profileSyncService.Status)
+                                Write-Host -ForegroundColor Blue " - Provisioning User Profile Sync Service, please wait..." -NoNewline
+                            }
+                            While($profileSyncService.Status -eq "Provisioning" -and $profileSyncService.Status -ne "Disabled")
+                            {
+                                Write-Host -ForegroundColor Blue "." -NoNewline
+                                Start-Sleep 1
+                                $profileSyncService = @(Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Administration.ProfileSynchronizationServiceInstance"}) | ? {MatchComputerName $_.Parent.Address $env:COMPUTERNAME}
+                            }
+                            If ($profileSyncService.Status -ne "Online")
+                            {
+                                Write-Host -ForegroundColor Red ".`a`a"
+                                Write-Host -BackgroundColor Red -ForegroundColor Black " - User Profile Synchronization Service could not be started!"
+                                break
+                            }
+                            Else
+                            {
+                                Write-Host -BackgroundColor Green -ForegroundColor Black $($profileSyncService.Status)
+                                # Need to recycle the Central Admin app pool before we can do anything with the User Profile Sync Service
+                                Write-Host -ForegroundColor White " - Recycling Central Admin app pool..."
+                                # From http://sharepoint.nauplius.net/2011/09/iisreset-not-required-after-starting.html
+                                $appPool = gwmi -Namespace "root\MicrosoftIISv2" -class "IIsApplicationPool" | where {$_.Name -eq "W3SVC/APPPOOLS/SharePoint Central Administration v4"}
+                                If ($appPool)
+                                {
+                                    $appPool.Recycle()
+                                }
+                                $newlyProvisionedSync = $true
+                            }
                         }
-                    }
 
-                    # Attempt to create a sync connection only on a successful, newly-provisioned User Profile Sync service
-                    # We don't have the ability to check for existing connections and we don't want to overwrite/duplicate any existing sync connections
-                    # Note that this isn't really supported anyhow, and that only SharePoint 2010 Service Pack 1 and above includes the Add-SPProfileSyncConnection cmdlet
-                    If ((CheckFor2010SP1) -and ($userProfile.CreateDefaultSyncConnection -eq $true) -and ($newlyProvisionedSync -eq $true))
-                    {
-                        Write-Host -ForegroundColor White " - Creating a default Profile Sync connection..."
-                        $profileServiceApp = Get-SPServiceApplication |?{$_.DisplayName -eq $userProfileServiceName}
-                        # Thanks to Codeplex user Reshetkov for this ingenious one-liner to build the default domain OU
-                        $connectionSyncOU = "DC="+$env:USERDNSDOMAIN -replace "\.",",DC="
-                        $syncConnectionDomain,$syncConnectionAcct = ($userProfile.SyncConnectionAccount) -split "\\"
-                        $addProfileSyncCmd = @"
+                        # Attempt to create a sync connection only on a successful, newly-provisioned User Profile Sync service
+                        # We don't have the ability to check for existing connections and we don't want to overwrite/duplicate any existing sync connections
+                        # Note that this isn't really supported anyhow, and that only SharePoint 2010 Service Pack 1 and above includes the Add-SPProfileSyncConnection cmdlet
+                        If ((CheckFor2010SP1) -and ($userProfile.CreateDefaultSyncConnection -eq $true) -and ($newlyProvisionedSync -eq $true))
+                        {
+                            Write-Host -ForegroundColor White " - Creating a default Profile Sync connection..."
+                            $profileServiceApp = Get-SPServiceApplication |?{$_.DisplayName -eq $userProfileServiceName}
+                            # Thanks to Codeplex user Reshetkov for this ingenious one-liner to build the default domain OU
+                            $connectionSyncOU = "DC="+$env:USERDNSDOMAIN -replace "\.",",DC="
+                            $syncConnectionDomain,$syncConnectionAcct = ($userProfile.SyncConnectionAccount) -split "\\"
+                            $addProfileSyncCmd = @"
 Add-PsSnapin Microsoft.SharePoint.PowerShell
 Write-Host -ForegroundColor White " - Creating default Sync connection..."
 `$syncConnectionAcctPWD = (ConvertTo-SecureString -String `'$($userProfile.SyncConnectionAccountPassword)`' -AsPlainText -Force)
@@ -3266,47 +3327,49 @@ Write-Host "Press any key to exit..."
 }
 Else {Write-Host -ForegroundColor White " - Done.";Start-Sleep 15}
 "@
-                        $addProfileScriptFile = "$((Get-Item $env:TEMP).FullName)\AutoSPInstaller-AddProfileSyncCmd.ps1"
-                        $addProfileSyncCmd | Out-File $addProfileScriptFile
-                        if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
-                        {
-                            $versionSwitch = "-Version 2"
+                            $addProfileScriptFile = "$((Get-Item $env:TEMP).FullName)\AutoSPInstaller-AddProfileSyncCmd.ps1"
+                            $addProfileSyncCmd | Out-File $addProfileScriptFile
+                            if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
+                            {
+                                $versionSwitch = "-Version 2"
+                            }
+                            else {$versionSwitch = ""}
+                            # Run our Add-SPProfileSyncConnection script as the Farm Account - doesn't seem to work otherwise
+                            Start-Process -WorkingDirectory $PSHOME -FilePath "powershell.exe" -Credential $farmCredential -ArgumentList "-ExecutionPolicy Bypass -Command Start-Process -WorkingDirectory `"'$PSHOME'`" -FilePath `"'powershell.exe'`" -ArgumentList `"'$versionSwitch -ExecutionPolicy Bypass $addProfileScriptFile'`" -Verb Runas" -Wait
+                            # Give Add-SPProfileSyncConnection time to complete before continuing
+                            Start-Sleep 120
+                            Remove-Item -LiteralPath $addProfileScriptFile -Force -ErrorAction SilentlyContinue
                         }
-                        else {$versionSwitch = ""}
-                        # Run our Add-SPProfileSyncConnection script as the Farm Account - doesn't seem to work otherwise
-                        Start-Process -WorkingDirectory $PSHOME -FilePath "powershell.exe" -Credential $farmCredential -ArgumentList "-ExecutionPolicy Bypass -Command Start-Process -WorkingDirectory `"'$PSHOME'`" -FilePath `"'powershell.exe'`" -ArgumentList `"'$versionSwitch -ExecutionPolicy Bypass $addProfileScriptFile'`" -Verb Runas" -Wait
-                        # Give Add-SPProfileSyncConnection time to complete before continuing
-                        Start-Sleep 120
-                        Remove-Item -LiteralPath $addProfileScriptFile -Force -ErrorAction SilentlyContinue
+                    }
+                    Else {Write-Host -ForegroundColor White "Already started."}
+                    # Make the FIM services dependent on the SQL Server service if we are provisioning User Profile Sync and SQL is co-located with SharePoint on this machine
+                    $dbServerUPSA = $xmlinput.Configuration.ServiceApps.UserProfileServiceApp.Database.DBServer
+                    if ([string]::IsNullOrEmpty($dbServerUPSA))
+                    {
+                        $dbServerUPSA = $xmlinput.Configuration.Farm.Database.DBServer
+                    }
+                    $upAlias = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\MSSQLServer\Client\ConnectTo" -Name $dbServerUPSA -ErrorAction SilentlyContinue
+                    # Grab the values for the SQL alias, if one exists
+                    $upDBInstance = $upAlias.$dbServerUPSA
+                    if ([string]::IsNullOrEmpty($upDBInstance)) # Alias not found; maybe we are using an actual machine name
+                    {
+                        $upDBInstance = $dbServerUPSA
+                    }
+                    # Proceed if the database instance specified for the UPSA maps to the local machine name and the service was provisioned successfully
+                    $profileSyncServices = @(Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Administration.ProfileSynchronizationServiceInstance"})
+                    if ($upDBInstance -like "*$env:COMPUTERNAME*" -and ($profileSyncServices | ? {$_.Status -eq "Online"}))
+                    {
+                        # Sets the Forefront Identity Manager Services to depend on the SQL Server service
+                        # For all-in-one environments where FIM may not start automatically, e.g. Development VMs
+                        Write-Host -ForegroundColor White " - Setting Forefront Identity Manager services to depend on SQL Server."
+                        Write-Host -ForegroundColor White " - This is helpful when the SQL instance for the User Profile Service is co-located."
+                        & "$env:windir\System32\sc.exe" config FIMService depend= MSSQLSERVER
+                        & "$env:windir\System32\sc.exe" config FIMService start= delayed-auto
+                        & "$env:windir\System32\sc.exe" config FIMSynchronizationService depend= Winmgmt/FIMService
+                        & "$env:windir\System32\sc.exe" config FIMSynchronizationService start= delayed-auto
                     }
                 }
-                Else {Write-Host -ForegroundColor White "Already started."}
-                # Make the FIM services dependent on the SQL Server service if we are provisioning User Profile Sync and SQL is co-located with SharePoint on this machine
-                $dbServerUPSA = $xmlinput.Configuration.ServiceApps.UserProfileServiceApp.Database.DBServer
-                if ([string]::IsNullOrEmpty($dbServerUPSA))
-                {
-                    $dbServerUPSA = $xmlinput.Configuration.Farm.Database.DBServer
-                }
-                $upAlias = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\MSSQLServer\Client\ConnectTo" -Name $dbServerUPSA -ErrorAction SilentlyContinue
-                # Grab the values for the SQL alias, if one exists
-                $upDBInstance = $upAlias.$dbServerUPSA
-                if ([string]::IsNullOrEmpty($upDBInstance)) # Alias not found; maybe we are using an actual machine name
-                {
-                    $upDBInstance = $dbServerUPSA
-                }
-                # Proceed if the database instance specified for the UPSA maps to the local machine name and the service was provisioned successfully
-                $profileSyncServices = @(Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.Office.Server.Administration.ProfileSynchronizationServiceInstance"})
-                if ($upDBInstance -like "*$env:COMPUTERNAME*" -and ($profileSyncServices | ? {$_.Status -eq "Online"}))
-                {
-                    # Sets the Forefront Identity Manager Services to depend on the SQL Server service
-                    # For all-in-one environments where FIM may not start automatically, e.g. Development VMs
-                    Write-Host -ForegroundColor White " - Setting Forefront Identity Manager services to depend on SQL Server."
-                    Write-Host -ForegroundColor White " - This is helpful when the SQL instance for the User Profile Service is co-located."
-                    & "$env:windir\System32\sc.exe" config FIMService depend= MSSQLSERVER
-                    & "$env:windir\System32\sc.exe" config FIMService start= delayed-auto
-                    & "$env:windir\System32\sc.exe" config FIMSynchronizationService depend= Winmgmt/FIMService
-                    & "$env:windir\System32\sc.exe" config FIMSynchronizationService start= delayed-auto
-                }
+                else {Write-Host -ForegroundColor White "Not applicable to SharePoint 2016."}
             }
             Else
             {
@@ -4131,8 +4194,8 @@ Function ConfigureTracing ([xml]$xmlinput)
 Function ConfigureDistributedCacheService ([xml]$xmlinput)
 {
     Get-MajorVersionNumber $xmlinput
-    # Make sure a credential deployment job doesn't already exist, and that we are running SP2013
-    if ((!(Get-SPTimerJob -Identity "windows-service-credentials-AppFabricCachingService")) -and ($env:spVer -eq "15"))
+    # Make sure a credential deployment job doesn't already exist, and that we are running SP2013 at minimum
+    if ((!(Get-SPTimerJob -Identity "windows-service-credentials-AppFabricCachingService")) -and ($env:spVer -ge "15"))
     {
         WriteLine
         $spservice = Get-SPManagedAccountXML $xmlinput -CommonName "spservice"
@@ -4510,7 +4573,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
             }
             WriteLine
         }
-        ElseIf ($env:spVer -eq "15") # SharePoint 2013 steps
+        ElseIf ($env:spVer -ge "15") # SharePoint 2013+ steps
         {
             $svcConfig.EnterpriseSearchServiceApplications.EnterpriseSearchServiceApplication | ForEach-Object {
                 $appConfig = $_
@@ -4972,7 +5035,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
 
                 If (!([string]::IsNullOrEmpty($appConfig.SearchCenterUrl)))
                 {
-                    # Set the SP2013 Search Center URL per http://blogs.technet.com/b/speschka/archive/2012/10/29/how-to-configure-the-global-search-center-url-for-sharepoint-2013-using-powershell.aspx
+                    # Set the SP2013+ Search Center URL per http://blogs.technet.com/b/speschka/archive/2012/10/29/how-to-configure-the-global-search-center-url-for-sharepoint-2013-using-powershell.aspx
                     Write-Host -ForegroundColor White "  - Setting the Global Search Center URL to $($appConfig.SearchCenterURL)..." -NoNewline
                     while ($done -ne $true)
                     {
@@ -5037,7 +5100,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput)
         Write-Host -ForegroundColor White " - Setting up crawl addresses for default content source..." -NoNewline
         Get-SPEnterpriseSearchServiceApplication | Get-SPEnterpriseSearchCrawlContentSource | Set-SPEnterpriseSearchCrawlContentSource -StartAddresses $crawlStartAddresses
         If ($?) {Write-Host -ForegroundColor White "OK."}
-        if ($env:spVer -eq "15") # Invoke-WebRequest requires PowerShell 3.0 but if we're installing SP2013 and we've gotten this far, we must have v3.0
+        if ($env:spVer -ge "15") # Invoke-WebRequest requires PowerShell 3.0 but if we're installing SP2013 and we've gotten this far, we must have v3.0
         {
             # Issue a request to the Farm Search Administration page to avoid a Health Analyzer warning about 'Missing Server Side Dependencies'
             $ca = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.IsAdministrationWebApplication}
@@ -5287,7 +5350,7 @@ Function CreateWordAutomationServiceApp ([xml]$xmlinput)
 Function CreateExcelServiceApp ([xml]$xmlinput)
 {
     $officeServerPremium = $xmlinput.Configuration.Install.SKU -replace "Enterprise","1" -replace "Standard","0"
-    If (ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.ExcelServices -eq $true)
+    If ((ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.ExcelServices -eq $true) -and ($env:SPVer -le "15"))
     {
         WriteLine
         if ($officeServerPremium -eq "1")
@@ -5934,16 +5997,18 @@ Function CreateProjectServerServiceApp ([xml]$xmlinput)
         }
         # Create a Project Server DB
         $portalWebApp = $xmlinput.Configuration.WebApplications.WebApplication | Where {$_.Type -eq "Portal"} | Select-Object -First 1
-        Write-Host -ForegroundColor White " - Creating Project Server database `"$serviceDB`"..." -NoNewline
         if (!(Get-SPDatabase | Where-Object {$_.Name -eq $serviceDB}))
         {
-            ##New-SPProjectDatabase -Name $serviceDB -WebApplication (Get-SPWebApplication | Where-Object {$_.Name -eq $portalWebApp.Name}) -DatabaseServer $dbServer | Out-Null
-            New-SPProjectDatabase -Name $serviceDB -ServiceApplication (Get-SPServiceApplication | Where-Object {$_.Name -eq $serviceConfig.Name}) -DatabaseServer $dbServer | Out-Null
-            if ($?) {Write-Host -ForegroundColor Black -BackgroundColor Blue "Done."}
-            else
+            if (Get-Command -Name New-SPProjectDatabase -ErrorAction SilentlyContinue) # Check for this since it no longer exists in SP2016
             {
-                Write-Host -ForegroundColor White "."
-                throw {"Error creating the Project Server database."}
+               Write-Host -ForegroundColor White " - Creating Project Server database `"$serviceDB`"..." -NoNewline
+               New-SPProjectDatabase -Name $serviceDB -ServiceApplication (Get-SPServiceApplication | Where-Object {$_.Name -eq $serviceConfig.Name}) -DatabaseServer $dbServer | Out-Null
+                if ($?) {Write-Host -ForegroundColor Black -BackgroundColor Blue "Done."}
+                else
+                {
+                    Write-Host -ForegroundColor White "."
+                    throw {"Error creating the Project Server database."}
+                }
             }
         }
         else
@@ -5972,12 +6037,15 @@ Function CreateProjectServerServiceApp ([xml]$xmlinput)
         Write-Host -ForegroundColor White " - Creating Project Server web instance at `"$projectSiteUrl`"..." -NoNewline
         if (!(Get-SPProjectWebInstance -Url $projectSiteUrl -ErrorAction SilentlyContinue))
         {
-            Mount-SPProjectWebInstance -DatabaseName $serviceDB -SiteCollection $projectSite
-            if ($?) {Write-Host -ForegroundColor Black -BackgroundColor Green "Done."}
-            else
+            if (Get-Command -Name Mount-SPProjectWebInstance -ErrorAction SilentlyContinue) # Check for this since it no longer exists in SP2016
             {
-                Write-Host -ForegroundColor White "."
-                throw {"Error creating the Project Server web instance."}
+                Mount-SPProjectWebInstance -DatabaseName $serviceDB -SiteCollection $projectSite
+                if ($?) {Write-Host -ForegroundColor Black -BackgroundColor Green "Done."}
+                else
+                {
+                    Write-Host -ForegroundColor White "."
+                    throw {"Error creating the Project Server web instance."}
+                }
             }
         }
         else
@@ -6491,14 +6559,14 @@ Function Start-RemoteInstaller ($server, $password, $inputFile)
     }
     Get-MajorVersionNumber $xmlinput
     # Create a hash table with major version to product year mappings
-    $spYears = @{"14" = "2010"; "15" = "2013"}
+    $spYears = @{"14" = "2010"; "15" = "2013"; "16" = "2016"}
     $spYear = $spYears.$env:spVer
     # Set some remote variables that we will need...
     Invoke-Command -ScriptBlock {param ($value) Set-Variable -Name dp0 -Value $value} -ArgumentList $env:dp0 -Session $session
     Invoke-Command -ScriptBlock {param ($value) Set-Variable -Name InputFile -Value $value} -ArgumentList $inputFile -Session $session
     Invoke-Command -ScriptBlock {param ($value) Set-Variable -Name spVer -Value $value} -ArgumentList $env:spVer -Session $session
-    # Crude way of checking if SharePoint is already installed
-    $spInstalledOnRemote = Invoke-Command -ScriptBlock {Test-Path "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$spVer\BIN\stsadm.exe"} -Session $session
+    # Check if SharePoint is already installed
+    $spInstalledOnRemote = Invoke-Command -ScriptBlock {Get-CimInstance -ClassName Win32_Product -Filter "Name like 'Microsoft SharePoint Server%'"} -Session $session
     Write-Host -ForegroundColor Green " - SharePoint $spYear binaries are"($spInstalledOnRemote -replace "True","already" -replace "False","not yet") "installed on $server."
     Write-Host -ForegroundColor White " - Launching AutoSPInstaller..."
     Invoke-Command -ScriptBlock {& "$dp0\AutoSPInstallerMain.ps1" "$inputFile"} -Session $session
@@ -6968,7 +7036,7 @@ Function CheckFor2010SP1
             $spProdVer = (Get-Command $env:CommonProgramFiles"\Microsoft Shared\Web Server Extensions\$env:spVer\isapi\microsoft.sharepoint.portal.dll").FileVersionInfo.ProductVersion
             $null,$null,[int]$build,$null = $spProdVer -split "\."
         }
-        If ($build -ge 6029 -or $env:spVer -eq "15") # SP2010 SP1, or SP2013
+        If ($build -ge 6029 -or $env:spVer -ge "15") # SP2010 SP1, or SP2013/SP2016
         {
             Return $true
         }
@@ -7021,6 +7089,10 @@ Function CheckFor2013SP1
             Return $false
         }
     }
+    elseif ($env:spVer -ge "16")
+        {
+            Return $true
+        }
     else
     {
         Return $false
@@ -7046,12 +7118,24 @@ Function CheckIfUpgradeNeeded
 
 Function Get-SharePointInstall
 {
-    # Crude way of checking if SharePoint is already installed
-    If (Test-Path "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$env:spVer\BIN\stsadm.exe")
+    if (Get-Command Get-CimInstance -ErrorAction SilentlyContinue)
     {
-        return $true
+        # New way, borrowed from xSharePoint DSC project (https://github.com/PowerShell/xSharePoint)
+        if (Get-CimInstance -ClassName Win32_Product -Filter "Name like 'Microsoft SharePoint Server%'")
+        {
+            return $true
+        }
+        else {return $false}
     }
-    Else {return $false}
+    else
+    {
+        ##Old, crude way of checking if SharePoint is already installed. For cases where Get-CimInstance isn't found as a valid command.
+        if (Test-Path "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$env:spVer\BIN\stsadm.exe")
+        {
+            return $true
+        }
+        else {return $false}
+    }
 }
 
 # ===================================================================================
@@ -7400,8 +7484,8 @@ Function Stop-DefaultWebsite ()
 function Get-MajorVersionNumber ([xml]$xmlinput)
 {
     # Create hash tables with major version to product year mappings & vice-versa
-    $spYears = @{"14" = "2010"; "15" = "2013"}
-    $spVersions = @{"2010" = "14"; "2013" = "15"}
+    $spYears = @{"14" = "2010"; "15" = "2013"; "16" = "2016"}
+    $spVersions = @{"2010" = "14"; "2013" = "15"; "2016" = "16"}
     $env:spVer = $spVersions.($xmlinput.Configuration.Install.SPVersion)
 }
 #EndRegion
