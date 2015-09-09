@@ -21,7 +21,7 @@
 <!-- The Environment attribute below appears at the top of the installation transcript, and will now also appear at the top of the SharePoint 2013+ Central Administration top-left branding bar. It does not affect the SharePoint 2010 installation though.
      Simply leave the Environment attribute blank if you do not want to alter the branding bar in SP2013+ Central Admin.
      The Version attribute is now used for comparing the XML schema version with the version of the script (specifically, AutoSPInstallerFunctions.ps1), as there may be dependencies between XML and script elements. -->
-<Configuration Environment="Dev" Version="3.99.5">
+<Configuration Environment="Dev" Version="3.99.51">
     <!-- The Install section controls what modifications are made to the Windows OS prior to installation and how the SharePoint installation is run.
          You can also explicitly state the SPVersion of SharePoint being installed, (in case you have binaries for SP2010/SP2013/SP2016 in your folder structure).
          Allowed values are "2010", "2013" or "2016". If you omit this, the script will attempt to determine the version anyhow, and default to 2013 if multiple sets of install files are present. -->
@@ -133,15 +133,15 @@
                  *Note* if you want to remotely install dedicated WFEs in your farm (i.e. RemoteInstall Enable="true") you should name the servers here, in a comma separated list - e.g. Start="WFE1,WFE2,WFEx" -->
             <FoundationWebApplication Start="localhost" />
         </Services>
-      <!-- ServerRoles is for SharePoint 2016 only. Valid choices are: SpecialLoad, WebFrontEnd, SingleServerFarm, Search, Application, DistributedCache
-           A server name can only be provisioned in ONE role, so make sure you don't repeat server names within the elements below. -->
+      <!-- ServerRoles is for SharePoint 2016 only. Valid choices are: WebFrontEnd, Application, DistributedCache, Search, Custom, and SingleServerFarm
+           A server name can only be provisioned in ONE role, so make sure you don't repeat server names within the elements below. If you don't specify a role for a server, Custom will be assumed. -->
       <ServerRoles>
-        <SpecialLoad Provision="false" />
         <WebFrontEnd Provision="false" />
-        <SingleServerFarm Provision="false" />
-        <Search Provision="false" />
         <Application Provision="false" />
         <DistributedCache Provision="false" />
+        <Search Provision="false" />
+	    <Custom Provision="false" />
+        <SingleServerFarm Provision="false" />
       </ServerRoles>
         <!-- The ManagedAccounts section configures all accounts that will be added to SharePoint as managed accounts. -->
         <ManagedAccounts>

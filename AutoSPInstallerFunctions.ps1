@@ -7,8 +7,8 @@ Function CheckXMLVersion ([xml]$xmlinput)
 {
     $getXMLVersion = $xmlinput.Configuration.Version
     # The value below will increment whenever there is an update to the format of the AutoSPInstallerInput XML file
-    $scriptCurrentVersion = "3.99.5"
-    $scriptPreviousVersion = "3.99"
+    $scriptCurrentVersion = "3.99.51"
+    $scriptPreviousVersion = "3.99.5"
     if ($getXMLVersion -ne $scriptCurrentVersion)
     {
         if ($getXMLVersion -eq $scriptPreviousVersion)
@@ -1676,7 +1676,7 @@ Function CreateOrJoinFarm([xml]$xmlinput, $secPhrase, $farmCredential)
         else {$distCacheSwitch = @{}}
         if ($env:spVer -ge "16")
         {
-            if (ShouldIProvision ($xmlinput.Configuration.Farm.ServerRoles.SpecialLoad)) {$serverRole = "SpecialLoad"}
+            if (ShouldIProvision ($xmlinput.Configuration.Farm.ServerRoles.Custom)) {$serverRole = "Custom"}
             elseif (ShouldIProvision ($xmlinput.Configuration.Farm.ServerRoles.WebFrontEnd)) {$serverRole = "WebFrontEnd"}
             elseif (ShouldIProvision ($xmlinput.Configuration.Farm.ServerRoles.Search)) {$serverRole = "Search"}
             elseif (ShouldIProvision ($xmlinput.Configuration.Farm.ServerRoles.Application)) {$serverRole = "Application"}
@@ -1688,7 +1688,7 @@ Function CreateOrJoinFarm([xml]$xmlinput, $secPhrase, $farmCredential)
                 $serverRoleOptionalSwitch = @{}
                 Write-Host -ForegroundColor Green " - This host has been requested to have the `"$serverRole`" LocalServerRole."
             }
-            else # Otherwise we'll just go with Custom or SpecialLoad
+            else # Otherwise we'll just go with Custom/SpecialLoad
             {
                 $serverRoleSwitch = @{}
                 $serverRoleOptionalSwitch = @{ServerRoleOptional = $true}
@@ -3849,13 +3849,14 @@ Function CreateWebAnalyticsApp([xml]$xmlinput)
 #Region Create Secure Store Service Application
 Function CreateSecureStoreServiceApp
 {
-    # Secure Store Service Application will be provisioned even if it's been marked false, if any of these service apps have been requested, as it's a dependency.
+    # Secure Store Service Application will be provisioned even if it's been marked false, if any of these service apps have been requested (and for the correct version of SharePoint), as it's a dependency.
     If ((ShouldIProvision $xmlinput.Configuration.ServiceApps.SecureStoreService -eq $true) -or `
-        (ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.ExcelServices -eq $true) -or `
+        ((ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.ExcelServices -eq $true) -and ($env:SPVer -le "15")) -or `
         (ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.VisioService -eq $true) -or `
         (ShouldIProvision $xmlinput.Configuration.EnterpriseServiceApps.PerformancePointService -eq $true) -or `
         (ShouldIProvision $xmlinput.Configuration.ServiceApps.BusinessDataConnectivity -eq $true) -or `
-        ((ShouldIProvision $xmlinput.Configuration.OfficeWebApps.ExcelService -eq $true) -and ($xmlinput.Configuration.OfficeWebApps.Install -eq $true)))
+        ((ShouldIProvision $xmlinput.Configuration.OfficeWebApps.ExcelService -eq $true) -and ($xmlinput.Configuration.OfficeWebApps.Install -eq $true)) `
+       )
     {
         WriteLine
         Try

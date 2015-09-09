@@ -7,7 +7,7 @@
 )
 
 # Globally update all instances of "localhost" in the input file to actual local server name
-[xml]$xmlinput = (Get-Content $inputFile) -replace ("localhost", $env:COMPUTERNAME)
+[xml]$xmlinput = (Get-Content $inputFile -ErrorAction Inquire) -replace ("localhost", $env:COMPUTERNAME) # "-ErrorAction Inquire" should show something meaningful now instead of just quickly skipping over a bad or malformed XML
 
 # ===================================================================================
 #
@@ -63,7 +63,7 @@ if ([string]::IsNullOrEmpty($env:SPbits))
     # If no setup binaries are present, this might be OK if SharePoint is already installed and we've specified the version in the XML
     $spInstalled = $true
     # Check to see that we've at least specified the desired version in the XML
-    if (($xmlinput.Configuration.Install.SPVersion -eq "2010") -or ($xmlinput.Configuration.Install.SPVersion -eq "2013"))
+    if (($xmlinput.Configuration.Install.SPVersion -eq "2010") -or ($xmlinput.Configuration.Install.SPVersion -eq "2013") -or ($xmlinput.Configuration.Install.SPVersion -eq "2016"))
     {
         # Grab the version from the hashtable
         $env:spVer = $spVersions.($xmlinput.Configuration.Install.SPVersion)
