@@ -155,16 +155,16 @@ Function RemoveIEEnhancedSecurity([xml]$xmlinput)
     If ($xmlinput.Configuration.Install.Disable.IEEnhancedSecurity -eq "True")
     {
         Write-Host -ForegroundColor White " - Disabling IE Enhanced Security..."
-        Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}" -Name isinstalled -Value 0
-        Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A8-37EF-4b3f-8CFC-4F3A74704073}" -Name isinstalled -Value 0
+        Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}" -Name isinstalled -Value 0 -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A8-37EF-4b3f-8CFC-4F3A74704073}" -Name isinstalled -Value 0 -ErrorAction SilentlyContinue
         Rundll32 iesetup.dll, IEHardenLMSettings,1,True
         Rundll32 iesetup.dll, IEHardenUser,1,True
         Rundll32 iesetup.dll, IEHardenAdmin,1,True
-        If (Test-Path "HKCU:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}")
+        If (Test-Path "HKCU:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}" -ErrorAction SilentlyContinue)
         {
             Remove-Item -Path "HKCU:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}"
         }
-        If (Test-Path "HKCU:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A8-37EF-4b3f-8CFC-4F3A74704073}")
+        If (Test-Path "HKCU:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A8-37EF-4b3f-8CFC-4F3A74704073}" -ErrorAction SilentlyContinue)
         {
             Remove-Item -Path "HKCU:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A8-37EF-4b3f-8CFC-4F3A74704073}"
         }
@@ -714,17 +714,18 @@ Function InstallPrerequisites([xml]$xmlinput)
                     Write-Host -ForegroundColor Blue "  - Running Prerequisite Installer (offline mode)..." -NoNewline
                     $startTime = Get-Date
                     Start-Process "$env:SPbits\PrerequisiteInstaller.exe" -ArgumentList "/unattended `
-                                                                                            /SQLNCli:`"$env:SPbits\PrerequisiteInstallerFiles\sqlncli.msi`" `
-                                                                                            /DotNet452:`"$env:SPbits\PrerequisiteInstallerFiles\NDP452-KB2901907-x86-x64-AllOS-ENU.exe`" `
-                                                                                            /IDFX11:`"$env:SPbits\PrerequisiteInstallerFiles\MicrosoftIdentityExtensions-64.msi`" `
-                                                                                            /Sync:`"$env:SPbits\PrerequisiteInstallerFiles\Synchronization.msi`" `
-                                                                                            /AppFabric:`"$env:SPbits\PrerequisiteInstallerFiles\WindowsServerAppFabricSetup_x64.exe`" `
-                                                                                            /KB2671763:`"$env:SPbits\PrerequisiteInstallerFiles\AppFabric1.1-RTM-KB2671763-x64-ENU.exe`" `
-                                                                                            /MSIPCClient:`"$env:SPbits\PrerequisiteInstallerFiles\setup_msipc_x64.exe`" `
-                                                                                            /KB2898850:`"$env:SPbits\PrerequisiteInstallerFiles\Windows8.1-KB2898850-x64.msu`" `
-                                                                                            /ODBC:`"$env:SPbits\PrerequisiteInstallerFiles\msodbcsql.msi`" `
-                                                                                            /MSVCRT12:`"$env:SPbits\PrerequisiteInstallerFiles\vcredist_x64.exe`" `
-                                                                                            /WCFDataServices56:`"$env:SPbits\PrerequisiteInstallerFiles\WcfDataServices56.exe`""
+                                                                                         /SQLNCli:`"$env:SPbits\PrerequisiteInstallerFiles\sqlncli.msi`" `
+                                                                                         /DotNet452:`"$env:SPbits\PrerequisiteInstallerFiles\NDP452-KB2901907-x86-x64-AllOS-ENU.exe`" `
+                                                                                         /IDFX11:`"$env:SPbits\PrerequisiteInstallerFiles\MicrosoftIdentityExtensions-64.msi`" `
+                                                                                         /Sync:`"$env:SPbits\PrerequisiteInstallerFiles\Synchronization.msi`" `
+                                                                                         /AppFabric:`"$env:SPbits\PrerequisiteInstallerFiles\WindowsServerAppFabricSetup_x64.exe`" `
+                                                                                         /KB3092423:`"$env:SPbits\PrerequisiteInstallerFiles\AppFabric-KB3092423-x64-ENU.exe`" `
+                                                                                         /MSIPCClient:`"$env:SPbits\PrerequisiteInstallerFiles\setup_msipc_x64.exe`" `
+                                                                                         /KB2898850:`"$env:SPbits\PrerequisiteInstallerFiles\Windows8.1-KB2898850-x64.msu`" `
+                                                                                         /ODBC:`"$env:SPbits\PrerequisiteInstallerFiles\msodbcsql.msi`" `
+                                                                                         /MSVCRT11:`"$env:SPbits\PrerequisiteInstallerFiles\vcredist_x64-2012.exe`" `
+                                                                                         /MSVCRT14:`"$env:SPbits\PrerequisiteInstallerFiles\vc_redist.x64.exe`" `
+                                                                                         /WCFDataServices56:`"$env:SPbits\PrerequisiteInstallerFiles\WcfDataServices.exe`""
                     If (-not $?) {Throw}
                 }
             }
@@ -1671,7 +1672,7 @@ Function CreateOrJoinFarm([xml]$xmlinput, $secPhrase, $farmCredential)
         if (($env:spVer -ge "15") -and !(ShouldIProvision $xmlinput.Configuration.Farm.Services.DistributedCache -eq $true))
         {
             $distCacheSwitch = @{SkipRegisterAsDistributedCacheHost = $true}
-            Write-Host -ForegroundColor White " - This host has been requested to be excluded from the Distributed Cache cluster."
+            Write-Host -ForegroundColor White " - This server ($env:COMPUTERNAME) has been requested to be excluded from the Distributed Cache cluster."
         }
         else {$distCacheSwitch = @{}}
         if ($env:spVer -ge "16")
@@ -1686,7 +1687,7 @@ Function CreateOrJoinFarm([xml]$xmlinput, $secPhrase, $farmCredential)
             {
                 $serverRoleSwitch = @{LocalServerRole = $serverRole}
                 $serverRoleOptionalSwitch = @{}
-                Write-Host -ForegroundColor Green " - This host has been requested to have the `"$serverRole`" LocalServerRole."
+                Write-Host -ForegroundColor Green " - This server ($env:COMPUTERNAME) has been requested to have the `"$serverRole`" LocalServerRole."
             }
             else # Otherwise we'll just go with Custom/SpecialLoad
             {
@@ -1775,7 +1776,12 @@ Function CreateCentralAdmin([xml]$xmlinput)
                 # Create Central Admin for farm
                 Write-Host -ForegroundColor White " - Creating Central Admin site..."
                 $centralAdminPort = $xmlinput.Configuration.Farm.CentralAdmin.Port
-                $newCentralAdmin = New-SPCentralAdministration -Port $centralAdminPort -WindowsAuthProvider "NTLM" -ErrorVariable err
+                if (($env:spVer -ge "16") -and ($xmlinput.Configuration.Farm.CentralAdmin.UseSSL -eq $true)) # Use updated cmdlet switch for SP2016 for SSL in Central Admin
+                {
+                    $centralAdminSSLSwitch = @{SecureSocketsLayer = $true}
+                }
+                else {$centralAdminSSLSwitch = @{}}
+                New-SPCentralAdministration -Port $centralAdminPort -WindowsAuthProvider "NTLM" @centralAdminSSLSwitch
                 If (-not $?) {Throw " - Error creating central administration application"}
                 Write-Host -ForegroundColor Blue " - Waiting for Central Admin site..." -NoNewline
                 While ($localCentralAdminService.Status -ne "Online")
@@ -1793,7 +1799,10 @@ Function CreateCentralAdmin([xml]$xmlinput)
                     $SSLHostHeader = $env:COMPUTERNAME
                     $SSLPort = $centralAdminPort
                     $SSLSiteName = $centralAdmin.DisplayName
-                    New-SPAlternateURL -Url "https://$($env:COMPUTERNAME):$centralAdminPort" -Zone Default -WebApplication $centralAdmin | Out-Null
+                    if ($env:spVer -le "15") # Use the old pre-2016 way to enable SSL for Central Admin
+                    {
+                        New-SPAlternateURL -Url "https://$($env:COMPUTERNAME):$centralAdminPort" -Zone Default -WebApplication $centralAdmin | Out-Null
+                    }
                     if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
                     {
                         Write-Host -ForegroundColor White " - Assigning certificate(s) in a separate PowerShell window..."
@@ -1806,7 +1815,7 @@ Function CreateCentralAdmin([xml]$xmlinput)
             Else
             {
                 Write-Host -ForegroundColor White " - Creating local Central Admin site..."
-                $newCentralAdmin = New-SPCentralAdministration
+                New-SPCentralAdministration
             }
         }
         Catch
@@ -2627,8 +2636,12 @@ Function CreateWebApp([System.Xml.XmlElement]$webApp)
     {
         # Set the directory path for the web app to something a bit more friendly
         ImportWebAdministration
-        # Get the default root location for web apps
-        $iisWebDir = (Get-ItemProperty "IIS:\Sites\Default Web Site\" -name physicalPath -ErrorAction SilentlyContinue) -replace ("%SystemDrive%","$env:SystemDrive")
+        # Get the default root location for web apps (first from IIS itself, then failing that, from the registry)
+        $iisWebDir = (Get-ItemProperty "IIS:\Sites\Default Web Site\" -Name physicalPath -ErrorAction SilentlyContinue) -replace ("%SystemDrive%","$env:SystemDrive")
+        if ([string]::IsNullOrEmpty($iisWebDir))
+        {
+            $iisWebDir = (Get-Item -Path HKLM:\SOFTWARE\Microsoft\InetStp).GetValue("PathWWWRoot") -replace ("%SystemDrive%","$env:SystemDrive")
+        }
         if (!([string]::IsNullOrEmpty($iisWebDir)))
         {
             $pathSwitch = @{Path = "$iisWebDir\wss\VirtualDirectories\$webAppName-$port"}
@@ -3022,8 +3035,12 @@ Function CreateUserProfileServiceApplication([xml]$xmlinput)
         {
             # Set the directory path for the web app to something a bit more friendly
             ImportWebAdministration
-            # Get the default root location for web apps
-            $iisWebDir = (Get-ItemProperty "IIS:\Sites\Default Web Site\" -name physicalPath -ErrorAction SilentlyContinue) -replace ("%SystemDrive%","$env:SystemDrive")
+            # Get the default root location for web apps (first from IIS itself, then failing that, from the registry)
+            $iisWebDir = (Get-ItemProperty "IIS:\Sites\Default Web Site\" -Name physicalPath -ErrorAction SilentlyContinue) -replace ("%SystemDrive%","$env:SystemDrive")
+            if ([string]::IsNullOrEmpty($iisWebDir))
+            {
+                $iisWebDir = (Get-Item -Path HKLM:\SOFTWARE\Microsoft\InetStp).GetValue("PathWWWRoot") -replace ("%SystemDrive%","$env:SystemDrive")
+            }
             If (!([string]::IsNullOrEmpty($iisWebDir)))
             {
                 $pathSwitch = @{Path = "$iisWebDir\wss\VirtualDirectories\$webAppName-$port"}
@@ -5943,7 +5960,7 @@ Function CreateMachineTranslationServiceApp ([xml]$xmlinput)
 Function CreateWorkManagementServiceApp ([xml]$xmlinput)
 {
     $serviceConfig = $xmlinput.Configuration.ServiceApps.WorkManagementService
-    If ((ShouldIProvision $serviceConfig -eq $true) -and (Get-Command -Name New-SPWorkManagementServiceApplication -ErrorAction SilentlyContinue))
+    If ((ShouldIProvision $serviceConfig -eq $true) -and (Get-Command -Name New-SPWorkManagementServiceApplication -ErrorAction SilentlyContinue) -and (Get-SPServiceInstance | Where-Object {$_.GetType().ToString() -eq "Microsoft.Office.Server.WorkManagement.WorkManagementServiceInstance"}))
     {
         WriteLine
         $serviceInstanceType = "Microsoft.Office.Server.WorkManagement.WorkManagementServiceInstance"

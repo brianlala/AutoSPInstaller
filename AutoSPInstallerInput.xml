@@ -576,7 +576,7 @@
                 </DBAlias>
             </Database>
         </SubscriptionSettingsService>
-        <!-- WorkManagementService is only for SharePoint 2013+ -->
+        <!-- WorkManagementService is only for SharePoint 2013 -->
         <WorkManagementService Provision="localhost">
             <Name>Work Management Service Application</Name>
             <ProxyName>Work Management Service Application</ProxyName>
