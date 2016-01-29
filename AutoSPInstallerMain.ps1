@@ -178,7 +178,7 @@ Function Run-Install
 {
     DisableLoopbackCheck $xmlinput
     RemoveIEEnhancedSecurity $xmlinput
-    AddSourcePathToLocalIntranetZone
+    UnblockFiles -path "$bits\$spyear"
     DisableServices $xmlinput
     DisableCRLCheck $xmlinput
     InstallPrerequisites $xmlinput
