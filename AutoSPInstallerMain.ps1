@@ -152,9 +152,9 @@ Function Install-Remote
     }
     Else
     {
-        Write-Host -ForegroundColor Yellow " - There are other servers specified as farm members in:"
-        Write-Host -ForegroundColor Yellow " - $inputFile"
-        Write-Host -ForegroundColor Yellow " - but <RemoteInstall> is not set to `"true`" - nothing else to do."
+        Write-Host -ForegroundColor White " - There are other servers specified as farm members in:"
+        Write-Host -ForegroundColor White " - $inputFile"
+        Write-Host -ForegroundColor White " - but <RemoteInstall> is not set to `"true`" - nothing else to do."
     }
 }
 #EndRegion
@@ -184,6 +184,8 @@ Function Run-Install
     InstallPrerequisites $xmlinput
     ConfigureIISLogging $xmlinput
     InstallSharePoint $xmlinput
+    # Try to apply a recent CU for the AppFabric Caching Service if we're installing at least SP2013
+    if ($env:SPVer -ge 15) {Install-AppFabricCU $xmlinput}
     InstallOfficeWebApps2010 $xmlinput
     InstallProjectServer $xmlinput
     InstallLanguagePacks $xmlinput

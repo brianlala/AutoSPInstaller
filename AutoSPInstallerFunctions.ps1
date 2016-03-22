@@ -730,7 +730,7 @@ Function InstallPrerequisites([xml]$xmlinput)
                                                                                          /KB3092423:`"$env:SPbits\PrerequisiteInstallerFiles\AppFabric-KB3092423-x64-ENU.exe`" `
                                                                                          /WCFDataServices56:`"$env:SPbits\PrerequisiteInstallerFiles\WcfDataServices.exe`" `
                                                                                          /ODBC:`"$env:SPbits\PrerequisiteInstallerFiles\msodbcsql.msi`" `
-                                                                                         /DotNetFx:`"$env:SPbits\PrerequisiteInstallerFiles\NDP452-KB2901907-x86-x64-AllOS-ENU.exe`" `
+                                                                                         /DotNetFx:`"$env:SPbits\PrerequisiteInstallerFiles\NDP46-KB3045557-x86-x64-AllOS-ENU.exe`" `
                                                                                          /MSVCRT11:`"$env:SPbits\PrerequisiteInstallerFiles\vcredist_x64.exe`" `
                                                                                          /MSVCRT14:`"$env:SPbits\PrerequisiteInstallerFiles\vc_redist.x64.exe`""
                     If (-not $?) {Throw}
@@ -1004,6 +1004,73 @@ Function InstallSharePoint([xml]$xmlinput)
     WriteLine
 }
 #EndRegion
+# ===================================================================================
+# Func: Install-AppFabricCU
+# Desc: Attempts to install a recently-released cumulative update for AppFabric, if found in $env:SPbits\PrerequisiteInstallerFiles
+# ===================================================================================
+function Install-AppFabricCU
+{
+    WriteLine
+    # Create a hash table with major version to product year mappings
+    $spYears = @{"14" = "2010"; "15" = "2013"; "16" = "2016"}
+    $spYear = $spYears.$env:spVer
+    [hashtable]$updates = @{"CU7" = "AppFabric-KB3092423-x64-ENU.exe";
+                            "CU6" = "AppFabric-KB3042099-x64-ENU.exe";
+                            "CU5" = "AppFabric1.1-KB2932678-x64-ENU.exe";`
+                            "CU4" = "AppFabric1.1-RTM-KB2800726-x64-ENU.exe"}
+    $installSucceeded = $false
+    Write-Host -ForegroundColor White " - Checking for AppFabric CU4 or newer..."
+    $appFabricKB = (((Get-ItemProperty -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Updates\AppFabric 1.1 for Windows Server\KB2800726" -Name "IsInstalled" -ErrorAction SilentlyContinue).IsInstalled -eq 1) -or `
+                    ((Get-ItemProperty -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Updates\AppFabric 1.1 for Windows Server\KB2932678" -Name "IsInstalled" -ErrorAction SilentlyContinue).IsInstalled -eq 1) -or
+                    ((Get-ItemProperty -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Updates\AppFabric 1.1 for Windows Server\KB3042099" -Name "IsInstalled" -ErrorAction SilentlyContinue).IsInstalled -eq 1) -or
+                    ((Get-ItemProperty -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Updates\AppFabric 1.1 for Windows Server\KB3092423" -Name "IsInstalled" -ErrorAction SilentlyContinue).IsInstalled -eq 1))
+        if (!$appFabricKB) # Try to install the AppFabric update if it isn't detected
+        {
+            foreach ($CU in ($updates.Keys | Sort-Object -Descending))
+            {
+                try
+                {
+                    $currentUpdate = $updates.$CU
+                    # Check that we haven't already succeded with one of the CUs
+                    if (!$installSucceeded)
+                    {
+                        # Check if the current CU exists in the current path
+                        Write-Host -ForegroundColor White "CU4 or newer was not found."
+                        Write-Host -ForegroundColor White "  - Looking for update: `"$env:SPbits\PrerequisiteInstallerFiles\$currentUpdate`"..."
+                        if (Test-Path -Path "$env:SPbits\PrerequisiteInstallerFiles\$currentUpdate" -ErrorAction SilentlyContinue)
+                        {
+                            Write-Host "  - Installing $currentUpdate..."
+                            Start-Process -FilePath "$env:SPbits\PrerequisiteInstallerFiles\$currentUpdate" -ArgumentList "/passive /promptrestart" -Wait -NoNewWindow
+                            if ($?)
+                            {
+                                $installSucceeded = $true
+                                Write-Host " - Done."
+                            }
+                        }
+                        else
+                        {
+                            Write-Host -ForegroundColor White "  - AppFabric CU $currentUpdate wasn't found, looking for other update files..."
+                        }
+                    }
+                }
+                catch
+                {
+                    $installSucceeded = $false
+                    Write-Warning "  - Something went wrong with the installation of $currentUpdate."
+                }
+            }
+        }
+        else
+        {
+            $installSucceeded = $true
+            Write-Host -ForegroundColor White " - Already installed."
+        }
+    if (!$installSucceeded)
+    {
+        Write-Host -ForegroundColor White " - Either no required AppFabric updates were found in $env:SPbits\PrerequisiteInstallerFiles, or the installation failed."
+    }
+    WriteLine
+}
 
 #Region Install Office Web Apps 2010
 # ===================================================================================
@@ -2551,6 +2618,7 @@ Function AssignCert($SSLHostHeader, $SSLPort, $SSLSiteName)
         Write-Host -ForegroundColor White " - Certificate `"$certSubject`" found."
         # Fix up the cert subject name to a file-friendly format
         $certSubjectName = $certSubject.Split(",")[0] -replace "CN=","" -replace "\*","wildcard"
+        $certsubjectname = $certsubjectname.TrimEnd(“/”) 
         # Export our certificate to a file, then import it to the Trusted Root Certification Authorites store so we don't get nasty browser warnings
         # This will actually only work if the Subject and the host part of the URL are the same
         # Borrowed from https://www.orcsweb.com/blog/james/powershell-ing-on-windows-server-how-to-import-certificates-using-powershell/
@@ -4240,7 +4308,35 @@ Function ConfigureDistributedCacheService ([xml]$xmlinput)
         # Ensure the node exists in the XML first as we don't want to inadvertently disable the service if it wasn't explicitly specified
         $serviceInstances = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq "Microsoft.SharePoint.DistributedCaching.Utilities.SPDistributedCacheServiceInstance"}
         $serviceInstance = $serviceInstances | ? {MatchComputerName $_.Server.Address $env:COMPUTERNAME}
-        if (($xmlinput.Configuration.Farm.Services.SelectSingleNode("DistributedCache")) -and !(ShouldIProvision $xmlinput.Configuration.Farm.Services.DistributedCache -eq $true))
+        # Check if we are installing SharePoint 2016 and have requested a MinRole that requires (or complies with) Distributed Cache
+        if ($env:spVer -ge "16")
+        {
+            # DistributedCache and SingleServerFarm Minroles require Distributed Cache to be provisioned locally
+            if ((ShouldIProvision ($xmlinput.Configuration.Farm.ServerRoles.DistributedCache)) -or (ShouldIProvision ($xmlinput.Configuration.Farm.ServerRoles.SingleServerFarm)))
+            {
+                $distributedCache2016Stop = $false
+            }
+            # Check if we have requested both Custom Minrole and local Distributed Cache provisioning in the XML
+            elseif (($xmlinput.Configuration.Farm.Services.SelectSingleNode("DistributedCache")) -and (ShouldIProvision $xmlinput.Configuration.Farm.Services.DistributedCache -eq $true) -and (ShouldIProvision ($xmlinput.Configuration.Farm.ServerRoles.Custom)))
+            {
+                $distributedCache2016Stop = $false
+            }
+            # Otherwise we should be stopping the Distributed Cache
+            else
+            {
+                $distributedCache2016Stop = $true
+            }
+
+        }
+        else
+        {
+            if (($xmlinput.Configuration.Farm.Services.SelectSingleNode("DistributedCache")) -and !(ShouldIProvision $xmlinput.Configuration.Farm.Services.DistributedCache -eq $true))
+            {
+                $distributedCache2013Stop = $true
+            }
+        }
+        # New additional check for $distributedCache2016Stop flag - because we will need to ensure DC doesn't get stopped if we are running certain MinRoles in SP2016
+        if ($distributedCache2013Stop -or $distributedCache2016Stop)
         {
             Write-Host -ForegroundColor White " - Stopping the Distributed Cache service..." -NoNewline
             if ($serviceInstance.Status -eq "Online")
@@ -6131,11 +6227,53 @@ Function ConfigureIncomingEmail
 #Region Configure Foundation Web Application Service
 Function ConfigureFoundationWebApplicationService
 {
-    # Ensure the node exists in the XML first as we don't want to inadvertently disable the service if it wasn't explicitly specified
-    if (($xmlinput.Configuration.Farm.Services.SelectSingleNode("FoundationWebApplication")) -and !(ShouldIProvision $xmlinput.Configuration.Farm.Services.FoundationWebApplication -eq $true))
+    WriteLine
+    Get-MajorVersionNumber $xmlinput
+    $minRoleRequiresFoundationWebAppService = $false
+    # Check if we are installing SharePoint 2016 and we're requesting a MinRole that requires the Foundation Web Application Service
+    if ($env:SPVer -ge 16)
+    {
+        if ((ShouldIProvision ($xmlinput.Configuration.Farm.ServerRoles.Application)) -or (ShouldIProvision ($xmlinput.Configuration.Farm.ServerRoles.DistributedCache)) -or (ShouldIProvision ($xmlinput.Configuration.Farm.ServerRoles.SingleServerFarm)) -or (ShouldIProvision ($xmlinput.Configuration.Farm.ServerRoles.WebFrontEnd)))
+        {
+            $minRoleRequiresFoundationWebAppService = $true
+        }
+    }
+    # Ensure the node exists in the XML first as we don't want to inadvertently stop/disable the service if it wasn't explicitly specified
+    if (($xmlinput.Configuration.Farm.Services.SelectSingleNode("FoundationWebApplication")) -and !(ShouldIProvision $xmlinput.Configuration.Farm.Services.FoundationWebApplication -eq $true) -and !($minRoleRequiresFoundationWebAppService))
     {
         StopServiceInstance "Microsoft.SharePoint.Administration.SPWebServiceInstance"
     }
+    else
+    {
+        # Start the service, if it isn't already running
+        $serviceInstanceType = "Microsoft.SharePoint.Administration.SPWebServiceInstance"
+        # Get all occurrences of the Foundation Web App Service except those which are actually Central Administration instances
+        $serviceInstances = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq $serviceInstanceType -and $_.Name -ne "WSS_Administration"}
+        $serviceInstance = $serviceInstances | ? {MatchComputerName $_.Server.Address $env:COMPUTERNAME}
+        If (!$serviceInstance) { Throw " - Failed to get service instance - check product version (Standard vs. Enterprise)" }
+        Write-Host -ForegroundColor White " - Checking $($serviceInstance.TypeName) instance..."
+        If (($serviceInstance.Status -eq "Disabled") -or ($serviceInstance.Status -ne "Online"))
+        {
+            Write-Host -ForegroundColor White " - Starting $($serviceInstance.TypeName) instance..."
+            $serviceInstance.Provision()
+            If (-not $?) { Throw " - Failed to start $($serviceInstance.TypeName) instance" }
+            # Wait
+            Write-Host -ForegroundColor Cyan " - Waiting for $($serviceInstance.TypeName) instance..." -NoNewline
+            While ($serviceInstance.Status -ne "Online")
+            {
+                Write-Host -ForegroundColor Cyan "." -NoNewline
+                Start-Sleep 1
+                $serviceInstances = Get-SPServiceInstance | ? {$_.GetType().ToString() -eq $serviceInstanceType}
+                $serviceInstance = $serviceInstances | ? {MatchComputerName $_.Server.Address $env:COMPUTERNAME}
+            }
+                Write-Host -BackgroundColor Green -ForegroundColor Black $($serviceInstance.Status)
+        }
+        Else
+        {
+            Write-Host -ForegroundColor White " - $($serviceInstance.TypeName) instance already started."
+        }
+    }
+    WriteLine
 }
 #EndRegion
 
