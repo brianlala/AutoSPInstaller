@@ -191,6 +191,7 @@ Function Run-Install
     InstallLanguagePacks $xmlinput
     InstallUpdates
     FixTaxonomyPickerBug
+    Set-ShortcutRunAsAdmin -shortcutFile "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Microsoft SharePoint $spYear Products\SharePoint $spYear Management Shell.lnk"
 }
 #EndRegion
 
@@ -206,8 +207,24 @@ Function Setup-Farm
     ConfigureFarm $xmlinput
     ConfigureDiagnosticLogging $xmlinput
     ConfigureOfficeWebApps $xmlinput
+    $languagePackInstalled = (Get-Item -Path "HKLM:\SOFTWARE\Microsoft\Shared Tools\Web Server Extensions\$env:spVer.0\WSS\").GetValue("LanguagePackInstalled")
     ConfigureLanguagePacks $xmlinput
     AddManagedAccounts $xmlinput
+    if (($env:SPver -eq "16") -and ($languagePackInstalled))
+    {
+        Write-Host -ForegroundColor Yellow " - We need to re-launch the script to work around a known issue with SP2016 when language packs are installed."
+        $scriptCommandLine = $($MyInvocation.Line)
+        If (Confirm-LocalSession)
+        {
+            $scriptCommandLine = "$env:dp0\AutoSPInstallerLaunch.bat $inputFile"
+            Write-Host -ForegroundColor White " - Re-Launching:"
+            Write-Host -ForegroundColor White " - $scriptCommandLine"
+            Start-Process -WorkingDirectory $PSHOME -FilePath "powershell.exe" -ArgumentList "-ExecutionPolicy Bypass $scriptCommandLine -RemoteAuthPassword $password" -Verb RunAs
+            $script:aborted = $true
+            Start-Sleep 10
+            exit
+        }
+    }
     CreateWebApplications $xmlinput
 }
 #EndRegion

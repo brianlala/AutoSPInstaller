@@ -3,11 +3,11 @@
     General Instructions:
     1. If you use the characters ' " < > & in your configuration (e.g. in passwords) you should encode them as follows:
 
-        '	&apos;
-        "	&quot;
-        <	&lt;
-        >	&gt;
-        &	&amp;
+        ' &apos;
+        " &quot;
+        < &lt;
+        > &gt;
+        & &amp;
     
         For example <Password>Fd"je&f</Password> should be written <Password>Fd&quot;je&amp;f</Password>
     2. Configuration IS case sensitive.
@@ -21,7 +21,7 @@
 <!-- The Environment attribute below appears at the top of the installation transcript, and will now also appear at the top of the SharePoint 2013+ Central Administration top-left branding bar. It does not affect the SharePoint 2010 installation though.
      Simply leave the Environment attribute blank if you do not want to alter the branding bar in SP2013+ Central Admin.
      The Version attribute is now used for comparing the XML schema version with the version of the script (specifically, AutoSPInstallerFunctions.ps1), as there may be dependencies between XML and script elements. -->
-<Configuration Environment="Dev" Version="3.99.51">
+<Configuration Environment="Dev" Version="3.99.60">
     <!-- The Install section controls what modifications are made to the Windows OS prior to installation and how the SharePoint installation is run.
          You can also explicitly state the SPVersion of SharePoint being installed, (in case you have binaries for SP2010/SP2013/SP2016 in your folder structure).
          Allowed values are "2010", "2013" or "2016". If you omit this, the script will attempt to determine the version anyhow, and default to 2013 if multiple sets of install files are present. -->
@@ -133,14 +133,17 @@
                  *Note* if you want to remotely install dedicated WFEs in your farm (i.e. RemoteInstall Enable="true") you should name the servers here, in a comma separated list - e.g. Start="WFE1,WFE2,WFEx" -->
             <FoundationWebApplication Start="localhost" />
         </Services>
-      <!-- ServerRoles is for SharePoint 2016 only. Valid choices are: WebFrontEnd, Application, DistributedCache, Search, Custom, and SingleServerFarm
+      <!-- ServerRoles is for SharePoint 2016 only. Valid choices are: WebFrontEnd, Application, DistributedCache, Search, Custom, and SingleServerFarm.
+           If you have slipstreamed or are applying SharePoint 2016 Feature Pack 1 at install time, you also have WebFrontEndWithDistributedCache and ApplicationWithSearch to choose from.
            A server name can only be provisioned in ONE role, so make sure you don't repeat server names within the elements below. If you don't specify a role for a server, Custom will be assumed. -->
       <ServerRoles>
         <WebFrontEnd Provision="false" />
+        <WebFrontEndWithDistributedCache Provision="false" />
         <Application Provision="false" />
+        <ApplicationWithSearch Provision="false" />
         <DistributedCache Provision="false" />
         <Search Provision="false" />
-	    <Custom Provision="false" />
+        <Custom Provision="true" />
         <SingleServerFarm Provision="false" />
       </ServerRoles>
         <!-- The ManagedAccounts section configures all accounts that will be added to SharePoint as managed accounts. -->
@@ -279,7 +282,7 @@
                 </SiteCollection>
             </SiteCollections>
         </WebApplication>
-        <WebApplication name="MySite Host">
+        <WebApplication Name="MySite Host">
             <Type>MySiteHost</Type>
             <ApplicationPool>mysites.contoso.com</ApplicationPool>
             <Url>http://mysites.contoso.com</Url>
@@ -608,7 +611,7 @@
     <!-- The EnterpriseSeviceApps section configures services only available with an Enterprise licence.
          Common Attributes:
          UnattendedIDUser: DOMAIN\UserName of the unattended user account. This does not have to be SharePoint managed account, and the same account can be re-used for all services.
-         UnattendedIDPassword: Password of the unattended user account.	-->
+         UnattendedIDPassword: Password of the unattended user account. -->
     <EnterpriseServiceApps>
         <ExcelServices Provision="false">
             <Name>Excel Services Application</Name>
