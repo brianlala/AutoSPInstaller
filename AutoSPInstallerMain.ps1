@@ -15,7 +15,7 @@
 #
 # ===================================================================================
 
-#Region Setup Paths & Environment
+#region Setup Paths & Environment
 
 $Host.UI.RawUI.WindowTitle = " -- AutoSPInstaller -- $env:COMPUTERNAME --"
 $Host.UI.RawUI.BackgroundColor = "Black"
@@ -24,10 +24,10 @@ $0 = $myInvocation.MyCommand.Definition
 $env:dp0 = [System.IO.Path]::GetDirectoryName($0)
 $bits = Get-Item $env:dp0 | Split-Path -Parent
 
-#Region Source External Functions
+#region Source External Functions
 . "$env:dp0\AutoSPInstallerFunctions.ps1"
 . "$env:dp0\AutoSPInstallerFunctionsCustom.ps1"
-#EndRegion
+#endregion
 
 # Create hash tables with major version to product year mappings & vice-versa
 $spYears = @{"14" = "2010"; "15" = "2013"; "16" = "2016"}
@@ -101,9 +101,9 @@ else
 
 Write-Host -ForegroundColor White " - Setting power management plan to `"High Performance`"..."
 Start-Process -FilePath "$env:SystemRoot\system32\powercfg.exe" -ArgumentList "/s 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c" -NoNewWindow
-#EndRegion
+#endregion
 
-#Region Remote Install
+#region Remote Install
 Function Install-Remote
 {
     If ($enableRemoteInstall)
@@ -157,9 +157,9 @@ Function Install-Remote
         Write-Host -ForegroundColor White " - but <RemoteInstall> is not set to `"true`" - nothing else to do."
     }
 }
-#EndRegion
+#endregion
 
-#Region Prepare For Install
+#region Prepare For Install
 Function PrepForInstall
 {
     CheckXMLVersion $xmlinput
@@ -171,9 +171,9 @@ Function PrepForInstall
     CheckConfigFiles $xmlinput
     CheckSQLAccess
 }
-#EndRegion
+#endregion
 
-#Region Install SharePoint binaries
+#region Install SharePoint binaries
 Function Run-Install
 {
     DisableLoopbackCheck $xmlinput
@@ -193,9 +193,9 @@ Function Run-Install
     FixTaxonomyPickerBug
     Set-ShortcutRunAsAdmin -shortcutFile "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Microsoft SharePoint $spYear Products\SharePoint $spYear Management Shell.lnk"
 }
-#EndRegion
+#endregion
 
-#Region Setup Farm
+#region Setup Farm
 Function Setup-Farm
 {
     [System.Management.Automation.PsCredential]$farmCredential = GetFarmCredentials $xmlinput
@@ -227,9 +227,9 @@ Function Setup-Farm
     }
     CreateWebApplications $xmlinput
 }
-#EndRegion
+#endregion
 
-#Region Setup Services
+#region Setup Services
 Function Setup-Services
 {
     ConfigureSandboxedCodeService $xmlinput
@@ -259,14 +259,14 @@ Function Setup-Services
         CreateWordViewingOWAServiceApp $xmlinput
     }
     if ($env:spVer -ge "15") # These are for SP2013+ only
-	{
-		CreateAppManagementServiceApp $xmlinput
-		CreateSubscriptionSettingsServiceApp $xmlinput
+    {
+        CreateAppManagementServiceApp $xmlinput
+        CreateSubscriptionSettingsServiceApp $xmlinput
         CreateWorkManagementServiceApp $xmlinput
         CreateMachineTranslationServiceApp $xmlinput
         CreateAccessServicesApp $xmlinput
         CreatePowerPointConversionServiceApp $xmlinput
-	    ConfigureDistributedCacheService $xmlinput
+        ConfigureDistributedCacheService $xmlinput
     }
     if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
     {
@@ -280,9 +280,9 @@ Function Setup-Services
     ConfigureFoundationWebApplicationService $xmlinput
     InstallForeFront $xmlinput
 }
-#EndRegion
+#endregion
 
-#Region Finalize Install (perform any cleanup operations)
+#region Finalize Install (perform any cleanup operations)
 # Run last
 Function Finalize-Install
 {
@@ -327,9 +327,9 @@ Function Finalize-Install
     $Host.UI.RawUI.WindowTitle = " -- Completed -- $env:COMPUTERNAME --"
     $env:EndDate = Get-Date
 }
-#EndRegion
+#endregion
 
-#Region MAIN - Check for input file and start the install
+#region MAIN - Check for input file and start the install
 
 If (!([string]::IsNullOrEmpty($targetServer))) {$farmServers = $targetServer}
 Else {$farmServers = Get-FarmServers $xmlinput}
@@ -398,7 +398,7 @@ If (MatchComputerName $farmServers $env:COMPUTERNAME)
         Run-Install
         Write-Host -ForegroundColor White " - SharePoint $spYear binary file installation done!"
 
-        #Region Re-Launch Script under PowerShell v2
+        #region Re-Launch Script under PowerShell v2
         # Check for SharePoint 2010 on Windows Server 2012, and re-launch script under PowerShell version 2 if it's not already
         # Required for compatibility
         if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($host.Version.Major -gt 2) -and ($env:spVer -eq "14"))
@@ -418,7 +418,7 @@ If (MatchComputerName $farmServers $env:COMPUTERNAME)
             }
             exit
         }
-        #EndRegion
+        #endregion
 
         If (($xmlinput.Configuration.Install.PauseAfterInstall -eq $true) -or ($xmlinput.Configuration.Install.RemoteInstall.ParallelInstall -eq $true))
         {
@@ -531,7 +531,6 @@ If (MatchComputerName $farmServers $env:COMPUTERNAME)
             # Launch Central Admin
             If (ShouldIProvision($xmlinput.Configuration.Farm.CentralAdmin) -eq $true)
             {
-                $centralAdminPort = $xmlinput.Configuration.Farm.CentralAdmin.CentralAdminPort
                 Write-Host -ForegroundColor White " - Launching Central Admin..."
                 Start-Process $PSConfigUI -ArgumentList "-cmd showcentraladmin"
             }
@@ -563,23 +562,23 @@ Else ##If (!($farmServers -like "$env:COMPUTERNAME*"))
 }
 If (!$aborted)
 {
-	If (Confirm-LocalSession) # Only do this stuff if this was a local session and it succeeded
-	{
-		$startDate = $env:StartDate
-	    Write-Host -ForegroundColor White "-----------------------------------"
-	    Write-Host -ForegroundColor White "| Automated SP$spYear install script |"
-	    Write-Host -ForegroundColor White "| Started on: $startDate |"
-	    Write-Host -ForegroundColor White "| Completed:  $env:EndDate |"
-	    Write-Host -ForegroundColor White "-----------------------------------"
-	    If ($isTracing) {Stop-Transcript; $script:isTracing = $false}
-	    Pause "exit"
-	    If ((-not $unattended) -and (-not (Gwmi Win32_OperatingSystem).Version -eq "6.1.7601")) {Invoke-Item $logFile} # We don't want to automatically open the log Win 2008 with SP2013, due to a nasty bug causing BSODs! See https://autospinstaller.codeplex.com/workitem/19491 for more info.
-	}
-	# Remove any lingering LogTime values in the registry
-	Remove-ItemProperty -Path "HKLM:\SOFTWARE\AutoSPInstaller\" -Name "LogTime" -ErrorAction SilentlyContinue
+    If (Confirm-LocalSession) # Only do this stuff if this was a local session and it succeeded
+    {
+        $startDate = $env:StartDate
+        Write-Host -ForegroundColor White "-----------------------------------"
+        Write-Host -ForegroundColor White "| Automated SP$spYear install script |"
+        Write-Host -ForegroundColor White "| Started on: $startDate |"
+        Write-Host -ForegroundColor White "| Completed:  $env:EndDate |"
+        Write-Host -ForegroundColor White "-----------------------------------"
+        If ($isTracing) {Stop-Transcript; $script:isTracing = $false}
+        Pause "exit"
+        If ((-not $unattended) -and (-not (Gwmi Win32_OperatingSystem).Version -eq "6.1.7601")) {Invoke-Item $logFile} # We don't want to automatically open the log Win 2008 with SP2013, due to a nasty bug causing BSODs! See https://autospinstaller.codeplex.com/workitem/19491 for more info.
+    }
+    # Remove any lingering LogTime values in the registry
+    Remove-ItemProperty -Path "HKLM:\SOFTWARE\AutoSPInstaller\" -Name "LogTime" -ErrorAction SilentlyContinue
 }
 
-#EndRegion
+#endregion
 
 # ===================================================================================
 # LOAD ASSEMBLIES

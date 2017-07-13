@@ -26,7 +26,7 @@ Function CheckXMLVersion ([xml]$xmlinput)
     }
 }
 
-#Region Validate Passphrase
+#region Validate Passphrase
 Function ValidatePassphrase([xml]$xmlinput)
 {
     # Check if passphrase is supplied
@@ -52,9 +52,9 @@ Function ValidatePassphrase([xml]$xmlinput)
         Throw " - Farm passphrase does not meet complexity requirements."
     }
 }
-#EndRegion
+#endregion
 
-#Region Validate Credentials
+#region Validate Credentials
 Function ValidateCredentials([xml]$xmlinput)
 {
     WriteLine
@@ -132,9 +132,9 @@ Function ValidateCredentials([xml]$xmlinput)
     If ($acctInvalid) {Throw " - At least one set of credentials is invalid.`n - Check usernames and passwords in each place they are used."}
     WriteLine
 }
-#EndRegion
+#endregion
 
-#Region Unblock Files / Trust Source Path & Remove IE Enhanced Security
+#region Unblock Files / Trust Source Path & Remove IE Enhanced Security
 Function UnblockFiles ($path)
 {
     # Ensure that if we're running from a UNC path, the host portion is added to the Local Intranet zone so we don't get the "Open File - Security Warning"
@@ -186,9 +186,9 @@ Function RemoveIEEnhancedSecurity([xml]$xmlinput)
     }
     WriteLine
 }
-#EndRegion
+#endregion
 
-#Region Disable Certificate Revocation List checks
+#region Disable Certificate Revocation List checks
 Function DisableCRLCheck([xml]$xmlinput)
 {
     WriteLine
@@ -239,9 +239,9 @@ Function DisableCRLCheck([xml]$xmlinput)
     }
     WriteLine
 }
-#EndRegion
+#endregion
 
-#Region Start logging to user's desktop
+#region Start logging to user's desktop
 Function StartTracing ($server)
 {
     If (!$isTracing)
@@ -256,9 +256,9 @@ Function StartTracing ($server)
         If ($?) {$script:isTracing = $true}
     }
 }
-#EndRegion
+#endregion
 
-#Region Check Input File
+#region Check Input File
 Function CheckInput
 {
     # Check that the config file exists.
@@ -267,12 +267,12 @@ Function CheckInput
         Write-Error -message (" - Input file '" + $inputFile + "' does not exist.")
     }
 }
-#EndRegion
+#endregion
 
-#Region Check For or Create Config Files
+#region Check For or Create Config Files
 Function CheckConfigFiles([xml]$xmlinput)
 {
-    #Region SharePoint config file
+    #region SharePoint config file
     if (Test-Path -Path (Join-Path -Path $env:dp0 -ChildPath $($xmlinput.Configuration.Install.ConfigFile)))
     {
         # Just use the existing config file we found
@@ -323,9 +323,9 @@ Function CheckConfigFiles([xml]$xmlinput)
         Write-Host -ForegroundColor White " - Writing $($xmlinput.Configuration.Install.ConfigFile) to $((Get-Item $env:TEMP).FullName)..."
         Set-Content -Path "$configFile" -Force -Value $xmlConfig
     }
-    #EndRegion
+    #endregion
 
-    #Region OWA config file
+    #region OWA config file
     if ($xmlinput.Configuration.OfficeWebApps.Install -eq $true)
     {
         if (Test-Path -Path (Join-Path -Path $env:dp0 -ChildPath $($xmlinput.Configuration.OfficeWebApps.ConfigFile)))
@@ -364,9 +364,9 @@ Function CheckConfigFiles([xml]$xmlinput)
             Set-Content -Path "$configFileOWA" -Force -Value $xmlConfigOWA
         }
     }
-    #EndRegion
+    #endregion
 
-    #Region Project Server config file
+    #region Project Server config file
     if ($xmlinput.Configuration.ProjectServer.Install -eq $true)
     {
         $pidKeyProjectServer = $xmlinput.Configuration.ProjectServer.PIDKeyProjectServer
@@ -411,9 +411,9 @@ Function CheckConfigFiles([xml]$xmlinput)
             }
         }
     }
-    #EndRegion
+    #endregion
 
-    #Region ForeFront answer file
+    #region ForeFront answer file
     if (ShouldIProvision $xmlinput.Configuration.ForeFront -eq $true)
     {
         if (Test-Path -Path (Join-Path -Path $env:dp0 -ChildPath $($xmlinput.Configuration.ForeFront.ConfigFile)))
@@ -459,11 +459,11 @@ Function CheckConfigFiles([xml]$xmlinput)
             Set-Content -Path "$configFileForeFront" -Force -Value $xmlConfigForeFront
         }
     }
-    #EndRegion
+    #endregion
 }
-#EndRegion
+#endregion
 
-#Region Check Installation Account
+#region Check Installation Account
 # ===================================================================================
 # Func: CheckInstallAccount
 # Desc: Check the install account and
@@ -477,9 +477,9 @@ Function CheckInstallAccount([xml]$xmlinput)
         Write-Host  -ForegroundColor Yellow " - WARNING: Running install using Farm Account: $farmAcct"
     }
 }
-#EndRegion
+#endregion
 
-#Region Disable Loopback Check and Services
+#region Disable Loopback Check and Services
 # ===================================================================================
 # Func: DisableLoopbackCheck
 # Desc: Disable Loopback Check
@@ -554,9 +554,9 @@ Function DisableServices([xml]$xmlinput)
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region Install Prerequisites
+#region Install Prerequisites
 # ===================================================================================
 # Func: InstallPrerequisites
 # Desc: If SharePoint is not already installed install the Prerequisites
@@ -929,9 +929,9 @@ Function InstallPrerequisites([xml]$xmlinput)
     }
     WriteLine
 }
-#EndRegion
+#endregion
 
-#Region Install SharePoint
+#region Install SharePoint
 # ===================================================================================
 # Func: InstallSharePoint
 # Desc: Installs the SharePoint binaries in unattended mode
@@ -1006,7 +1006,9 @@ Function InstallSharePoint([xml]$xmlinput)
     }
     WriteLine
 }
-#EndRegion
+#endregion
+
+#region Install AppFabric CU
 # ===================================================================================
 # Func: Install-AppFabricCU
 # Desc: Attempts to install a recently-released cumulative update for AppFabric, if found in $env:SPbits\PrerequisiteInstallerFiles
@@ -1074,8 +1076,9 @@ function Install-AppFabricCU
     }
     WriteLine
 }
+#endregion
 
-#Region Install Office Web Apps 2010
+#region Install Office Web Apps 2010
 # ===================================================================================
 # Func: InstallOfficeWebApps2010
 # Desc: Installs the OWA binaries in unattended mode
@@ -1148,9 +1151,9 @@ Function InstallOfficeWebApps2010([xml]$xmlinput)
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region Install Project Server
+#region Install Project Server
 # ===================================================================================
 # Func: InstallProjectServer
 # Desc: Installs the Project Server binaries in unattended mode
@@ -1231,9 +1234,9 @@ Function InstallProjectServer([xml]$xmlinput)
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region Configure Office Web Apps 2010
+#region Configure Office Web Apps 2010
 Function ConfigureOfficeWebApps([xml]$xmlinput)
 {
     Get-MajorVersionNumber $xmlinput
@@ -1269,9 +1272,9 @@ Function ConfigureOfficeWebApps([xml]$xmlinput)
         Writeline
     }
 }
-#EndRegion
+#endregion
 
-#Region Install Language Packs
+#region Install Language Packs
 # ===================================================================================
 # Func: Install Language Packs
 # Desc: Install language packs and report on any languages installed
@@ -1369,9 +1372,9 @@ Function InstallLanguagePacks([xml]$xmlinput)
     }
     WriteLine
 }
-#EndRegion
+#endregion
 
-#Region Install Updates
+#region Install Updates
 # ===================================================================================
 # Func: InstallUpdates
 # Desc: Install SharePoint Updates (CUs and Service Packs) to work around slipstreaming issues
@@ -1513,7 +1516,7 @@ Function InstallUpdates
         }
     }
     # Get all CUs except the March 2013 PU for SharePoint / Project Server 2013 and the June 2013 CU for SharePoint 2010
-    $cumulativeUpdates = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include office2010*.exe,ubersrv*.exe,ubersts*.exe,*pjsrv*.exe,sharepointsp2013*.exe,coreserver201*.exe,sts201*.exe,wssloc201*.exe -Recurse -ErrorAction SilentlyContinue | Where-Object {$_ -notlike "*ubersrvsp2013-kb2767999-fullfile-x64-glb.exe" -and $_ -notlike "*ubersrvprjsp2013-kb2768001-fullfile-x64-glb.exe" -and $_ -notlike "*ubersrv2010-kb2817527-fullfile-x64-glb.exe"} | Sort-Object -Descending
+    $cumulativeUpdates = Get-ChildItem -Path "$bits\$spYear\Updates" -Include office2010*.exe,ubersrv*.exe,ubersts*.exe,*pjsrv*.exe,sharepointsp2013*.exe,coreserver201*.exe,sts201*.exe,wssloc201*.exe,svrproofloc201*.exe -Recurse -ErrorAction SilentlyContinue | Where-Object {$_ -notlike "*ubersrvsp2013-kb2767999-fullfile-x64-glb.exe" -and $_ -notlike "*ubersrvprjsp2013-kb2768001-fullfile-x64-glb.exe" -and $_ -notlike "*ubersrv2010-kb2817527-fullfile-x64-glb.exe"} | Sort-Object -Descending
     # Filter out Project Server updates if we aren't installing Project Server
     if ($xmlinput.Configuration.ProjectServer.Install -ne $true)
     {
@@ -1533,9 +1536,9 @@ Function InstallUpdates
         {
             # Get the file name only, in case $cumulativeUpdate includes part of a path (e.g. is in a subfolder)
             $splitCumulativeUpdate = Split-Path -Path $cumulativeUpdate -Leaf
-            Write-Host -ForegroundColor Cyan "   - Installing $splitCumulativeUpdate..." -NoNewline
+            Write-Host -ForegroundColor Cyan "   - Installing $splitCumulativeUpdate from `"$($cumulativeUpdate.Directory.Name)`"..." -NoNewline
             $startTime = Get-Date
-            Start-Process -FilePath "$bits\$spYear\Updates\$cumulativeUpdate" -ArgumentList "/passive /norestart"
+            Start-Process -FilePath "$cumulativeUpdate" -ArgumentList "/passive /norestart"
             Show-Progress -Process $($splitCumulativeUpdate -replace ".exe", "") -Color Cyan -Interval 5
             $delta,$null = (New-TimeSpan -Start $startTime -End (Get-Date)).ToString() -split "\."
             $oPatchInstallLog = Get-ChildItem -Path (Get-Item $env:TEMP).FullName | ? {$_.Name -like "opatchinstall*.log"} | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
@@ -1608,9 +1611,9 @@ Function InstallSpecifiedUpdate ($updateFile, $updateName)
     }
     Write-Host -ForegroundColor White "  - $updateName install completed in $delta."
 }
-#EndRegion
+#endregion
 
-#Region Configure Farm Account
+#region Configure Farm Account
 # ===================================================================================
 # Func: ConfigureFarmAdmin
 # Desc: Sets up the farm account and adds to Local admins if needed
@@ -1664,9 +1667,9 @@ Function GetFarmCredentials([xml]$xmlinput)
     }
     Return $farmCredential
 }
-#EndRegion
+#endregion
 
-#Region Get Farm Passphrase
+#region Get Farm Passphrase
 Function GetFarmPassphrase([xml]$xmlinput)
 {
     $farmPassphrase = $xmlinput.Configuration.Farm.Passphrase
@@ -1677,9 +1680,9 @@ Function GetFarmPassphrase([xml]$xmlinput)
     }
     Return $farmPassphrase
 }
-#EndRegion
+#endregion
 
-#Region Get Secure Farm Passphrase
+#region Get Secure Farm Passphrase
 # ===================================================================================
 # Func: GetSecureFarmPassphrase
 # Desc: Return the Farm Phrase as a secure string
@@ -1697,9 +1700,9 @@ Function GetSecureFarmPassphrase([xml]$xmlinput)
     Else {$secPhrase = $farmPassphrase}
     Return $secPhrase
 }
-#EndRegion
+#endregion
 
-#Region Update Service Process Identity
+#region Update Service Process Identity
 
 # ====================================================================================
 # Func: UpdateProcessIdentity
@@ -1724,9 +1727,9 @@ Function UpdateProcessIdentity ($serviceToUpdate)
     }
     else {Write-Host -ForegroundColor White " - $($serviceToUpdate.TypeName) is already configured to run as $($managedAccountGen.UserName)."}
 }
-#EndRegion
+#endregion
 
-#Region Create or Join Farm
+#region Create or Join Farm
 # ===================================================================================
 # Func: CreateOrJoinFarm
 # Desc: Check if the farm is created
@@ -1817,9 +1820,9 @@ Function CreateOrJoinFarm([xml]$xmlinput, $secPhrase, $farmCredential)
     Write-Host -ForegroundColor White $farmMessage
     WriteLine
 }
-#EndRegion
+#endregion
 
-#Region PSConfig
+#region PSConfig
 Function Run-PSConfig
 {
     Start-Process -FilePath $PSConfig -ArgumentList "-cmd upgrade -inplace b2b -force -cmd applicationcontent -install -cmd installfeatures -cmd secureresources" -NoNewWindow -Wait
@@ -1839,9 +1842,9 @@ Function Check-PSConfig
         return $PSConfigLastError
     }
 }
-#EndRegion
+#endregion
 
-#Region Configure Farm
+#region Configure Farm
 # ===================================================================================
 # Func: CreateCentralAdmin
 # Desc: Setup Central Admin Web Site, Check the topology of an existing farm, and configure the farm as required.
@@ -2013,9 +2016,16 @@ Function ConfigureFarm([xml]$xmlinput)
         {
             # From http://www.wictorwilen.se/sharepoint-2013-central-administration-productivity-tip
             Write-Host -ForegroundColor White " - Updating Central Admin branding text to `"$($xmlinput.Configuration.Environment)`"..."
-            $suiteBarBrandingElement = "SharePoint - " + $xmlinput.Configuration.Environment
+            $suiteBarBrandingText = "SharePoint - " + $xmlinput.Configuration.Environment
             $ca = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.IsAdministrationWebApplication}
-            $ca.SuiteBarBrandingElementHtml = "<div class='ms-core-brandingText'>$suiteBarBrandingElement</div>"
+            if ($env:spVer -ge "16") # Updated for SharePoint 2016 - thanks Mark Kordelski (@delsk) for the tip!
+            {
+                $ca.SuiteNavBrandingText = $suiteBarBrandingText
+            }
+            else # Assume SharePoint 2013 method
+            {
+                $ca.SuiteBarBrandingElementHtml = "<div class='ms-core-brandingText'>$suiteBarBrandingText</div>"
+            }
             $ca.Update()
         }
         # Install application content if this is a new farm
@@ -2091,9 +2101,9 @@ Function ConfigureFarm([xml]$xmlinput)
     WriteLine
 }
 
-#EndRegion
+#endregion
 
-#Region Configure Language Packs
+#region Configure Language Packs
 Function ConfigureLanguagePacks([xml]$xmlinput)
 {
     Get-MajorVersionNumber $xmlinput
@@ -2131,9 +2141,9 @@ Function ConfigureLanguagePacks([xml]$xmlinput)
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region Add Managed Accounts
+#region Add Managed Accounts
 # ===================================================================================
 # FUNC: AddManagedAccounts
 # DESC: Adds existing accounts to SharePoint managed accounts and creates local profiles for each
@@ -2235,17 +2245,17 @@ Function AddManagedAccounts([xml]$xmlinput)
     Write-Host -ForegroundColor White " - Done Adding Managed Accounts."
     WriteLine
 }
-#EndRegion
+#endregion
 
-#Region Return SP Managed Account
+#region Return SP Managed Account
 Function Get-SPManagedAccountXML([xml]$xmlinput, $commonName)
 {
     $managedAccountXML = $xmlinput.Configuration.Farm.ManagedAccounts.ManagedAccount | Where-Object { $_.CommonName -eq $commonName }
     Return $managedAccountXML
 }
-#EndRegion
+#endregion
 
-#Region Get or Create Hosted Services Application Pool
+#region Get or Create Hosted Services Application Pool
 # ====================================================================================
 # Func: Get-HostedServicesAppPool
 # Desc: Creates and/or returns the Hosted Services Application Pool
@@ -2266,9 +2276,9 @@ Function Get-HostedServicesAppPool ([xml]$xmlinput)
     }
     Return $applicationPool
 }
-#EndRegion
+#endregion
 
-#Region Create Generic Service Application
+#region Create Generic Service Application
 # ===================================================================================
 # Func: CreateGenericServiceApplication
 # Desc: General function that creates a broad range of service applications
@@ -2383,9 +2393,9 @@ Function CreateGenericServiceApplication()
         Pause "exit"
     }
 }
-#EndRegion
+#endregion
 
-#Region Sandboxed Code Service
+#region Sandboxed Code Service
 # ===================================================================================
 # Func: ConfigureSandboxedCodeService
 # Desc: Configures the SharePoint Foundation Sandboxed (User) Code Service
@@ -2430,9 +2440,9 @@ Function ConfigureSandboxedCodeService
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region Create Metadata Service Application
+#region Create Metadata Service Application
 # ===================================================================================
 # Func: CreateMetadataServiceApp
 # Desc: Managed Metadata Service Application
@@ -2549,9 +2559,9 @@ Function CreateMetadataServiceApp([xml]$xmlinput)
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region Assign Certificate
+#region Assign Certificate
 # ===================================================================================
 # Func: AssignCert
 # Desc: Create and assign SSL Certificate
@@ -2628,7 +2638,7 @@ Function AssignCert($SSLHostHeader, $SSLPort, $SSLSiteName)
         Write-Host -ForegroundColor White " - Certificate `"$certSubject`" found."
         # Fix up the cert subject name to a file-friendly format
         $certSubjectName = $certSubject.Split(",")[0] -replace "CN=","" -replace "\*","wildcard"
-        $certsubjectname = $certsubjectname.TrimEnd(“/”)
+        $certsubjectname = $certsubjectname.TrimEnd("/")
         # Export our certificate to a file, then import it to the Trusted Root Certification Authorites store so we don't get nasty browser warnings
         # This will actually only work if the Subject and the host part of the URL are the same
         # Borrowed from https://www.orcsweb.com/blog/james/powershell-ing-on-windows-server-how-to-import-certificates-using-powershell/
@@ -2662,9 +2672,9 @@ Function AssignCert($SSLHostHeader, $SSLPort, $SSLSiteName)
     Else {Write-Host -ForegroundColor White " - No certificates were found, and none could be created."}
     $cert = $null
 }
-#EndRegion
+#endregion
 
-#Region Create Web Applications
+#region Create Web Applications
 # ===================================================================================
 # Func: CreateWebApplications
 # Desc: Create and  configure the required web applications
@@ -3071,9 +3081,9 @@ Function SetupManagedPaths([System.Xml.XmlElement]$webApp)
 
     Write-Host -ForegroundColor White " - Done setting up managed paths at `"$url`""
 }
-#EndRegion
+#endregion
 
-#Region Create User Profile Service Application
+#region Create User Profile Service Application
 # ===================================================================================
 # Func: CreateUserProfileServiceApplication
 # Desc: Create the User Profile Service Application
@@ -3605,9 +3615,9 @@ Function CreateUPSAsAdmin([xml]$xmlinput)
         If ($profileServiceApp) {Remove-Item -LiteralPath $scriptFile -Force}
     }
 }
-#EndRegion
+#endregion
 
-#Region Create State Service Application
+#region Create State Service Application
 Function CreateStateServiceApp([xml]$xmlinput)
 {
     If ((ShouldIProvision $xmlinput.Configuration.ServiceApps.StateService -eq $true) -or `
@@ -3653,9 +3663,9 @@ Function CreateStateServiceApp([xml]$xmlinput)
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region Create SP Usage Application
+#region Create SP Usage Application
 # ===================================================================================
 # Func: CreateSPUsageApp
 # Desc: Creates the Usage and Health Data Collection service application
@@ -3703,9 +3713,9 @@ Function CreateSPUsageApp([xml]$xmlinput)
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region Configure Logging
+#region Configure Logging
 
 # ===================================================================================
 # Func: ConfigureIISLogging
@@ -3897,9 +3907,9 @@ Function ConfigureUsageLogging([xml]$xmlinput)
     WriteLine
 }
 
-#EndRegion
+#endregion
 
-#Region Create Web Analytics Service Application
+#region Create Web Analytics Service Application
 # Thanks and credit to Jesper Nygaard Schi?tt (jesper@schioett.dk) per http://autospinstaller.codeplex.com/Thread/View.aspx?ThreadId=237578 !
 
 Function CreateWebAnalyticsApp([xml]$xmlinput)
@@ -3957,9 +3967,9 @@ Function CreateWebAnalyticsApp([xml]$xmlinput)
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region Create Secure Store Service Application
+#region Create Secure Store Service Application
 Function CreateSecureStoreServiceApp
 {
     # Secure Store Service Application will be provisioned even if it's been marked false, if any of these service apps have been requested (and for the correct version of SharePoint), as it's a dependency.
@@ -4049,9 +4059,9 @@ Function CreateSecureStoreServiceApp
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region Start Search Query and Site Settings Service
+#region Start Search Query and Site Settings Service
 Function StartSearchQueryAndSiteSettingsService
 {
     If (ShouldIProvision $xmlinput.Configuration.Farm.Services.SearchQueryAndSiteSettingsService -eq $true)
@@ -4090,9 +4100,9 @@ Function StartSearchQueryAndSiteSettingsService
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region Configure Claims to Windows Token Service
+#region Configure Claims to Windows Token Service
 Function ConfigureClaimsToWindowsTokenService
 {
     # C2WTS is required by Excel Services, Visio Services and PerformancePoint Services; if any of these are being provisioned we should start it.
@@ -4156,9 +4166,9 @@ Function ConfigureClaimsToWindowsTokenService
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region Stop Specified Service Instance
+#region Stop Specified Service Instance
 # ===================================================================================
 # Func: StopServiceInstance
 # Desc: Disables a specified service instance (e.g. on dedicated App servers or WFEs)
@@ -4187,9 +4197,9 @@ Function StopServiceInstance ($service)
     Else {Write-Host -ForegroundColor White " - Already stopped."}
     WriteLine
 }
-#EndRegion
+#endregion
 
-#Region Configure Workflow Timer Service
+#region Configure Workflow Timer Service
 # ===================================================================================
 # Func: ConfigureWorkflowTimerService
 # Desc: Configures the Microsoft SharePoint Foundation Workflow Timer Service
@@ -4202,9 +4212,9 @@ Function ConfigureWorkflowTimerService
         StopServiceInstance "Microsoft.SharePoint.Workflow.SPWorkflowTimerServiceInstance"
     }
 }
-#EndRegion
+#endregion
 
-#Region Configure Foundation Search
+#region Configure Foundation Search
 # ====================================================================================
 # Func: ConfigureFoundationSearch
 # Desc: Updates the service account for SPSearch4 (SharePoint Foundation (Help) Search)
@@ -4232,9 +4242,9 @@ Function ConfigureFoundationSearch ([xml]$xmlinput)
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region Configure SPTraceV4 (Logging)
+#region Configure SPTraceV4 (Logging)
 # ====================================================================================
 # Func: ConfigureTracing
 # Desc: Updates the service account for SPTraceV4 (SharePoint Foundation (Help) Search)
@@ -4296,9 +4306,9 @@ Function ConfigureTracing ([xml]$xmlinput)
         Write-Host -ForegroundColor Yellow "Check that $($spservice.username) is a member of the Performance Log Users and Performance Monitor Users local groups once install completes."
     }
 }
-#EndRegion
+#endregion
 
-#Region Configure Distributed Cache Service
+#region Configure Distributed Cache Service
 # ====================================================================================
 # Func: ConfigureDistributedCacheService
 # Desc: Updates the service account for AppFabricCachingService AKA Distributed Caching Service
@@ -4399,9 +4409,9 @@ Function ConfigureDistributedCacheService ([xml]$xmlinput)
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region Provision Enterprise Search
+#region Provision Enterprise Search
 # Original script for SharePoint 2010 beta2 by Gary Lapointe ()
 #
 # Modified by Søren Laurits Nielsen (soerennielsen.wordpress.com):
@@ -5389,9 +5399,9 @@ Function Get-ApplicationPool([System.Xml.XmlElement]$appPoolConfig) {
     Return $pool
 }
 
-#EndRegion
+#endregion
 
-#Region Create Business Data Catalog Service Application
+#region Create Business Data Catalog Service Application
 # ===================================================================================
 # Func: CreateBusinessDataConnectivityServiceApp
 # Desc: Business Data Catalog Service Application
@@ -5464,9 +5474,9 @@ Function CreateBusinessDataConnectivityServiceApp([xml]$xmlinput)
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region Create Word Automation Service
+#region Create Word Automation Service
 Function CreateWordAutomationServiceApp ([xml]$xmlinput)
 {
     $serviceConfig = $xmlinput.Configuration.ServiceApps.WordAutomationService
@@ -5498,11 +5508,11 @@ Function CreateWordAutomationServiceApp ([xml]$xmlinput)
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region Enterprise Service Apps
+#region Enterprise Service Apps
 
-#Region Create Excel Service
+#region Create Excel Service
 Function CreateExcelServiceApp ([xml]$xmlinput)
 {
     $officeServerPremium = $xmlinput.Configuration.Install.SKU -replace "Enterprise","1" -replace "Standard","0"
@@ -5655,9 +5665,9 @@ Function CreateExcelServiceApp ([xml]$xmlinput)
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region Create Visio Graphics Service
+#region Create Visio Graphics Service
 Function CreateVisioServiceApp ([xml]$xmlinput)
 {
     $officeServerPremium = $xmlinput.Configuration.Install.SKU -replace "Enterprise","1" -replace "Standard","0"
@@ -5760,9 +5770,9 @@ Function CreateVisioServiceApp ([xml]$xmlinput)
     }
 
 }
-#EndRegion
+#endregion
 
-#Region Create PerformancePoint Service
+#region Create PerformancePoint Service
 Function CreatePerformancePointServiceApp ([xml]$xmlinput)
 {
     $officeServerPremium = $xmlinput.Configuration.Install.SKU -replace "Enterprise","1" -replace "Standard","0"
@@ -5839,9 +5849,9 @@ Function CreatePerformancePointServiceApp ([xml]$xmlinput)
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region Create Access 2010 Service
+#region Create Access 2010 Service
 Function CreateAccess2010ServiceApp ([xml]$xmlinput)
 {
     $officeServerPremium = $xmlinput.Configuration.Install.SKU -replace "Enterprise","1" -replace "Standard","0"
@@ -5868,11 +5878,11 @@ Function CreateAccess2010ServiceApp ([xml]$xmlinput)
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#EndRegion
+#endregion
 
-#Region Create Office Web Apps
+#region Create Office Web Apps
 Function CreateExcelOWAServiceApp ([xml]$xmlinput)
 {
     Get-MajorVersionNumber $xmlinput
@@ -5941,10 +5951,10 @@ Function CreateWordViewingOWAServiceApp ([xml]$xmlinput)
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region SharePoint 2013 Service Apps
-#Region Create App Domain
+#region SharePoint 2013 Service Apps
+#region Create App Domain
 Function CreateAppManagementServiceApp ([xml]$xmlinput)
 {
     $serviceConfig = $xmlinput.Configuration.ServiceApps.AppManagementService
@@ -6004,9 +6014,9 @@ Function CreateSubscriptionSettingsServiceApp ([xml]$xmlinput)
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region Create Access Services (2013)
+#region Create Access Services (2013)
 Function CreateAccessServicesApp ([xml]$xmlinput)
 {
     $officeServerPremium = $xmlinput.Configuration.Install.SKU -replace "Enterprise","1" -replace "Standard","0"
@@ -6042,9 +6052,9 @@ Function CreateAccessServicesApp ([xml]$xmlinput)
     }
 }
 
-#EndRegion
+#endregion
 
-#Region PowerPoint Conversion Service
+#region PowerPoint Conversion Service
 Function CreatePowerPointConversionServiceApp ([xml]$xmlinput)
 {
     $serviceConfig = $xmlinput.Configuration.ServiceApps.PowerPointConversionService
@@ -6063,9 +6073,9 @@ Function CreatePowerPointConversionServiceApp ([xml]$xmlinput)
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region Create Machine Translation Service
+#region Create Machine Translation Service
 Function CreateMachineTranslationServiceApp ([xml]$xmlinput)
 {
     $serviceConfig = $xmlinput.Configuration.ServiceApps.MachineTranslationService
@@ -6092,9 +6102,9 @@ Function CreateMachineTranslationServiceApp ([xml]$xmlinput)
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region Create Work Management Service
+#region Create Work Management Service
 Function CreateWorkManagementServiceApp ([xml]$xmlinput)
 {
     $serviceConfig = $xmlinput.Configuration.ServiceApps.WorkManagementService
@@ -6113,10 +6123,10 @@ Function CreateWorkManagementServiceApp ([xml]$xmlinput)
         WriteLine
     }
 }
-#EndRegion
-#EndRegion
+#endregion
+#endregion
 
-#Region Create Project Server Service Application & Instance
+#region Create Project Server Service Application & Instance
 Function CreateProjectServerServiceApp ([xml]$xmlinput)
 {
     Get-MajorVersionNumber $xmlinput
@@ -6228,9 +6238,9 @@ Function CreateProjectServerServiceApp ([xml]$xmlinput)
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region Configure Outgoing Email
+#region Configure Outgoing Email
 # This is from http://autospinstaller.codeplex.com/discussions/228507?ProjectName=autospinstaller courtesy of rybocf
 Function ConfigureOutgoingEmail
 {
@@ -6254,9 +6264,9 @@ Function ConfigureOutgoingEmail
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region Configure Incoming Email
+#region Configure Incoming Email
 Function ConfigureIncomingEmail
 {
     # Ensure the node exists in the XML first as we don't want to inadvertently disable the service if it wasn't explicitly specified
@@ -6265,9 +6275,9 @@ Function ConfigureIncomingEmail
         StopServiceInstance "Microsoft.SharePoint.Administration.SPIncomingEmailServiceInstance"
     }
 }
-#EndRegion
+#endregion
 
-#Region Configure Foundation Web Application Service
+#region Configure Foundation Web Application Service
 Function ConfigureFoundationWebApplicationService
 {
     WriteLine
@@ -6318,9 +6328,9 @@ Function ConfigureFoundationWebApplicationService
     }
     WriteLine
 }
-#EndRegion
+#endregion
 
-#Region Configure Adobe PDF Indexing and Display
+#region Configure Adobe PDF Indexing and Display
 # ====================================================================================
 # Func: Configure-PDFSearchAndIcon
 # Desc: Downloads and installs the PDF iFilter, registers the PDF search file type and document icon for display in SharePoint
@@ -6528,9 +6538,9 @@ Function Configure-PDFSearchAndIcon
     Write-Host -ForegroundColor White " - Done configuring PDF indexing and icon display."
     WriteLine
 }
-#EndRegion
+#endregion
 
-#Region Install Forefront
+#region Install Forefront
 # ====================================================================================
 # Func: InstallForeFront
 # Desc: Installs ForeFront Protection 2010 for SharePoint Sites
@@ -6569,9 +6579,9 @@ Function InstallForeFront
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region Remote Functions
+#region Remote Functions
 Function Get-FarmServers ([xml]$xmlinput)
 {
     $servers = $null
@@ -6790,10 +6800,10 @@ Function Confirm-LocalSession
     Else {Return $true}
 }
 
-#EndRegion
+#endregion
 
-#Region Miscellaneous/Utility Functions
-#Region Load Snapins
+#region Miscellaneous/Utility Functions
+#region Load Snapins
 # ===================================================================================
 # Func: Load SharePoint PowerShell Snapin
 # Desc: Load SharePoint PowerShell Snapin
@@ -6843,9 +6853,9 @@ Function ImportWebAdministration
 
     }
 }
-#EndRegion
+#endregion
 
-#Region ConvertTo-PlainText
+#region ConvertTo-PlainText
 # ===================================================================================
 # Func: ConvertTo-PlainText
 # Desc: Convert string to secure phrase
@@ -6857,9 +6867,9 @@ Function ConvertTo-PlainText( [security.securestring]$secure )
     $marshal = [Runtime.InteropServices.Marshal]
     $marshal::PtrToStringAuto( $marshal::SecureStringToBSTR($secure) )
 }
-#EndRegion
+#endregion
 
-#Region ShouldIProvision
+#region ShouldIProvision
 # ===================================================================================
 # Func: ShouldIProvision
 # Desc: Returns TRUE if the item whose configuration node is passed in should be provisioned.
@@ -6882,9 +6892,9 @@ Function ShouldIProvision([System.Xml.XmlNode] $node)
     If ($v -eq $true) { Return $true; }
     Return MatchComputerName $v $env:COMPUTERNAME
 }
-#EndRegion
+#endregion
 
-#Region SQL Stuff
+#region SQL Stuff
 # ====================================================================================
 # Func: Add-SQLAlias
 # Desc: Creates a local SQL alias (like using cliconfg.exe) so the real SQL server/name doesn't get hard-coded in SharePoint
@@ -7141,9 +7151,9 @@ drop table #opt
     $objSQLCommand.ExecuteNonQuery()
     $objSQLConnection.Close()
 }
-#EndRegion
+#endregion
 
-#Region Run-HealthAnalyzerJobs
+#region Run-HealthAnalyzerJobs
 # ====================================================================================
 # Func: Run-HealthAnalyzerJobs
 # Desc: Runs all Health Analyzer Timer Jobs Immediately
@@ -7158,9 +7168,9 @@ Function Run-HealthAnalyzerJobs
         $job.RunNow()
     }
 }
-#EndRegion
+#endregion
 
-#Region InstallSMTP
+#region InstallSMTP
 # ====================================================================================
 # Func: InstallSMTP
 # Desc: Installs the SMTP Server Windows feature
@@ -7199,9 +7209,9 @@ Function InstallSMTP([xml]$xmlinput)
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region FixTaxonomyPickerBug
+#region FixTaxonomyPickerBug
 # ====================================================================================
 # Func: FixTaxonomyPickerBug
 # Desc: Renames the TaxonomyPicker.ascx file which doesn't seem to be used anyhow
@@ -7219,9 +7229,9 @@ Function FixTaxonomyPickerBug
         WriteLine
     }
 }
-#EndRegion
+#endregion
 
-#Region Miscellaneous Checks
+#region Miscellaneous Checks
 # ====================================================================================
 # Func: CheckForSP2016FeaturePack1
 # Desc: Returns $true if the SharePoint 2016 farm build number or SharePoint DLL indicates that Feature Pack 1 or greater is installed: otherwise returns $false
@@ -7396,9 +7406,9 @@ Function GetFromNode([System.Xml.XmlElement]$node, [string] $item)
     Return $value;
 }
 
-#EndRegion
+#endregion
 
-#Region Manage HOSTS & URLs
+#region Manage HOSTS & URLs
 # ====================================================================================
 # Func: AddToHOSTS
 # Desc: This writes URLs to the server's local hosts file and points them to the server itself
@@ -7469,9 +7479,9 @@ Function Add-LocalIntranetURL ($url)
         New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ZoneMap\Domains\$urlDomain" -Name '*' -value "1" -PropertyType dword -Force | Out-Null
     }
 }
-#EndRegion
+#endregion
 
-#Region File System Functions
+#region File System Functions
 # ====================================================================================
 # Func: CompressFolder
 # Desc: Enables NTFS compression for a given folder
@@ -7512,9 +7522,9 @@ Function EnsureFolder ($path)
             }
         }
 }
-#EndRegion
+#endregion
 
-#Region Trivial Functions
+#region Trivial Functions
 # ===================================================================================
 # Func: Pause
 # Desc: Wait for user to press a key - normally used after an error has occured or input is required
@@ -7580,9 +7590,9 @@ Function Get-DBPrefix ([xml]$xmlinput)
     If ($dbPrefix -like "*localhost*") {$dbPrefix = $dbPrefix -replace "localhost","$env:COMPUTERNAME"}
     return $dbPrefix
 }
-#EndRegion
+#endregion
 
-#Region Security-Related
+#region Security-Related
 # ====================================================================================
 # Func: Get-AdministratorsGroup
 # Desc: Returns the actual (localized) name of the built-in Administrators group
@@ -7642,9 +7652,9 @@ function userExists ([string]$name)
     return $ret
 }
 
-#EndRegion
+#endregion
 
-#Region Shortcuts
+#region Shortcuts
 # ====================================================================================
 # Func: AddResourcesLink
 # Desc: Adds an item to the Resources list shown on the Central Admin homepage
@@ -7685,9 +7695,9 @@ Function PinToTaskbar([string]$application)
         }
     }
 }
-#EndRegion
+#endregion
 
-#Region Stop Default Web Site
+#region Stop Default Web Site
 Function Stop-DefaultWebsite ()
 {
     # Added to avoid conflicts with web apps that do not use a host header
@@ -7703,9 +7713,9 @@ Function Stop-DefaultWebsite ()
     }
     else {Write-Host -ForegroundColor White "Already stopped."}
 }
-#EndRegion
+#endregion
 
-#Region Get SP Major Version Number
+#region Get SP Major Version Number
 function Get-MajorVersionNumber ([xml]$xmlinput)
 {
     # Create hash tables with major version to product year mappings & vice-versa
@@ -7713,9 +7723,9 @@ function Get-MajorVersionNumber ([xml]$xmlinput)
     $spVersions = @{"2010" = "14"; "2013" = "15"; "2016" = "16"}
     $env:spVer = $spVersions.($xmlinput.Configuration.Install.SPVersion)
 }
-#EndRegion
+#endregion
 
-#Region Set SP Management Shell Shortcut to Run As Administrator
+#region Set SP Management Shell Shortcut to Run As Administrator
 # From http://stackoverflow.com/questions/28997799/how-to-create-a-run-as-administrator-shortcut-using-powershell
 function Set-ShortcutRunAsAdmin ($shortcutFile)
 {
@@ -7725,5 +7735,5 @@ function Set-ShortcutRunAsAdmin ($shortcutFile)
     [System.IO.File]::WriteAllBytes($ShortcutFile, $bytes)
     Write-Host -ForegroundColor White "Done."
 }
-#EndRegion
-#EndRegion
+#endregion
+#endregion
