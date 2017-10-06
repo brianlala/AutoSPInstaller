@@ -40,16 +40,17 @@ else {$product = "SharePoint"}
 # Look for SP2013 or SP2016
 If (($xmlinput.Configuration.Install.SPVersion -eq "2013") -or ($xmlinput.Configuration.Install.SPVersion -eq "2016")) {
     if (Test-Path -Path "$bits\$($xmlinput.Configuration.Install.SPVersion)\$product\setup.exe") {
-        $env:SPbits = $bits+"\$($xmlinput.Configuration.Install.SPVersion)\$product"
+        $env:SPbits = $bits + "\$($xmlinput.Configuration.Install.SPVersion)\$product"
     }
     else {Write-Host -ForegroundColor Yellow " - SP$($xmlinput.Configuration.Install.SPVersion) was specified in $($inputfile.replace($bits,'')),`n - but $bits\$($xmlinput.Configuration.Install.SPVersion)\$product\setup.exe was not found. Looking for SP2010..."}
 }
 # If 2013/2016 bits aren't found, look for SP2010 bits and ensure they match the value specified in $xmlinput
 ElseIf ((Test-Path -Path "$bits\2010\$product\setup.exe") -and ($xmlinput.Configuration.Install.SPVersion -eq "2010")) {
-    $env:SPbits = $bits+"\2010\$product"
+    $env:SPbits = $bits + "\2010\$product"
 }
-Elseif (Test-Path -Path "$bits\$product\setup.exe") { # Use old path convention
-    $env:SPbits = $bits+"\$product"
+Elseif (Test-Path -Path "$bits\$product\setup.exe") {
+    # Use old path convention
+    $env:SPbits = $bits + "\$product"
 }
 if ([string]::IsNullOrEmpty($env:SPbits)) {
     # Changed this to a warning in case we just want to create/configure a farm and are sure that SharePoint is pre-installed
@@ -65,7 +66,7 @@ if ([string]::IsNullOrEmpty($env:SPbits)) {
     else {Throw " - Cannot determine version of SharePoint setup binaries, and no Version was specified in `"$(Split-Path -Path $inputFile -Leaf)`"."}
 }
 else {
-    $env:spVer,$null = (Get-Item -Path "$env:SPbits\setup.exe").VersionInfo.ProductVersion -split "\."
+    $env:spVer, $null = (Get-Item -Path "$env:SPbits\setup.exe").VersionInfo.ProductVersion -split "\."
 }
 $spYear = $spYears.$env:spVer
 $PSConfig = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$env:spVer\BIN\psconfig.exe"
@@ -73,7 +74,7 @@ $PSConfigUI = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$e
 
 $script:DBPrefix = $xmlinput.Configuration.Farm.Database.DBPrefix
 If (($dbPrefix -ne "") -and ($dbPrefix -ne $null)) {$script:DBPrefix += "_"}
-If ($dbPrefix -like "*localhost*") {$script:DBPrefix = $dbPrefix -replace "localhost","$env:COMPUTERNAME"}
+If ($dbPrefix -like "*localhost*") {$script:DBPrefix = $dbPrefix -replace "localhost", "$env:COMPUTERNAME"}
 
 if ($xmlinput.Configuration.Install.RemoteInstall.Enable -eq $true) {
     if ((Get-ItemProperty -Path "HKLM:\SOFTWARE\AutoSPInstaller\" -ErrorAction SilentlyContinue).CancelRemoteInstall -eq "1") {
@@ -103,7 +104,8 @@ Function Install-Remote {
         Write-Host -ForegroundColor Green "-----------------------------------"
         Enable-CredSSP $remoteFarmServers
         ForEach ($server in $remoteFarmServers) {
-            If ($xmlinput.Configuration.Install.RemoteInstall.ParallelInstall -eq $true) { # Launch each farm server install simultaneously
+            If ($xmlinput.Configuration.Install.RemoteInstall.ParallelInstall -eq $true) {
+                # Launch each farm server install simultaneously
                 Start-Process -FilePath "$PSHOME\powershell.exe" -ArgumentList "-ExecutionPolicy Bypass Invoke-Command -ScriptBlock {
                                                                                 . `"$env:dp0\AutoSPInstallerFunctions.ps1`"; `
                                                                                 StartTracing -Server $server; `
@@ -116,7 +118,8 @@ Function Install-Remote {
                                                                                 Stop-Transcript}" -Verb Runas
                 Start-Sleep 10
             }
-            Else { # Launch each farm server install in sequence, one-at-a-time, or run these steps on the current $targetServer
+            Else {
+                # Launch each farm server install in sequence, one-at-a-time, or run these steps on the current $targetServer
                 WriteLine
                 Write-Host -ForegroundColor Green " - Server: $server"
                 Test-ServerConnection -Server $server
@@ -229,12 +232,14 @@ Function Initialize-Services {
     CreateWordAutomationServiceApp $xmlinput
     CreateProjectServerServiceApp $xmlinput
     ConfigureWorkflowTimerService $xmlinput
-    if ($env:spVer -eq "14") { # These are for SP2010 / Office Web Apps 2010 only
+    if ($env:spVer -eq "14") {
+        # These are for SP2010 / Office Web Apps 2010 only
         CreateExcelOWAServiceApp $xmlinput
         CreatePowerPointOWAServiceApp $xmlinput
         CreateWordViewingOWAServiceApp $xmlinput
     }
-    if ($env:spVer -ge "15") { # These are for SP2013+ only
+    if ($env:spVer -ge "15") {
+        # These are for SP2013+ only
         CreateAppManagementServiceApp $xmlinput
         CreateSubscriptionSettingsServiceApp $xmlinput
         CreateWorkManagementServiceApp $xmlinput
@@ -268,7 +273,7 @@ Function Finalize-Install {
         If (!($runningAsFarmAcct) -and ($xmlinput.Configuration.Farm.Account.AddToLocalAdminsDuringSetup -eq $true) -and ($xmlinput.Configuration.Farm.Account.LeaveInLocalAdmins -eq $false)) {
             $builtinAdminGroup = Get-AdministratorsGroup
             Write-Host -ForegroundColor White " - Removing $farmAcct from local group `"$builtinAdminGroup`"..."
-            $farmAcctDomain,$farmAcctUser = $farmAcct -Split "\\"
+            $farmAcctDomain, $farmAcctUser = $farmAcct -Split "\\"
             try {
                 ([ADSI]"WinNT://$env:COMPUTERNAME/$builtinAdminGroup,group").Remove("WinNT://$farmAcctDomain/$farmAcctUser")
                 If (-not $?) {throw}
@@ -307,23 +312,25 @@ If ([string]::IsNullOrEmpty($password)) {$password = $xmlinput.Configuration.Ins
 If (($enableRemoteInstall -and !([string]::IsNullOrEmpty($remoteFarmServers))) -or ($xmlinput.Configuration.Install.AutoAdminLogon.Enable -eq $true)) {
     If (Confirm-LocalSession) {
         While ($credentialVerified -ne $true) {
-            If ($password) { # In case this is an automatic re-launch of the local script, re-use the password from the remote auth credential
+            If ($password) {
+                # In case this is an automatic re-launch of the local script, re-use the password from the remote auth credential
                 Write-Host -ForegroundColor White " - Using pre-provided credentials..."
-                $credential = New-Object System.Management.Automation.PsCredential $env:USERDOMAIN\$env:USERNAME,$(ConvertTo-SecureString -String $password -AsPlainText -Force -ErrorAction SilentlyContinue)
+                $credential = New-Object System.Management.Automation.PsCredential $env:USERDOMAIN\$env:USERNAME, $(ConvertTo-SecureString -String $password -AsPlainText -Force -ErrorAction SilentlyContinue)
             }
-            If (!$credential) { # Otherwise prompt for the remote auth or AutoAdminLogon credential
+            If (!$credential) {
+                # Otherwise prompt for the remote auth or AutoAdminLogon credential
                 Write-Host -ForegroundColor White " - Prompting for remote/autologon credentials..."
                 $credential = $host.ui.PromptForCredential("AutoSPInstaller - Remote/Automatic Install", "Enter Credentials for Remote/Automatic Authentication:", "$env:USERDOMAIN\$env:USERNAME", "NetBiosUserName")
             }
             $currentDomain = "LDAP://" + ([ADSI]"").distinguishedName
-            $null,$user = $credential.Username -split "\\"
+            $null, $user = $credential.Username -split "\\"
             If (($user -ne $null) -and ($credential.Password -ne $null)) {$password = ConvertTo-PlainText $credential.Password}
             Else {
                 If ($enableRemoteInstall -and !([string]::IsNullOrEmpty($remoteFarmServers))) {Write-Error " - Credentials are required for remote authentication."; Pause "exit"; Throw}
                 Else {Write-Host -ForegroundColor Yellow " - No password supplied; skipping AutoAdminLogon."; break}
             }
             Write-Host -ForegroundColor White " - Checking credentials: `"$($credential.Username)`"..." -NoNewline
-            $dom = New-Object System.DirectoryServices.DirectoryEntry($currentDomain,$user,$password)
+            $dom = New-Object System.DirectoryServices.DirectoryEntry($currentDomain, $user, $password)
             If ($dom.Path -ne $null) {
                 Write-Host -ForegroundColor Black -BackgroundColor Green "Verified."
                 $credentialVerified = $true
@@ -349,7 +356,7 @@ If (MatchComputerName $farmServers $env:COMPUTERNAME) {
     Try {
         If (Confirm-LocalSession) {
             $spInstalled = Get-SharePointInstall
-            Write-Host -ForegroundColor White " - SharePoint $spYear binaries are"($spInstalled -replace "True","already" -replace "False","not yet") "installed."
+            Write-Host -ForegroundColor White " - SharePoint $spYear binaries are"($spInstalled -replace "True", "already" -replace "False", "not yet") "installed."
         }
         PrepForInstall
         Start-Install
@@ -489,12 +496,14 @@ If (MatchComputerName $farmServers $env:COMPUTERNAME) {
     }
 }
 # If the local server isn't a SharePoint farm server, just attempt remote installs
-Else { ##If (!($farmServers -like "$env:COMPUTERNAME*"))
+Else {
+    ##If (!($farmServers -like "$env:COMPUTERNAME*"))
     Install-Remote
     Finalize-Install
 }
 If (!$aborted) {
-    If (Confirm-LocalSession) { # Only do this stuff if this was a local session and it succeeded
+    If (Confirm-LocalSession) {
+        # Only do this stuff if this was a local session and it succeeded
         $startDate = $env:StartDate
         Write-Host -ForegroundColor White "-----------------------------------"
         Write-Host -ForegroundColor White "| Automated SP$spYear install script |"
