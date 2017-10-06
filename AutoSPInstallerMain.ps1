@@ -38,40 +38,33 @@ else {$product = "SharePoint"}
 
 # Check if SharePoint binaries are in the \SP20xx\$product subfolder as per new folder structure
 # Look for SP2013 or SP2016
-If (($xmlinput.Configuration.Install.SPVersion -eq "2013") -or ($xmlinput.Configuration.Install.SPVersion -eq "2016"))
-{
-    if (Test-Path -Path "$bits\$($xmlinput.Configuration.Install.SPVersion)\$product\setup.exe")
-    {
+If (($xmlinput.Configuration.Install.SPVersion -eq "2013") -or ($xmlinput.Configuration.Install.SPVersion -eq "2016")) {
+    if (Test-Path -Path "$bits\$($xmlinput.Configuration.Install.SPVersion)\$product\setup.exe") {
         $env:SPbits = $bits+"\$($xmlinput.Configuration.Install.SPVersion)\$product"
     }
     else {Write-Host -ForegroundColor Yellow " - SP$($xmlinput.Configuration.Install.SPVersion) was specified in $($inputfile.replace($bits,'')),`n - but $bits\$($xmlinput.Configuration.Install.SPVersion)\$product\setup.exe was not found. Looking for SP2010..."}
 }
 # If 2013/2016 bits aren't found, look for SP2010 bits and ensure they match the value specified in $xmlinput
-ElseIf ((Test-Path -Path "$bits\2010\$product\setup.exe") -and ($xmlinput.Configuration.Install.SPVersion -eq "2010"))
-{
+ElseIf ((Test-Path -Path "$bits\2010\$product\setup.exe") -and ($xmlinput.Configuration.Install.SPVersion -eq "2010")) {
     $env:SPbits = $bits+"\2010\$product"
 }
-Elseif (Test-Path -Path "$bits\$product\setup.exe") # Use old path convention
-{
+Elseif (Test-Path -Path "$bits\$product\setup.exe") { # Use old path convention
     $env:SPbits = $bits+"\$product"
 }
-if ([string]::IsNullOrEmpty($env:SPbits))
-{
+if ([string]::IsNullOrEmpty($env:SPbits)) {
     # Changed this to a warning in case we just want to create/configure a farm and are sure that SharePoint is pre-installed
     Write-Warning "Cannot locate SharePoint binaries; please check that the files are in the \$product subfolder as per new folder structure."
     Pause "proceed if you know that SharePoint is already installed, or Ctrl-C to exit" "y"
     # If no setup binaries are present, this might be OK if SharePoint is already installed and we've specified the version in the XML
     $spInstalled = $true
     # Check to see that we've at least specified the desired version in the XML
-    if (($xmlinput.Configuration.Install.SPVersion -eq "2010") -or ($xmlinput.Configuration.Install.SPVersion -eq "2013") -or ($xmlinput.Configuration.Install.SPVersion -eq "2016"))
-    {
+    if (($xmlinput.Configuration.Install.SPVersion -eq "2010") -or ($xmlinput.Configuration.Install.SPVersion -eq "2013") -or ($xmlinput.Configuration.Install.SPVersion -eq "2016")) {
         # Grab the version from the hashtable
         $env:spVer = $spVersions.($xmlinput.Configuration.Install.SPVersion)
     }
     else {Throw " - Cannot determine version of SharePoint setup binaries, and no Version was specified in `"$(Split-Path -Path $inputFile -Leaf)`"."}
 }
-else
-{
+else {
     $env:spVer,$null = (Get-Item -Path "$env:SPbits\setup.exe").VersionInfo.ProductVersion -split "\."
 }
 $spYear = $spYears.$env:spVer
@@ -82,20 +75,16 @@ $script:DBPrefix = $xmlinput.Configuration.Farm.Database.DBPrefix
 If (($dbPrefix -ne "") -and ($dbPrefix -ne $null)) {$script:DBPrefix += "_"}
 If ($dbPrefix -like "*localhost*") {$script:DBPrefix = $dbPrefix -replace "localhost","$env:COMPUTERNAME"}
 
-if ($xmlinput.Configuration.Install.RemoteInstall.Enable -eq $true)
-{
-    if ((Get-ItemProperty -Path "HKLM:\SOFTWARE\AutoSPInstaller\" -ErrorAction SilentlyContinue).CancelRemoteInstall -eq "1")
-    {
+if ($xmlinput.Configuration.Install.RemoteInstall.Enable -eq $true) {
+    if ((Get-ItemProperty -Path "HKLM:\SOFTWARE\AutoSPInstaller\" -ErrorAction SilentlyContinue).CancelRemoteInstall -eq "1") {
         Write-Host -ForegroundColor White " - Disabling RemoteInstall, since we are resuming after a restart..."
         $enableRemoteInstall = $false
     }
-    else
-    {
+    else {
         $enableRemoteInstall = $true
     }
 }
-else
-{
+else {
     $enableRemoteInstall = $false
 }
 
@@ -104,10 +93,8 @@ Start-Process -FilePath "$env:SystemRoot\system32\powercfg.exe" -ArgumentList "/
 #endregion
 
 #region Remote Install
-Function Install-Remote
-{
-    If ($enableRemoteInstall)
-    {
+Function Install-Remote {
+    If ($enableRemoteInstall) {
         StartTracing
         If (!$env:RemoteStartDate) {$env:RemoteStartDate = Get-Date}
         Write-Host -ForegroundColor Green "-----------------------------------"
@@ -115,10 +102,8 @@ Function Install-Remote
         Write-Host -ForegroundColor Green "| Started on: $env:RemoteStartDate |"
         Write-Host -ForegroundColor Green "-----------------------------------"
         Enable-CredSSP $remoteFarmServers
-        ForEach ($server in $remoteFarmServers)
-        {
-            If ($xmlinput.Configuration.Install.RemoteInstall.ParallelInstall -eq $true) # Launch each farm server install simultaneously
-            {
+        ForEach ($server in $remoteFarmServers) {
+            If ($xmlinput.Configuration.Install.RemoteInstall.ParallelInstall -eq $true) { # Launch each farm server install simultaneously
                 Start-Process -FilePath "$PSHOME\powershell.exe" -ArgumentList "-ExecutionPolicy Bypass Invoke-Command -ScriptBlock {
                                                                                 . `"$env:dp0\AutoSPInstallerFunctions.ps1`"; `
                                                                                 StartTracing -Server $server; `
@@ -131,8 +116,7 @@ Function Install-Remote
                                                                                 Stop-Transcript}" -Verb Runas
                 Start-Sleep 10
             }
-            Else # Launch each farm server install in sequence, one-at-a-time, or run these steps on the current $targetServer
-            {
+            Else { # Launch each farm server install in sequence, one-at-a-time, or run these steps on the current $targetServer
                 WriteLine
                 Write-Host -ForegroundColor Green " - Server: $server"
                 Test-ServerConnection -Server $server
@@ -150,8 +134,7 @@ Function Install-Remote
         Write-Host -ForegroundColor Green "-----------------------------------"
         If ($isTracing) {Stop-Transcript; $script:isTracing = $false}
     }
-    Else
-    {
+    Else {
         Write-Host -ForegroundColor White " - There are other servers specified as farm members in:"
         Write-Host -ForegroundColor White " - $inputFile"
         Write-Host -ForegroundColor White " - but <RemoteInstall> is not set to `"true`" - nothing else to do."
@@ -160,8 +143,7 @@ Function Install-Remote
 #endregion
 
 #region Prepare For Install
-Function PrepForInstall
-{
+Function PrepForInstall {
     CheckXMLVersion $xmlinput
     CheckInput
     Write-Host -ForegroundColor White " - Install based on: `n  - $inputFile `n  - Environment: $($xmlinput.Configuration.getAttribute(`"Environment`")) `n  - Version: $($xmlinput.Configuration.getAttribute(`"Version`"))"
@@ -174,8 +156,7 @@ Function PrepForInstall
 #endregion
 
 #region Install SharePoint binaries
-Function Run-Install
-{
+Function Start-Install {
     DisableLoopbackCheck $xmlinput
     RemoveIEEnhancedSecurity $xmlinput
     UnblockFiles -path "$bits\$spyear"
@@ -196,8 +177,7 @@ Function Run-Install
 #endregion
 
 #region Setup Farm
-Function Setup-Farm
-{
+Function Initialize-Farm {
     [System.Management.Automation.PsCredential]$farmCredential = GetFarmCredentials $xmlinput
     [security.securestring]$secPhrase = GetSecureFarmPassphrase $xmlinput
     ConfigureFarmAdmin $xmlinput
@@ -210,12 +190,10 @@ Function Setup-Farm
     $languagePackInstalled = (Get-Item -Path "HKLM:\SOFTWARE\Microsoft\Shared Tools\Web Server Extensions\$env:spVer.0\WSS\").GetValue("LanguagePackInstalled")
     ConfigureLanguagePacks $xmlinput
     AddManagedAccounts $xmlinput
-    if (($env:SPver -eq "16") -and ($languagePackInstalled))
-    {
+    if (($env:SPver -eq "16") -and ($languagePackInstalled)) {
         Write-Host -ForegroundColor Yellow " - We need to re-launch the script to work around a known issue with SP2016 when language packs are installed."
         $scriptCommandLine = $($MyInvocation.Line)
-        If (Confirm-LocalSession)
-        {
+        If (Confirm-LocalSession) {
             $scriptCommandLine = "$env:dp0\AutoSPInstallerLaunch.bat $inputFile"
             Write-Host -ForegroundColor White " - Re-Launching:"
             Write-Host -ForegroundColor White " - $scriptCommandLine"
@@ -230,8 +208,7 @@ Function Setup-Farm
 #endregion
 
 #region Setup Services
-Function Setup-Services
-{
+Function Initialize-Services {
     ConfigureSandboxedCodeService $xmlinput
     CreateStateServiceApp $xmlinput
     CreateMetadataServiceApp $xmlinput
@@ -252,14 +229,12 @@ Function Setup-Services
     CreateWordAutomationServiceApp $xmlinput
     CreateProjectServerServiceApp $xmlinput
     ConfigureWorkflowTimerService $xmlinput
-    if ($env:spVer -eq "14") # These are for SP2010 / Office Web Apps 2010 only
-    {
+    if ($env:spVer -eq "14") { # These are for SP2010 / Office Web Apps 2010 only
         CreateExcelOWAServiceApp $xmlinput
         CreatePowerPointOWAServiceApp $xmlinput
         CreateWordViewingOWAServiceApp $xmlinput
     }
-    if ($env:spVer -ge "15") # These are for SP2013+ only
-    {
+    if ($env:spVer -ge "15") { # These are for SP2013+ only
         CreateAppManagementServiceApp $xmlinput
         CreateSubscriptionSettingsServiceApp $xmlinput
         CreateWorkManagementServiceApp $xmlinput
@@ -268,8 +243,7 @@ Function Setup-Services
         CreatePowerPointConversionServiceApp $xmlinput
         ConfigureDistributedCacheService $xmlinput
     }
-    if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14"))
-    {
+    if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($env:spVer -eq "14")) {
         Write-Host -ForegroundColor White " - Installing SMTP Windows feature in a separate PowerShell window..."
         Start-Process -FilePath "$PSHOME\powershell.exe" -Verb Runas -ArgumentList "-Command `". $env:dp0\AutoSPInstallerFunctions.ps1`"; InstallSMTP (Get-Content $inputFile); Start-Sleep 5`"" -Wait
     }
@@ -284,21 +258,18 @@ Function Setup-Services
 
 #region Finalize Install (perform any cleanup operations)
 # Run last
-Function Finalize-Install
-{
+Function Finalize-Install {
     # Perform these steps only if the local server is a SharePoint farm server
     If (MatchComputerName $farmServers $env:COMPUTERNAME) {
         # Remove Farm Account from local Administrators group to avoid big scary warnings in Central Admin
         # But only if the script actually put it there, and we want to leave it there
         # (e.g. to work around the issue with native SharePoint backups deprovisioning UPS per http://www.toddklindt.com/blog/Lists/Posts/Post.aspx?ID=275)
         $farmAcct = $xmlinput.Configuration.Farm.Account.Username
-        If (!($runningAsFarmAcct) -and ($xmlinput.Configuration.Farm.Account.AddToLocalAdminsDuringSetup -eq $true) -and ($xmlinput.Configuration.Farm.Account.LeaveInLocalAdmins -eq $false))
-        {
+        If (!($runningAsFarmAcct) -and ($xmlinput.Configuration.Farm.Account.AddToLocalAdminsDuringSetup -eq $true) -and ($xmlinput.Configuration.Farm.Account.LeaveInLocalAdmins -eq $false)) {
             $builtinAdminGroup = Get-AdministratorsGroup
             Write-Host -ForegroundColor White " - Removing $farmAcct from local group `"$builtinAdminGroup`"..."
             $farmAcctDomain,$farmAcctUser = $farmAcct -Split "\\"
-            try
-            {
+            try {
                 ([ADSI]"WinNT://$env:COMPUTERNAME/$builtinAdminGroup,group").Remove("WinNT://$farmAcctDomain/$farmAcctUser")
                 If (-not $?) {throw}
             }
@@ -307,14 +278,12 @@ Function Finalize-Install
             Write-Host -ForegroundColor White " - Restarting SharePoint Timer Service..."
             Restart-Service SPTimerV4
         }
-        Else
-        {
+        Else {
             Write-Host -ForegroundColor White " - Not changing local Admin membership of $farmAcct."
         }
 
         Write-Host -ForegroundColor White " - Adding Network Service to local WSS_WPG group (fixes event log warnings)..."
-        Try
-        {
+        Try {
             ([ADSI]"WinNT://$env:COMPUTERNAME/WSS_WPG,group").Add("WinNT://NETWORK SERVICE")
             If (-not $?) {Throw}
         }
