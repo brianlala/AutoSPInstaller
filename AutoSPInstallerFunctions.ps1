@@ -570,7 +570,7 @@ Function InstallPrerequisites([xml]$xmlinput) {
                         Import-Module ServerManager
                         if (!(Get-WindowsFeature -Name NET-Framework-Core).Installed) {
                             Start-Process -FilePath DISM.exe -ArgumentList "/Online /Enable-Feature /FeatureName:NetFx3 /All /LimitAccess /Source:`"$env:SPbits\PrerequisiteInstallerFiles\sxs`"" -NoNewWindow -Wait
-                            ##Install-WindowsFeature NET-Framework-Core –Source "$env:SPbits\PrerequisiteInstallerFiles\sxs" | Out-Null
+                            ##Install-WindowsFeature NET-Framework-Core -Source "$env:SPbits\PrerequisiteInstallerFiles\sxs" | Out-Null
                             Write-Host -ForegroundColor Green "Done."
                         }
                         else {Write-Host -ForegroundColor White "Already installed."}
@@ -4325,7 +4325,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput) {
                     # Clone the active topology
                     Write-Host -ForegroundColor White "  - Cloning the active search topology..." -NoNewline
                     $activeTopology = Get-SPEnterpriseSearchTopology -SearchApplication $searchApp -Active
-                    $clone = New-SPEnterpriseSearchTopology -SearchApplication $searchApp -Clone –SearchTopology $activeTopology
+                    $clone = New-SPEnterpriseSearchTopology -SearchApplication $searchApp -Clone -SearchTopology $activeTopology
                     Write-Host -ForegroundColor White "OK."
                 }
                 else {
@@ -4340,7 +4340,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput) {
                 If ($installAdminComponent) {
                     if (!($adminComponents | Where-Object {MatchComputerName $_.ServerName $env:COMPUTERNAME})) {
                         Write-Host -ForegroundColor White "Creating..." -NoNewline
-                        New-SPEnterpriseSearchAdminComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
+                        New-SPEnterpriseSearchAdminComponent -SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
                         If ($?) {
                             Write-Host -ForegroundColor White "OK."
                             $componentsModified = $true
@@ -4371,7 +4371,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput) {
                 if ($installContentProcessingComponent) {
                     if (!($contentProcessingComponents | Where-Object {MatchComputerName $_.ServerName $env:COMPUTERNAME})) {
                         Write-Host -ForegroundColor White "Creating..." -NoNewline
-                        New-SPEnterpriseSearchContentProcessingComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
+                        New-SPEnterpriseSearchContentProcessingComponent -SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
                         If ($?) {
                             Write-Host -ForegroundColor White "OK."
                             $componentsModified = $true
@@ -4402,7 +4402,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput) {
                 if ($installAnalyticsProcessingComponent) {
                     if (!($analyticsProcessingComponents | Where-Object {MatchComputerName $_.ServerName $env:COMPUTERNAME})) {
                         Write-Host -ForegroundColor White "Creating..." -NoNewline
-                        New-SPEnterpriseSearchAnalyticsProcessingComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
+                        New-SPEnterpriseSearchAnalyticsProcessingComponent -SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
                         If ($?) {
                             Write-Host -ForegroundColor White "OK."
                             $componentsModified = $true
@@ -4433,7 +4433,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput) {
                 if ($installCrawlComponent) {
                     if (!($crawlComponents | Where-Object {MatchComputerName $_.ServerName $env:COMPUTERNAME})) {
                         Write-Host -ForegroundColor White "Creating..." -NoNewline
-                        New-SPEnterpriseSearchCrawlComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
+                        New-SPEnterpriseSearchCrawlComponent -SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
                         If ($?) {
                             Write-Host -ForegroundColor White "OK."
                             $componentsModified = $true
@@ -4470,7 +4470,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput) {
                         }
                         else {$rootDirectorySwitch = @{}
                         }
-                        New-SPEnterpriseSearchIndexComponent –SearchTopology $clone -SearchServiceInstance $searchSvc @rootDirectorySwitch | Out-Null
+                        New-SPEnterpriseSearchIndexComponent -SearchTopology $clone -SearchServiceInstance $searchSvc @rootDirectorySwitch | Out-Null
                         If ($?) {
                             Write-Host -ForegroundColor White "OK."
                             $componentsModified = $true
@@ -4501,7 +4501,7 @@ function CreateEnterpriseSearchServiceApp([xml]$xmlinput) {
                 if ($installQueryComponent) {
                     if (!($queryComponents | Where-Object {MatchComputerName $_.ServerName $env:COMPUTERNAME})) {
                         Write-Host -ForegroundColor White "Creating..." -NoNewline
-                        New-SPEnterpriseSearchQueryProcessingComponent –SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
+                        New-SPEnterpriseSearchQueryProcessingComponent -SearchTopology $clone -SearchServiceInstance $searchSvc | Out-Null
                         If ($?) {
                             Write-Host -ForegroundColor White "OK."
                             $componentsModified = $true
