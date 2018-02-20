@@ -1,7 +1,7 @@
 \SP\AutoSPInstaller\AutoSPInstallerLaunch.bat
 \SP\AutoSPInstaller\AutoSPInstallerInput.xml
 \SP\AutoSPInstaller\AutoSPInstallerMain.ps1
-\SP\AutoSPInstaller\AutoSPInstallerFunctions.ps1
+\SP\AutoSPInstaller\AutoSPInstallerModule.psm1
 \SP\AutoSPInstaller\AutoSPInstallerFunctionsCustom.ps1
 \SP\AutoSPInstaller\AutoSPInstallerConfigureRemoteTarget.ps1
 \SP\AutoSPInstaller\README.rtf
