@@ -7698,12 +7698,29 @@ Function PinToTaskbar([string]$application)
 #endregion
 
 #region Stop Default Web Site
+function Get-DefaultWebsite
+{
+    [CmdletBinding()]
+    Param()
+
+    $websites = Get-Website
+    foreach($ws in $websites) {
+        if ($ws.id -eq 1 -or $ws.physicalPath -eq "%SystemDrive%\inetpub\wwwroot") { # Try different ways of identifying the Default Web Site, in case it has a different name (e.g. localized installs)
+            $conflictingBinding = $ws.bindings.Collection | ? {$_.protocol -eq 'http' -and $_.bindingInformation -match '\*:80:*'}
+            if ($conflictingBinding) { return $ws }
+            Write-Verbose("Found IIS WebSite with either id=1 or physicalPath='%SystemDrive%\inetpub\wwwroot', but it doesn't seem to be default (no '*:80:' http binding)")
+        }
+    }
+    return $null
+}
+
 Function Stop-DefaultWebsite ()
 {
     # Added to avoid conflicts with web apps that do not use a host header
     # Thanks to Paul Stork per http://autospinstaller.codeplex.com/workitem/19318 for confirming the Stop-Website cmdlet
     ImportWebAdministration
-    $defaultWebsite = Get-Website | Where-Object {$_.Name -eq "Default Web Site" -or $_.ID -eq 1 -or $_.physicalPath -eq "%SystemDrive%\inetpub\wwwroot"} # Try different ways of identifying the Default Web Site, in case it has a different name (e.g. localized installs)
+    $defaultWebsite = Get-DefaultWebsite
+    if (! $defaultWebsite) { return }
     Write-Host -ForegroundColor White " - Checking $($defaultWebsite.Name)..." -NoNewline
     if ($defaultWebsite.State -ne "Stopped")
     {
