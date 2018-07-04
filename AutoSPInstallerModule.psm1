@@ -250,8 +250,8 @@ Function StartTracing ($server)
         $regKey = Get-Item -Path "HKLM:\SOFTWARE\AutoSPInstaller\" -ErrorAction SilentlyContinue
         If ($regKey) {$script:Logtime = $regkey.GetValue("LogTime")}
         If ([string]::IsNullOrEmpty($logtime)) {$script:Logtime = Get-Date -Format yyyy-MM-dd_h-mm}
-        If ($server) {$script:LogFile = "$env:USERPROFILE\Desktop\AutoSPInstaller-$server-$script:Logtime.rtf"}
-        else {$script:LogFile = "$env:USERPROFILE\Desktop\AutoSPInstaller-$script:Logtime.rtf"}
+        If ($server) {$script:LogFile = "$env:USERPROFILE\Desktop\AutoSPInstaller-$server-$script:Logtime.log"}
+        else {$script:LogFile = "$env:USERPROFILE\Desktop\AutoSPInstaller-$script:Logtime.log"}
         Start-Transcript -Path $logFile -Append -Force
         If ($?) {$script:isTracing = $true}
     }
@@ -565,7 +565,6 @@ Function DisableServices ([xml]$xmlInput)
 Function InstallPrerequisites ([xml]$xmlInput)
 {
     $spYear = $xmlInput.Configuration.Install.SPVersion
-    $spVer = Get-MajorVersionNumber $spYear
     WriteLine
     # Remove any lingering post-reboot registry values first
     Remove-ItemProperty -Path "HKLM:\SOFTWARE\AutoSPInstaller\" -Name "RestartRequired" -ErrorAction SilentlyContinue
@@ -939,7 +938,6 @@ Function InstallSharePoint ([xml]$xmlInput)
 {
     WriteLine
     $spYear = $xmlInput.Configuration.Install.SPVersion
-    $spVer = Get-MajorVersionNumber $spYear
     $spInstalled = Get-SharePointInstall
     If ($spInstalled)
     {
@@ -1232,7 +1230,6 @@ Function InstallProjectServer ([xml]$xmlInput)
 Function ConfigureOfficeWebApps ([xml]$xmlInput)
 {
     $spYear = $xmlInput.Configuration.Install.SPVersion
-    $spVer = Get-MajorVersionNumber $spYear
     If ($xmlInput.Configuration.OfficeWebApps.Install -eq $true -and $spYear -eq 2010) # Check for SP2010
     {
         Writeline
@@ -1522,7 +1519,7 @@ Function InstallUpdates ([xml]$xmlInput)
             Write-Host -ForegroundColor Yellow "  - Note: the March 2013 PU package wasn't found in ..\$spYear\Updates; it may need to be installed first if it wasn't slipstreamed."
         }
         # Now attempt to install any other CUs found in the \Updates folder
-        Write-Host -ForegroundColor White "  - Installing SharePoint Cumulative Updates:"
+        Write-Host -ForegroundColor White "  - Installing SharePoint $(if ($spYear -ge 2016) {"Public"} else {"Cumulative"}) Updates:"
         ForEach ($cumulativeUpdate in $cumulativeUpdates)
         {
             # Get the file name only, in case $cumulativeUpdate includes part of a path (e.g. is in a subfolder)
@@ -1552,7 +1549,7 @@ Function InstallUpdates ([xml]$xmlInput)
             }
             Write-Host -ForegroundColor White "   - $splitCumulativeUpdate install completed in $delta."
         }
-        Write-Host -ForegroundColor White "  - Cumulative Update installation complete."
+        Write-Host -ForegroundColor White "  - $(if ($spYear -ge 2016) {"Public"} else {"Cumulative"}) Update installation complete."
     }
     # Finally, install SP2 last in case we applied the June 2013 CU which would not have properly detected SP2...
     if ($sp2010SP2 -and $sp2010June2013CU -and $spYear -eq "2010")
@@ -2452,7 +2449,6 @@ Function CreateMetadataServiceApp ([xml]$xmlInput)
         Try
         {
             $spYear = $xmlInput.Configuration.Install.SPVersion
-            $spVer = Get-MajorVersionNumber $spYear
             $dbPrefix = Get-DBPrefix $xmlInput
             $metaDataDB = $dbPrefix+$xmlInput.Configuration.ServiceApps.ManagedMetadataServiceApp.Database.Name
             $dbServer = $xmlInput.Configuration.ServiceApps.ManagedMetadataServiceApp.Database.DBServer
@@ -2461,7 +2457,6 @@ Function CreateMetadataServiceApp ([xml]$xmlInput)
             {
                 $dbServer = $xmlInput.Configuration.Farm.Database.DBServer
             }
-            $farmAcct = $xmlInput.Configuration.Farm.Account.Username
             $metadataServiceName = $xmlInput.Configuration.ServiceApps.ManagedMetadataServiceApp.Name
             $metadataServiceProxyName = $xmlInput.Configuration.ServiceApps.ManagedMetadataServiceApp.ProxyName
             If($metadataServiceName -eq $null) {$metadataServiceName = "Metadata Service Application"}
@@ -2728,10 +2723,11 @@ Function CreateWebApp ([System.Xml.XmlElement]$webApp)
     }
     $url = ($webApp.url).TrimEnd("/")
     $port = $webApp.port
+    $fullUrl = $url+":"+$port
     $useSSL = $false
     $installedOfficeServerLanguages = (Get-Item "HKLM:\Software\Microsoft\Office Server\$spVer.0\InstalledLanguages").GetValueNames() | Where-Object {$_ -ne ""}
     # Strip out any protocol value
-    If ($url -like "https://*") {$useSSL = $true}
+    If ($fullUrl -like "https://*") {$useSSL = $true}
     $hostHeader = $url -replace "http://","" -replace "https://",""
     if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($spYear -eq 2010))
     {
@@ -2791,14 +2787,14 @@ Function CreateWebApp ([System.Xml.XmlElement]$webApp)
     {
         $appPoolAccountSwitch = @{ApplicationPoolAccount = $($webAppPoolAccount.username)}
     }
-    $getSPWebApplication = Get-SPWebApplication | Where-Object {$_.DisplayName -eq $webAppName}
-    If ($getSPWebApplication -eq $null)
+    $getSPWebApplication = Get-SPWebApplication -Identity $fullUrl -ErrorAction SilentlyContinue
+    If ($null -eq $getSPWebApplication)
     {
         Write-Host -ForegroundColor White " - Creating Web App `"$webAppName`""
         New-SPWebApplication -Name $webAppName -ApplicationPool $appPool -DatabaseServer $dbServer -DatabaseName $database -Url $url -Port $port -SecureSocketsLayer:$useSSL @hostHeaderSwitch @appPoolAccountSwitch @authProviderSwitch @pathSwitch | Out-Null
         If (-not $?) { Throw " - Failed to create web application" }
     }
-    Else {Write-Host -ForegroundColor White " - Web app `"$webAppName`" already provisioned."}
+    Else {Write-Host -ForegroundColor White " - Web app '$fullUrl' already provisioned."}
     SetupManagedPaths $webApp
     If ($useSSL)
     {
@@ -2826,14 +2822,14 @@ Function CreateWebApp ([System.Xml.XmlElement]$webApp)
     {
         $spservice = Get-SPManagedAccountXML $xmlInput -CommonName "spservice"
         Write-Host -ForegroundColor White " - Granting $($spservice.username) rights to `"$webAppName`"..." -NoNewline
-        $wa = Get-SPWebApplication | Where-Object {$_.DisplayName -eq $webAppName}
+        $wa = Get-SPWebApplication -Identity $fullUrl
         $wa.GrantAccessToProcessIdentity("$($spservice.username)")
         Write-Host -ForegroundColor White "OK."
     }
     if ($webApp.GrantCurrentUserFullControl -eq $true)
     {
         $currentUser = "$env:USERDOMAIN\$env:USERNAME"
-        $wa = Get-SPWebApplication | Where-Object {$_.DisplayName -eq $webAppName}
+        $wa = Get-SPWebApplication -Identity $fullUrl
         if ($wa.UseClaimsAuthentication -eq $true) {$currentUser = 'i:0#.w|' + $currentUser}
         Set-WebAppUserPolicy $wa $currentUser "$env:USERNAME" "Full Control"
     }
@@ -2902,8 +2898,8 @@ Function CreateWebApp ([System.Xml.XmlElement]$webApp)
                     $siteDatabaseExists = Get-SPContentDatabase -Identity $siteDatabase -ErrorAction SilentlyContinue
                     if (!$siteDatabaseExists)
                     {
-                        Write-Host -ForegroundColor White " - Creating new content database `"$siteDatabase`"..."
-                        New-SPContentDatabase -Name $siteDatabase -WebApplication (Get-SPWebApplication $webAppName) | Out-Null
+                        Write-Host -ForegroundColor White " - Creating/attaching/upgrading content database `"$siteDatabase`"..."
+                        New-SPContentDatabase -Name $siteDatabase -WebApplication (Get-SPWebApplication -Identity $fullUrl) | Out-Null
                     }
                     Write-Host -ForegroundColor White " - Creating Site Collection `"$siteURL`"..."
                     $site = New-SPSite -Url $siteURL -OwnerAlias $ownerAlias -SecondaryOwner $env:USERDOMAIN\$env:USERNAME -ContentDatabase $siteDatabase -Description $siteCollectionName -Name $siteCollectionName -Language $LCID @templateSwitch @hostHeaderWebAppSwitch @CompatibilityLevelSwitch -ErrorAction Stop
@@ -2990,7 +2986,7 @@ Function ConfigureObjectCache([System.Xml.XmlElement]$webApp)
     Try
     {
         $url = ($webApp.Url).TrimEnd("/") + ":" + $webApp.Port
-        $wa = Get-SPWebApplication | Where-Object {$_.DisplayName -eq $webApp.Name}
+        $wa = Get-SPWebApplication -Identity $url
         $superUserAcc = $xmlInput.Configuration.Farm.ObjectCacheAccounts.SuperUser
         $superReaderAcc = $xmlInput.Configuration.Farm.ObjectCacheAccounts.SuperReader
         # If the web app is using Claims auth, change the user accounts to the proper syntax
@@ -3027,7 +3023,7 @@ Function ConfigureOnlineWebPartCatalog ([System.Xml.XmlElement]$webApp)
         If ($url -like "*localhost*") {$url = $url -replace "localhost","$env:COMPUTERNAME"}
         Write-Host -ForegroundColor White " - Setting online webpart catalog access for `"$url`""
 
-        $wa = Get-SPWebApplication | Where-Object {$_.DisplayName -eq $webApp.Name}
+        $wa = Get-SPWebApplication -Identity $url
         If ($webapp.UseOnlineWebPartCatalog -eq "True")
         {
             $wa.AllowAccessToWebpartCatalog=$true
@@ -3164,7 +3160,6 @@ Function CreateUserProfileServiceApplication ([xml]$xmlInput)
         {
             WriteLine
             Write-Host -ForegroundColor White " - Provisioning $($userProfile.Name)"
-            $applicationPool = Get-HostedServicesAppPool $xmlInput
             # get the service instance
             $profileServiceInstances = Get-SPServiceInstance | Where-Object {$_.GetType().ToString() -eq "Microsoft.Office.Server.Administration.UserProfileServiceInstance"}
             $profileServiceInstance = $profileServiceInstances | Where-Object {MatchComputerName $_.Server.Address $env:COMPUTERNAME}
@@ -3190,8 +3185,8 @@ Function CreateUserProfileServiceApplication ([xml]$xmlInput)
             If ((Get-SPServiceApplication | Where-Object {$_.GetType().ToString() -eq "Microsoft.Office.Server.Administration.UserProfileApplication"}) -eq $null)
             {
                 # Create MySites Web Application if it doesn't already exist, and we've specified to create one
-                $getSPWebApplication = Get-SPWebApplication | Where-Object {$_.DisplayName -eq $mySiteName}
-                If ($getSPWebApplication -eq $null -and ($mySiteWebApp))
+                $getSPWebApplication = Get-SPWebApplication -Identity $mySiteURL -ErrorAction SilentlyContinue
+                If ($null -eq $getSPWebApplication -and ($mySiteWebApp))
                 {
                     Write-Host -ForegroundColor White " - Creating Web App `"$mySiteName`"..."
                     New-SPWebApplication -Name $mySiteName -ApplicationPoolAccount $($mySiteAppPoolAcct.username) -ApplicationPool $mySiteAppPool -DatabaseServer $mySiteDBServer -DatabaseName $mySiteDB -Url $mySiteURL -Port $mySitePort -SecureSocketsLayer:$mySiteUseSSL @hostHeaderSwitch @pathSwitch | Out-Null
@@ -3917,7 +3912,6 @@ Function ConfigureUsageLogging ([xml]$xmlInput)
 Function CreateWebAnalyticsApp ([xml]$xmlInput)
 {
     $spYear = $xmlInput.Configuration.Install.SPVersion
-    $spVer = Get-MajorVersionNumber $spYear
     If ((ShouldIProvision $xmlInput.Configuration.ServiceApps.WebAnalyticsService -eq $true) -and ($spYear -eq 2010))
     {
         WriteLine
@@ -3976,7 +3970,6 @@ Function CreateWebAnalyticsApp ([xml]$xmlInput)
 Function CreateSecureStoreServiceApp ($xmlInput)
 {
     $spYear = $xmlInput.Configuration.Install.SPVersion
-    $spVer = Get-MajorVersionNumber $spYear
     # Secure Store Service Application will be provisioned even if it's been marked false, if any of these service apps have been requested (and for the correct version of SharePoint), as it's a dependency.
     If ((ShouldIProvision $xmlInput.Configuration.ServiceApps.SecureStoreService -eq $true) -or `
         ((ShouldIProvision $xmlInput.Configuration.EnterpriseServiceApps.ExcelServices -eq $true) -and ($spYear -le 2013)) -or `
@@ -4229,7 +4222,6 @@ Function ConfigureFoundationSearch ([xml]$xmlInput)
 # Does not actually provision Foundation Search as of yet, just updates the service account it would run under to mitigate Health Analyzer warnings
 {
     $spYear = $xmlInput.Configuration.Install.SPVersion
-    $spVer = Get-MajorVersionNumber $spYear
     # Make sure a credential deployment job doesn't already exist, and that we are running SP2010
     if ((!(Get-SPTimerJob -Identity "windows-service-credentials-SPSearch4")) -and ($spYear -eq 2010))
     {
@@ -4668,7 +4660,10 @@ function CreateEnterpriseSearchServiceApp ([xml]$xmlInput)
                 $crawlServersToProvision | ForEach-Object {
                     $crawlServer = $_
                     $top = $crawlTopology.CrawlComponents | Where-Object {$_.ServerName -eq $crawlServer}
-                    If ($top -eq $null) {$allCrawlServersDone = $false}
+                    If ($top -eq $null)
+                    {
+                        $allCrawlServersDone = $false
+                    }
                 }
 
                 If ($allCrawlServersDone -and $crawlTopology.State -ne "Active") {

@@ -27,7 +27,6 @@ $env:bits = Get-Item $env:dp0 | Split-Path -Parent
 #region Source External Functions
 Write-Host -ForegroundColor White " - Importing AutoSPInstaller PowerShell Module..."
 Import-Module -Name "$env:dp0\AutoSPInstallerModule.psm1" -Force
-. "$env:dp0\AutoSPInstallerFunctionsCustom.ps1"
 #endregion
 
 # Create hash table with product year to major version mappings
