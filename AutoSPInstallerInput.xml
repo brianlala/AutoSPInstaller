@@ -8,7 +8,7 @@
         < &lt;
         > &gt;
         & &amp;
-    
+
         For example <Password>Fd"je&f</Password> should be written <Password>Fd&quot;je&amp;f</Password>
     2. Configuration IS case sensitive.
     3. Use a validator like http://www.w3schools.com/xml/xml_validator.asp to check the syntax of your file.
@@ -25,7 +25,7 @@
     <!-- The Install section controls what modifications are made to the Windows OS prior to installation and how the SharePoint installation is run.
          You can also explicitly state the SPVersion of SharePoint being installed, (in case you have binaries for SP2010/SP2013/SP2016 in your folder structure).
          Allowed values are "2010", "2013" or "2016". If you omit this, the script will attempt to determine the version anyhow, and default to 2013 if multiple sets of install files are present. -->
-    <Install SPVersion="2013">
+    <Install SPVersion="2016">
         <!-- The following few elements are parameters for the file containing the unattended install settings for SharePoint's setup.exe. Normally this is called config.xml.
              AutoSPInstaller can now create this file if it doesn't already exist (based on the ConfigFile name), and use the values below for PIDKey and SKU. -->
         <ConfigFile>config-AutoSPInstaller.xml</ConfigFile>
@@ -89,11 +89,11 @@
         <!-- Which server(s) to provision CentralAdmin on. Specify "true" or a list of servers -->
         <CentralAdmin Provision="localhost">
             <Database>Content_CentralAdmin</Database>
-            <Port>2013</Port>
-            <UseSSL>false</UseSSL>
+            <Port>2016</Port>
+            <UseSSL>true</UseSSL>
         </CentralAdmin>
         <Database>
-            <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
+            <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                  If you leave <DBServer> blank or specify localhost, script will assume the local server for SQL databases -->
             <DBServer></DBServer>
             <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
@@ -102,7 +102,7 @@
                 <DBPort></DBPort>
             </DBAlias>
             <!-- The DBPrefix is prepended to all database names. e.g. If you set this to TEST, your config DB will be TEST_ConfigDB.
-                 If you set the prefix to localhost, script will prepend each database with the name of the server on which the script is run. 
+                 If you set the prefix to localhost, script will prepend each database with the name of the server on which the script is run.
                  Leave this blank for no prefix.
                  NOTE: If you are installing a multi-server farm, it is recommended that you do not use localhost as services provisioned on different servers
                        will have different prefixes.
@@ -111,7 +111,7 @@
             <!-- The name of the farm configuration database -->
             <ConfigDB>Config</ConfigDB>
         </Database>
-        <!-- The Services section configures the core service instances & components that are part of SharePoint. *You should carefully plan and review them - incorrect configuration can have nasty effects.* 
+        <!-- The Services section configures the core service instances & components that are part of SharePoint. *You should carefully plan and review them - incorrect configuration can have nasty effects.*
              Note that while some services are stopped by default, many are already started so be careful to specify ONLY the servers on which you want a particular service to be running (or "true" for all, "false" for none) -->
         <Services>
             <SandboxedCodeService Start="false" />
@@ -209,7 +209,7 @@
     <WebApplications AddURLsToHOSTS="true">
         <!-- Web application attributes are as follows:
         type:
-            "Portal" is the primary site. Exactly one WebApplication should have this type. It is setup as a trusted file location 
+            "Portal" is the primary site. Exactly one WebApplication should have this type. It is setup as a trusted file location
             for Excel services, and as the portal site connection for other site collections. The script also uses it internally
             when it requires the URL of an arbitrary site.
             "MySiteHost" is the host web application for mysites.
@@ -241,7 +241,7 @@
             <Database>
                 <!-- Name: Name of the first content database for this web application. -->
                 <Name>Content_Portal</Name>
-                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
+                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
@@ -297,7 +297,7 @@
             <Database>
                 <!-- Name: Name of the first content database for this web application. -->
                 <Name>Content_MySites</Name>
-                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
+                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
@@ -337,8 +337,8 @@
             <!-- You can specify a different DB server/instance or alias per web application and service application. The behavior is slightly different than with the farm DB server though, see below. -->
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
-                <Name>MetaData</Name>
-                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
+                <Name>Metadata</Name>
+                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
@@ -354,7 +354,7 @@
              EnableNetBIOSDomainName should be set to true if the host portion of your DNS Domain name is different than your NetBIOS domain name.
              To provision the User Profile Synchronization service, the value of StartProfileSync should be set to "true".
              NOTE: If this is set to "true" in a multi-server farm, the first server that gets the User Profile Service installed on it will also have Profile Sync provisioned on it.
-             If you are running SP2010 SP1, you can set CreateDefaultSyncConnection to true and specify the SyncConnectionAccount credentials; 
+             If you are running SP2010 SP1, you can set CreateDefaultSyncConnection to true and specify the SyncConnectionAccount credentials;
              the script will attempt to create a default Sync connection using the new (although unsupported) Add-SPProfileSyncConnection cmdlet.
              NOTE: Add-SPProfileSyncConnection may be useful for experimental/non-production builds but as per http://www.harbar.net/archive/2011/07/12/332.aspx it's UNSUPPORTED in on-premises deployments -->
         <UserProfileServiceApp Provision="localhost">
@@ -373,7 +373,7 @@
                 <ProfileDB>Profile</ProfileDB>
                 <SyncDB>Profile_Sync</SyncDB>
                 <SocialDB>Profile_Social</SocialDB>
-                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
+                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
@@ -405,7 +405,7 @@
                     <Database>
                         <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                         <Name>Search</Name>
-                        <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
+                        <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                              If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                         <DBServer></DBServer>
                         <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
@@ -433,8 +433,8 @@
                         <Partitioned>false</Partitioned>
                         <ProxyGroup>Default</ProxyGroup>
                     </Proxy>
-                    <!-- SearchCenterUrl is for SharePoint 2013+ only and is used to set the global search center URL per http://autospinstaller.codeplex.com/workitem/18944. 
-                         The url you enter MUST end with /Pages or a localized variant of it (i.e. /Seiten in German, /Paginas in Dutch) in order for it to work correctly from MySites. 
+                    <!-- SearchCenterUrl is for SharePoint 2013+ only and is used to set the global search center URL per http://autospinstaller.codeplex.com/workitem/18944.
+                         The url you enter MUST end with /Pages or a localized variant of it (i.e. /Seiten in German, /Paginas in Dutch) in order for it to work correctly from MySites.
                          Do not add a trailing slash. i.e.: https://search.zomers.eu/Pages when your Search Center site collection is deployed as a host named site collection to https://search.zomers.eu -->
                     <SearchCenterUrl></SearchCenterUrl>
                 </EnterpriseSearchServiceApplication>
@@ -447,7 +447,7 @@
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <Name>StateService</Name>
-                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
+                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
@@ -465,7 +465,7 @@
                 <!-- <*DB> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <ReportingDB>WebAnalyticsReporting</ReportingDB>
                 <StagingDB>WebAnalyticsStaging</StagingDB>
-                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
+                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
@@ -481,7 +481,7 @@
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <Name>UsageAndHealth</Name>
-                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
+                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
@@ -498,7 +498,7 @@
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <Name>SecureStore</Name>
-                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
+                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
@@ -515,7 +515,7 @@
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <Name>BusinessDataCatalog</Name>
-                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
+                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
@@ -532,7 +532,7 @@
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <Name>WordAutomation</Name>
-                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
+                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
@@ -551,7 +551,7 @@
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <Name>AppManagement</Name>
-                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
+                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
@@ -569,7 +569,7 @@
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <Name>SubscriptionSettings</Name>
-                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
+                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
@@ -592,7 +592,7 @@
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <Name>TranslationService</Name>
-                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
+                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
@@ -637,7 +637,7 @@
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <Name>AccessServices</Name>
-                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
+                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
@@ -657,7 +657,7 @@
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <Name>PerformancePoint</Name>
-                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
+                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
@@ -704,7 +704,7 @@
             <Database>
                 <!-- <Name> designates the suffix portion of the database name. For example if your DBPrefix (above) was "SharePoint", and the name below was "ServiceApp", your full DB name would be "SharePoint_ServiceApp" -->
                 <Name>ProjectServer</Name>
-                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance. 
+                <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->

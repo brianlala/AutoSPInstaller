@@ -736,6 +736,24 @@ Function InstallPrerequisites ([xml]$xmlInput)
                                                                                          /MSVCRT14:`"$env:SPbits\PrerequisiteInstallerFiles\vc_redist.x64.exe`""
                     If (-not $?) {Throw}
                 }
+                elseif ($spYear -eq "2019") #SP2019
+                {
+                    Write-Host -ForegroundColor Cyan "  - Running Prerequisite Installer (offline mode)..." -NoNewline
+                    $startTime = Get-Date
+                    Start-Process "$env:SPbits\PrerequisiteInstaller.exe" -ArgumentList "/unattended `
+                                                                                         /SQLNCli:`"$env:SPbits\PrerequisiteInstallerFiles\sqlncli.msi`" `
+                                                                                         /Sync:`"$env:SPbits\PrerequisiteInstallerFiles\Synchronization.msi`" `
+                                                                                         /AppFabric:`"$env:SPbits\PrerequisiteInstallerFiles\WindowsServerAppFabricSetup_x64.exe`" `
+                                                                                         /IDFX11:`"$env:SPbits\PrerequisiteInstallerFiles\MicrosoftIdentityExtensions-64.msi`" `
+                                                                                         /MSIPCClient:`"$env:SPbits\PrerequisiteInstallerFiles\setup_msipc_x64.exe`" `
+                                                                                         /KB3092423:`"$env:SPbits\PrerequisiteInstallerFiles\AppFabric-KB3092423-x64-ENU.exe`" `
+                                                                                         /WCFDataServices56:`"$env:SPbits\PrerequisiteInstallerFiles\WcfDataServices.exe`" `
+                                                                                         /DotNet472:`"$env:SPbits\PrerequisiteInstallerFiles\NDP472-KB4054530-x86-x64-AllOS-ENU.exe`" `
+                                                                                         /MSVCRT11:`"$env:SPbits\PrerequisiteInstallerFiles\vcredist_x64.exe`" `
+                                                                                         /MSVCRT141:`"$env:SPbits\PrerequisiteInstallerFiles\vc_redist.x64.exe`" `
+                                                                                        "
+                    If (-not $?) {Throw}
+                }
             }
             else # Regular prerequisite install - download required files
             {
@@ -5405,7 +5423,7 @@ Function Get-ApplicationPool ([System.Xml.XmlElement]$appPoolConfig) {
 # Desc: Business Data Catalog Service Application
 # From: http://autospinstaller.codeplex.com/discussions/246532 (user bunbunaz)
 # ===================================================================================
-Function CreateBusinessDataConnectivityServiceApp([ xml]$xmlInput)
+Function CreateBusinessDataConnectivityServiceApp ([xml]$xmlInput)
 {
     If ((ShouldIProvision $xmlInput.Configuration.ServiceApps.BusinessDataConnectivity -eq $true) -and (Get-Command -Name New-SPBusinessDataCatalogServiceApplication -ErrorAction SilentlyContinue))
     {
@@ -6169,7 +6187,7 @@ Function CreateProjectServerServiceApp ([xml]$xmlInput)
         $portalWebApp = $xmlInput.Configuration.WebApplications.WebApplication | Where-Object {$_.Type -eq "Portal"} | Select-Object -First 1
         if (!(Get-SPDatabase | Where-Object {$_.Name -eq $serviceDB}))
         {
-            if (Get-Command -Name New-SPProjectDatabase -ErrorAction SilentlyContinue) # Check for this since it no longer exists in SP2016
+            if (Get-Command -Name New-SPProjectDatabase -ErrorAction SilentlyContinue) # Check for this since it no longer exists in SP2016+
             {
                Write-Host -ForegroundColor White " - Creating Project Server database `"$serviceDB`"..." -NoNewline
                New-SPProjectDatabase -Name $serviceDB -ServiceApplication (Get-SPServiceApplication | Where-Object {$_.Name -eq $serviceConfig.Name}) -DatabaseServer $dbServer | Out-Null
@@ -6208,7 +6226,7 @@ Function CreateProjectServerServiceApp ([xml]$xmlInput)
         if (!(Get-SPProjectWebInstance -Url $projectSiteUrl -ErrorAction SilentlyContinue))
         {
             Write-Host -ForegroundColor White "."
-            if ((Get-Command -Name Mount-SPProjectWebInstance -ErrorAction SilentlyContinue) -and ($spYear -le 2013)) # Check for this since the command no longer exists in SP2016
+            if ((Get-Command -Name Mount-SPProjectWebInstance -ErrorAction SilentlyContinue) -and ($spYear -le 2013)) # Check for this since the command no longer exists in SP2016+
             {
                 Write-Host -ForegroundColor White " - Creating Project Server web instance at `"$projectSiteUrl`"..." -NoNewline
                 Mount-SPProjectWebInstance -DatabaseName $serviceDB -SiteCollection $projectSite
@@ -6287,7 +6305,7 @@ Function ConfigureFoundationWebApplicationService ([xml]$xmlInput)
     $spYear = $xmlInput.Configuration.Install.SPVersion
     $spVer = Get-MajorVersionNumber $spYear
     $minRoleRequiresFoundationWebAppService = $false
-    # Check if we are installing SharePoint 2016 and we're requesting a MinRole that requires the Foundation Web Application Service
+    # Check if we are installing SharePoint 2016+ and we're requesting a MinRole that requires the Foundation Web Application Service
     if ($spVer -ge 16)
     {
         if ((ShouldIProvision ($xmlInput.Configuration.Farm.ServerRoles.Application)) -or (ShouldIProvision ($xmlInput.Configuration.Farm.ServerRoles.DistributedCache)) -or (ShouldIProvision ($xmlInput.Configuration.Farm.ServerRoles.SingleServerFarm)) -or (ShouldIProvision ($xmlInput.Configuration.Farm.ServerRoles.SingleServer)) -or (ShouldIProvision ($xmlInput.Configuration.Farm.ServerRoles.WebFrontEnd)) -or (ShouldIProvision ($xmlInput.Configuration.Farm.ServerRoles.WebFrontEndWithDistributedCache)))
@@ -7730,7 +7748,7 @@ Function Stop-DefaultWebsite ()
 function Get-MajorVersionNumber ($spYear)
 {
     # Create hash tables with major version to product year mappings & vice-versa
-    $spVersions = @{"2010" = "14"; "2013" = "15"; "2016" = "16"}
+    $spVersions = @{"2010" = "14"; "2013" = "15"; "2016" = "16"; "2019" = "16"} # SharePoint 2019 still uses major build 16
     $spVer = $spVersions.$spYear
     return $spVer
 }
