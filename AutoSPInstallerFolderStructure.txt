@@ -2,14 +2,13 @@
 \SP\AutoSPInstaller\AutoSPInstallerInput.xml
 \SP\AutoSPInstaller\AutoSPInstallerMain.ps1
 \SP\AutoSPInstaller\AutoSPInstallerModule.psm1
-\SP\AutoSPInstaller\AutoSPInstallerFunctionsCustom.ps1
 \SP\AutoSPInstaller\AutoSPInstallerConfigureRemoteTarget.ps1
 \SP\AutoSPInstaller\README.rtf
 
 \SP\201x (SharePoint 2010, 2013, 2016 or 2019 binary files - e.g. \2016\ or \2019\ - in different folders)
 
 \SP\201x\LanguagePacks\xx-xx\ (optional)
-\SP\201x\LanguagePacks\xx-xx\Updates\ (extract Language Pack Service Pack / Cumulative Updates here) (optional)
+\SP\201x\LanguagePacks\xx-xx\Updates\ (extract Language Pack Service Pack / Cumulative/Public Updates here) (optional)
 OR
 \SP\201x\LanguagePacks\<ServerLanguagePack_XX-XX.exe>
 
