@@ -1,21 +1,20 @@
 \SP\AutoSPInstaller\AutoSPInstallerLaunch.bat
 \SP\AutoSPInstaller\AutoSPInstallerInput.xml
 \SP\AutoSPInstaller\AutoSPInstallerMain.ps1
-\SP\AutoSPInstaller\AutoSPInstallerFunctions.ps1
-\SP\AutoSPInstaller\AutoSPInstallerFunctionsCustom.ps1
+\SP\AutoSPInstaller\AutoSPInstallerModule.psm1
 \SP\AutoSPInstaller\AutoSPInstallerConfigureRemoteTarget.ps1
 \SP\AutoSPInstaller\README.rtf
 
-\SP\201x (SharePoint 2010 or 2013 binary files - e.g. \2010\ or \2013\ - or both, in different folders)
+\SP\201x (SharePoint 2010, 2013, 2016 or 2019 binary files - e.g. \2016\ or \2019\ - in different folders)
 
 \SP\201x\LanguagePacks\xx-xx\ (optional)
-\SP\201x\LanguagePacks\xx-xx\Updates\ (extract Language Pack Service Pack / Cumulative Updates here) (optional)
+\SP\201x\LanguagePacks\xx-xx\Updates\ (extract Language Pack Service Pack / Cumulative/Public Updates here) (optional)
 OR
 \SP\201x\LanguagePacks\<ServerLanguagePack_XX-XX.exe>
 
 \SP\201x\SharePoint\
 \SP\201x\SharePoint\PrerequisiteInstallerFiles\
-\SP\2013\SharePoint\PrerequisiteInstallerFiles\sxs (optional, for offline install of .Net Framework 3.5.1 on Windows 2012)
+\SP\2013\SharePoint\PrerequisiteInstallerFiles\sxs (optional, for offline install of .Net Framework 3.5.1 on Windows 2012/2016)
 \SP\201x\SharePoint\Updates (optional, for slipstreaming Service Packs and Public/Cumulative Updates. NOTE not all updates support slipstreaming!)
 \SP\2010\OfficeWebApps\ (optional, only required/supported with SP2010)
 \SP\201x\PDF\ (optional)
