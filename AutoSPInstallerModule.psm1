@@ -3544,6 +3544,14 @@ Function CreateUPSAsAdmin ([xml]$xmlInput)
         {
             $mySiteHostLocation = $userProfile.MySiteHostLocation
         }
+        if ([string]::IsNullOrEmpty($mySiteHostLocation))
+        {
+            $mySiteHostLocationSwitch = ""
+        }
+        else
+        {
+            $mySiteHostLocationSwitch = "-MySiteHostLocation `"$mySiteHostLocation`"" # This format required to parse properly in the script block below
+        }
         if ([string]::IsNullOrEmpty($mySiteManagedPath))
         {
             # Don't specify the MySiteManagedPath switch if it was left blank. This will effectively use the default path of "personal/sites"
@@ -3577,7 +3585,7 @@ Function CreateUPSAsAdmin ([xml]$xmlInput)
         # Write the script block, with expanded variables to a temporary script file that the Farm Account can get at
         Write-Output "Write-Host -ForegroundColor White `"Creating $userProfileServiceName as $farmAcct...`"" | Out-File $scriptFile -Width 400
         Write-Output "Add-PsSnapin Microsoft.SharePoint.PowerShell" | Out-File $scriptFile -Width 400 -Append
-        Write-Output "`$newProfileServiceApp = New-SPProfileServiceApplication -Name `"$userProfileServiceName`" -ApplicationPool `"$($applicationPool.Name)`" -ProfileDBServer $profileDBServer -ProfileDBName $profileDB -ProfileSyncDBServer $syncDBServer -ProfileSyncDBName $syncDB -SocialDBServer $socialDBServer -SocialDBName $socialDB -MySiteHostLocation $mySiteHostLocation $mySiteManagedPathSwitch" | Out-File $scriptFile -Width 400 -Append
+        Write-Output "`$newProfileServiceApp = New-SPProfileServiceApplication -Name `"$userProfileServiceName`" -ApplicationPool `"$($applicationPool.Name)`" -ProfileDBServer $profileDBServer -ProfileDBName $profileDB -ProfileSyncDBServer $syncDBServer -ProfileSyncDBName $syncDB -SocialDBServer $socialDBServer -SocialDBName $socialDB $mySiteHostLocationSwitch $mySiteManagedPathSwitch" | Out-File $scriptFile -Width 400 -Append
         Write-Output "If (-not `$?) {Write-Error `" - Failed to create $userProfileServiceName`"; Write-Host `"Press any key to exit...`"; `$null = `$host.UI.RawUI.ReadKey`(`"NoEcho,IncludeKeyDown`"`)}" | Out-File $scriptFile -Width 400 -Append
         # Grant the current install account rights to the newly-created Profile DB - needed since it's going to be running PowerShell commands against it
         Write-Output "`$profileDBId = Get-SPDatabase | Where-Object {`$_.Name -eq `"$profileDB`"}" | Out-File $scriptFile -Width 400 -Append
