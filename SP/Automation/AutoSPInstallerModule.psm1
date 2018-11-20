@@ -307,7 +307,7 @@ Function CheckConfigFiles ([xml]$xmlInput)
     <Setting Id="SETUPCALLED" Value="1"/>
     <Setting Id="OFFICESERVERPREMIUM" Value="$officeServerPremium" />
   </Package>
-  <ARP ARPCOMMENTS="Installed with AutoSPInstaller (http://autospinstaller.com)" ARPCONTACT="brian@autospinstaller.com" />
+  <ARP ARPCOMMENTS="Installed with AutoSPInstaller (https://autospinstaller.com)" ARPCONTACT="brian@autospinstaller.com" />
   <Logging Type="verbose" Path="%temp%" Template="SharePoint Server Setup(*).log"/>
   <Display Level="basic" CompletionNotice="No" AcceptEula="Yes"/>
   <INSTALLLOCATION Value="$installDir"/>
@@ -596,6 +596,11 @@ Function InstallPrerequisites ([xml]$xmlInput)
             If (!(Get-WindowsFeature -Name NET-Framework).Installed)
             {
                 Add-WindowsFeature -Name NET-Framework | Out-Null
+                if (!$?)
+                {
+                    Write-Output "."
+                    throw "An error occurred installing the .Net Framework."
+                }
                 Write-Host -ForegroundColor Green "Done."
             }
             else {Write-Host -ForegroundColor White "Already installed."}
@@ -649,6 +654,11 @@ Function InstallPrerequisites ([xml]$xmlInput)
                         if (!(Get-WindowsFeature -Name NET-Framework-Core).Installed)
                         {
                             Start-Process -FilePath DISM.exe -ArgumentList "/Online /Enable-Feature /FeatureName:NetFx3 /All /LimitAccess /Source:`"$env:SPbits\PrerequisiteInstallerFiles\sxs`"" -NoNewWindow -Wait
+                            if (!$?)
+                            {
+                                Write-Output "."
+                                throw "An error occurred installing the .Net Framework."
+                            }
                             ##Install-WindowsFeature NET-Framework-Core -Source "$env:SPbits\PrerequisiteInstallerFiles\sxs" | Out-Null
                             Write-Host -ForegroundColor Green "Done."
                         }
@@ -718,7 +728,7 @@ Function InstallPrerequisites ([xml]$xmlInput)
                         If (-not $?) {Throw}
                     }
                 }
-                elseif ($spYear -eq "2016") #SP2016
+                elseif ($spYear -eq 2016) #SP2016
                 {
                     Write-Host -ForegroundColor Cyan "  - Running Prerequisite Installer (offline mode)..." -NoNewline
                     $startTime = Get-Date
@@ -736,7 +746,7 @@ Function InstallPrerequisites ([xml]$xmlInput)
                                                                                          /MSVCRT14:`"$env:SPbits\PrerequisiteInstallerFiles\vc_redist.x64.exe`""
                     If (-not $?) {Throw}
                 }
-                elseif ($spYear -eq "2019") #SP2019
+                elseif ($spYear -eq 2019) #SP2019
                 {
                     Write-Host -ForegroundColor Cyan "  - Running Prerequisite Installer (offline mode)..." -NoNewline
                     $startTime = Get-Date
@@ -1410,7 +1420,7 @@ Function InstallUpdates ([xml]$xmlInput)
                                   "17034" = "Error: Required patch does not apply to the machine";
                                   "17038" = "You do not have sufficient privileges to complete this installation for all users of the machine. Log on as administrator and then retry this installation";
                                   "17044" = "Installer was unable to run detection for this package"}
-    if ($spYear -eq "2010")
+    if ($spYear -eq 2010)
     {
         $sp2010SP1 = Get-ChildItem -Path "$env:bits\$spYear\Updates" -Name -Include "officeserver2010sp1-kb2460045-x64-fullfile-en-us.exe" -Recurse -ErrorAction SilentlyContinue
         # In case we find more than one (e.g. in subfolders), grab the first one
@@ -1464,7 +1474,7 @@ Function InstallUpdates ([xml]$xmlInput)
             }
         }
     }
-    if ($spYear -eq "2013")
+    if ($spYear -eq 2013)
     {
         # Do SP1 first, if it's found
         $sp2013SP1 = Get-ChildItem -Path "$env:bits\$spYear\Updates" -Name -Include "officeserversp2013-kb2880552-fullfile-x64-en-us.exe" -Recurse -ErrorAction SilentlyContinue
@@ -1532,7 +1542,7 @@ Function InstallUpdates ([xml]$xmlInput)
     if ($cumulativeUpdates)
     {
         # Display warning about missing March 2013 PU only if we are actually installing SP2013 and SP1 isn't already installed and the SP1 installer isn't found
-        if ($spYear -eq "2013" -and !($sp2013SP1 -or (CheckFor2013SP1 -xmlInput $xmlInput)) -and !$marchPublicUpdate)
+        if ($spYear -eq 2013 -and !($sp2013SP1 -or (CheckFor2013SP1 -xmlInput $xmlInput)) -and !$marchPublicUpdate)
         {
             Write-Host -ForegroundColor Yellow "  - Note: the March 2013 PU package wasn't found in ..\$spYear\Updates; it may need to be installed first if it wasn't slipstreamed."
         }
@@ -1570,7 +1580,7 @@ Function InstallUpdates ([xml]$xmlInput)
         Write-Host -ForegroundColor White "  - $(if ($spYear -ge 2016) {"Public"} else {"Cumulative"}) Update installation complete."
     }
     # Finally, install SP2 last in case we applied the June 2013 CU which would not have properly detected SP2...
-    if ($sp2010SP2 -and $sp2010June2013CU -and $spYear -eq "2010")
+    if ($sp2010SP2 -and $sp2010June2013CU -and $spYear -eq 2010)
     {
         InstallSpecifiedUpdate $sp2010SP2 "Service Pack 2"
     }
@@ -2927,9 +2937,11 @@ Function CreateWebApp ([System.Xml.XmlElement]$webApp)
                     $primaryUser = $site.RootWeb.EnsureUser($ownerAlias)
                     $secondaryUser = $site.RootWeb.EnsureUser("$env:USERDOMAIN\$env:USERNAME")
                     $title = $site.RootWeb.title
-                    Write-Host -ForegroundColor White " - Ensuring default groups are created..."
-                    $site.RootWeb.CreateDefaultAssociatedGroups($primaryUser, $secondaryUser, $title)
-
+                    if ($spYear -ne 2019) # This seems to cause an "access denied" error with SP2019, at least on the first attempt
+                    {
+                        Write-Host -ForegroundColor White " - Ensuring default groups are created..."
+                        $site.RootWeb.CreateDefaultAssociatedGroups($primaryUser, $secondaryUser, $title)
+                    }
                     # Add the Portal Site Connection to the web app, unless of course the current web app *is* the portal
                     # Inspired by http://www.toddklindt.com/blog/Lists/Posts/Post.aspx?ID=264
                     $portalWebApp = $xmlInput.Configuration.WebApplications.WebApplication | Where-Object {$_.Type -eq "Portal"} | Select-Object -First 1
@@ -3544,6 +3556,14 @@ Function CreateUPSAsAdmin ([xml]$xmlInput)
         {
             $mySiteHostLocation = $userProfile.MySiteHostLocation
         }
+        if ([string]::IsNullOrEmpty($mySiteHostLocation))
+        {
+            $mySiteHostLocationSwitch = ""
+        }
+        else
+        {
+            $mySiteHostLocationSwitch = "-MySiteHostLocation `"$mySiteHostLocation`"" # This format required to parse properly in the script block below
+        }
         if ([string]::IsNullOrEmpty($mySiteManagedPath))
         {
             # Don't specify the MySiteManagedPath switch if it was left blank. This will effectively use the default path of "personal/sites"
@@ -3577,7 +3597,7 @@ Function CreateUPSAsAdmin ([xml]$xmlInput)
         # Write the script block, with expanded variables to a temporary script file that the Farm Account can get at
         Write-Output "Write-Host -ForegroundColor White `"Creating $userProfileServiceName as $farmAcct...`"" | Out-File $scriptFile -Width 400
         Write-Output "Add-PsSnapin Microsoft.SharePoint.PowerShell" | Out-File $scriptFile -Width 400 -Append
-        Write-Output "`$newProfileServiceApp = New-SPProfileServiceApplication -Name `"$userProfileServiceName`" -ApplicationPool `"$($applicationPool.Name)`" -ProfileDBServer $profileDBServer -ProfileDBName $profileDB -ProfileSyncDBServer $syncDBServer -ProfileSyncDBName $syncDB -SocialDBServer $socialDBServer -SocialDBName $socialDB -MySiteHostLocation $mySiteHostLocation $mySiteManagedPathSwitch" | Out-File $scriptFile -Width 400 -Append
+        Write-Output "`$newProfileServiceApp = New-SPProfileServiceApplication -Name `"$userProfileServiceName`" -ApplicationPool `"$($applicationPool.Name)`" -ProfileDBServer $profileDBServer -ProfileDBName $profileDB -ProfileSyncDBServer $syncDBServer -ProfileSyncDBName $syncDB -SocialDBServer $socialDBServer -SocialDBName $socialDB $mySiteHostLocationSwitch $mySiteManagedPathSwitch" | Out-File $scriptFile -Width 400 -Append
         Write-Output "If (-not `$?) {Write-Error `" - Failed to create $userProfileServiceName`"; Write-Host `"Press any key to exit...`"; `$null = `$host.UI.RawUI.ReadKey`(`"NoEcho,IncludeKeyDown`"`)}" | Out-File $scriptFile -Width 400 -Append
         # Grant the current install account rights to the newly-created Profile DB - needed since it's going to be running PowerShell commands against it
         Write-Output "`$profileDBId = Get-SPDatabase | Where-Object {`$_.Name -eq `"$profileDB`"}" | Out-File $scriptFile -Width 400 -Append
