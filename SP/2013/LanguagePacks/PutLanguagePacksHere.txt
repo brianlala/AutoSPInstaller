@@ -1,0 +1,9 @@
+The best approach is to extract the contents of the downloaded language pack(s) to corresponding subfolders like:
+\fr-fr
+\de-de
+...
+
+If you are slipstreaming updates in your SharePoint 201x installation media, make sure you also extract the corresponding language pack updates to the \xx-xx\Updates folder for each language pack.
+
+Alternately, you can just place the monolithic language pack installers (ServerLanguagePack_XX-XX.exe) along with any update packages (e.g. serverlanguagepack2010sp1-kb2460056-x64-fullfile-xx-xx.exe) in the root of this folder.
+Note that updates may not get applied completely in this manner and you may need to re-apply any CUs after the SharePoint config is complete.

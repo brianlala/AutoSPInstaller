@@ -1,9 +1,9 @@
-\SP\AutoSPInstaller\AutoSPInstallerLaunch.bat
-\SP\AutoSPInstaller\AutoSPInstallerInput.xml
-\SP\AutoSPInstaller\AutoSPInstallerMain.ps1
-\SP\AutoSPInstaller\AutoSPInstallerModule.psm1
-\SP\AutoSPInstaller\AutoSPInstallerConfigureRemoteTarget.ps1
-\SP\AutoSPInstaller\README.rtf
+\SP\Automation\AutoSPInstallerLaunch.bat
+\SP\Automation\AutoSPInstallerInput.xml
+\SP\Automation\AutoSPInstallerMain.ps1
+\SP\Automation\AutoSPInstallerModule.psm1
+\SP\Automation\AutoSPInstallerConfigureRemoteTarget.ps1
+\SP\Automation\README.md
 
 \SP\201x (SharePoint 2010, 2013, 2016 or 2019 binary files - e.g. \2016\ or \2019\ - in different folders)
 

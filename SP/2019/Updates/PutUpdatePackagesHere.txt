@@ -1,0 +1,5 @@
+You can place the monolithic Public Update or Cumulative Update pack installers (e.g. ubersrv2010-kb2775353-fullfile-x64-glb.exe) in either the root or subfolders here and they will automatically be applied.
+
+To exclude certain update files from being detected/applied, or certain subfolders from being scanned (e.g. for testing), you can simply set their "hidden" attribute.
+
+This is an alternative to the slipstream method that may be more reliable in a broader range of scenarios.
