@@ -1,0 +1,1 @@
+Copy files from the Windows Server 201x ISO (in \support\sxs) here to use them as a source for the offline installation of the .Net Framework 3.5.1
