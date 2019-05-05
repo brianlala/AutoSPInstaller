@@ -2194,8 +2194,14 @@ Function AddManagedAccounts ([xml]$xmlInput)
         ForEach ($account in $xmlInput.Configuration.Farm.ManagedAccounts.ManagedAccount)
         {
             $username = $account.username
-            $password = $account.Password
-            $password = ConvertTo-SecureString "$password" -AsPlaintext -Force
+			
+			if([string]::IsNullOrEmpty($account.Password)) {
+				$password = (Get-Credential -Message "Enter Password for Managed Account" -UserName $account.username).Password
+			}
+			else {
+				$password = $account.Password
+				$password = ConvertTo-SecureString "$password" -AsPlaintext -Force
+			}
             $alreadyAdmin = $false
             # The following was suggested by Matthias Einig (http://www.codeplex.com/site/users/view/matein78)
             # And inspired by http://toddcarter.net/post/2010/05/03/give-your-application-pool-accounts-a-profile/ & http://blog.brainlitter.com/archive/2010/06/08/how-to-revolve-event-id-1511-windows-cannot-find-the-local-profile-on-windows-server-2008.aspx
