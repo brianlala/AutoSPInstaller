@@ -7,8 +7,8 @@ Function CheckXMLVersion ([xml]$xmlInput)
 {
     $getXMLVersion = $xmlInput.Configuration.Version
     # The value below will increment whenever there is an update to the format of the AutoSPInstallerInput XML file
-    $scriptCurrentVersion = "3.99.60"
-    $scriptPreviousVersion = "3.99.51"
+    $scriptCurrentVersion = "3.99.70"
+    $scriptPreviousVersion = "3.99.60"
     if ($getXMLVersion -ne $scriptCurrentVersion)
     {
         if ($getXMLVersion -eq $scriptPreviousVersion)
@@ -1664,6 +1664,25 @@ Function ConfigureFarmAdmin ([xml]$xmlInput)
 }
 
 # ===================================================================================
+# Func: Get-SQLCredentials
+# Desc: Return the credentials for the SQL server account, prompt the user if need more info
+# ===================================================================================
+Function Get-SQLCredentials ($SqlAccount, $SqlPass)
+{
+    If (([string]::IsNullOrEmpty($SqlAccount)) -or ([string]::IsNullOrEmpty($SqlPass)))
+    {
+        Write-Host -BackgroundColor Gray -ForegroundColor DarkCyan " - Prompting for SQL Account:"
+        $SqlCredential = $host.ui.PromptForCredential("SQL Authentication", "Enter SQL Account Credentials:", "$SqlAccount", "")
+    }
+    Else
+    {
+        $secSqlPassword = ConvertTo-SecureString "$SqlPass" -AsPlaintext -Force
+        $SqlCredential = New-Object System.Management.Automation.PsCredential $SqlAccount,$secSqlPassword
+    }
+    Return $SqlCredential
+}
+
+# ===================================================================================
 # Func: GetFarmCredentials
 # Desc: Return the credentials for the farm account, prompt the user if need more info
 # ===================================================================================
@@ -1674,7 +1693,7 @@ Function GetFarmCredentials ([xml]$xmlInput)
     If (!($farmAcct) -or $farmAcct -eq "" -or !($farmAcctPWD) -or $farmAcctPWD -eq "")
     {
         Write-Host -BackgroundColor Gray -ForegroundColor DarkCyan " - Prompting for Farm Account:"
-        $script:farmCredential = $host.ui.PromptForCredential("Farm Setup", "Enter Farm Account Credentials:", "$farmAcct", "NetBiosUserName" )
+        $script:farmCredential = $host.ui.PromptForCredential("Farm Setup", "Enter Farm Account Credentials:", "$farmAcct", "NetBiosUserName")
     }
     Else
     {
@@ -1810,14 +1829,27 @@ Function CreateOrJoinFarm ([xml]$xmlInput, [SecureString]$secPhrase, [System.Man
             $serverRoleSwitch = @{}
             $serverRoleOptionalSwitch = @{}
         }
+         # Check if we've specified SQL authentication instead of the default Windows integrated authentication, and prepare the credentials
+         $usingSQLAuthenticationForFarm = $xmlInput.Configuration.Farm.Database.SQLAuthentication.Enable -eq "true"
+         if ($usingSQLAuthenticationForFarm)
+        {
+            Write-Host -ForegroundColor White " - Creating SQL credential object..."
+            $SqlCredential = Get-SQLCredentials -SqlAccount $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLUserName -SqlPass $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLPassword
+            $databaseCredentialsParameter = @{DatabaseCredentials = $SqlCredential}
+        }
+        else # Otherwise assume Windows integrated and no database credentials provided
+        {
+            $databaseCredentialsParameter = @{}
+        }
+
         Write-Host -ForegroundColor White " - Attempting to join farm on `"$configDB`"..."
-        Connect-SPConfigurationDatabase -DatabaseName "$configDB" -Passphrase $secPhrase -DatabaseServer "$dbServer" @distCacheSwitch @serverRoleSwitch -ErrorAction SilentlyContinue
+        Connect-SPConfigurationDatabase -DatabaseName "$configDB" -Passphrase $secPhrase -DatabaseServer "$dbServer" @distCacheSwitch @serverRoleSwitch @databaseCredentialsParameter -ErrorAction SilentlyContinue
         If (-not $?)
         {
             Write-Host -ForegroundColor White " - No existing farm found.`n - Creating config database `"$configDB`"..."
             # Waiting a few seconds seems to help with the Connect-SPConfigurationDatabase barging in on the New-SPConfigurationDatabase command; not sure why...
             Start-Sleep 5
-            New-SPConfigurationDatabase -DatabaseName "$configDB" -DatabaseServer "$dbServer" -AdministrationContentDatabaseName "$centralAdminContentDB" -Passphrase $secPhrase -FarmCredentials $farmCredential @distCacheSwitch @serverRoleSwitch @serverRoleOptionalSwitch
+            New-SPConfigurationDatabase -DatabaseName "$configDB" -DatabaseServer "$dbServer" -AdministrationContentDatabaseName "$centralAdminContentDB" -Passphrase $secPhrase -FarmCredentials $farmCredential @distCacheSwitch @serverRoleSwitch @serverRoleOptionalSwitch @databaseCredentialsParameter
             If (-not $?) {Throw " - Error creating new farm configuration database"}
             Else {$farmMessage = " - Done creating configuration database for farm."}
         }
@@ -2194,7 +2226,7 @@ Function AddManagedAccounts ([xml]$xmlInput)
         ForEach ($account in $xmlInput.Configuration.Farm.ManagedAccounts.ManagedAccount)
         {
             $username = $account.username
-			
+
 			if([string]::IsNullOrEmpty($account.Password)) {
 				$password = (Get-Credential -Message "Enter Password for Managed Account" -UserName $account.username).Password
 			}
@@ -2379,7 +2411,7 @@ Function CreateGenericServiceApplication()
             # A bit kludgey to accomodate the new PerformancePoint cmdlet in Service Pack 1, and some new SP2010 service apps (and still be able to use the CreateGenericServiceApplication function)
             If ((CheckFor2010SP1 -xmlinput $xmlInput) -and ($serviceInstanceType -eq "Microsoft.PerformancePoint.Scorecards.BIMonitoringServiceInstance"))
             {
-                $newServiceApplication = Invoke-Expression "$serviceNewCmdlet -Name `"$serviceName`" -ApplicationPool `$applicationPool -DatabaseServer `$dbServer -DatabaseName `$serviceDB"
+                $newServiceApplication = Invoke-Expression "$serviceNewCmdlet -Name `"$serviceName`" -ApplicationPool `$applicationPool -DatabaseServer `$dbServer -DatabaseName `$serviceDB @databaseCredentialsParameter"
             }
             Else # Just do the regular non-database-bound service app creation
             {
@@ -2483,16 +2515,29 @@ Function CreateMetadataServiceApp ([xml]$xmlInput)
         Try
         {
             $spYear = $xmlInput.Configuration.Install.SPVersion
+            $serviceConfig = $xmlInput.Configuration.ServiceApps.ManagedMetadataServiceApp
             $dbPrefix = Get-DBPrefix $xmlInput
-            $metaDataDB = $dbPrefix+$xmlInput.Configuration.ServiceApps.ManagedMetadataServiceApp.Database.Name
-            $dbServer = $xmlInput.Configuration.ServiceApps.ManagedMetadataServiceApp.Database.DBServer
+            $metaDataDB = $dbPrefix+$serviceConfig.Database.Name
+            $dbServer = $serviceConfig.Database.DBServer
             # If we haven't specified a DB Server then just use the default used by the Farm
             If ([string]::IsNullOrEmpty($dbServer))
             {
                 $dbServer = $xmlInput.Configuration.Farm.Database.DBServer
             }
-            $metadataServiceName = $xmlInput.Configuration.ServiceApps.ManagedMetadataServiceApp.Name
-            $metadataServiceProxyName = $xmlInput.Configuration.ServiceApps.ManagedMetadataServiceApp.ProxyName
+            # Check if we've specified SQL authentication instead of the default Windows integrated authentication, and prepare the credentials
+            $usingSQLAuthentication = (($serviceConfig.Database.SQLAuthentication.UseFarmSetting -eq "true" -and $xmlInput.Configuration.Farm.Database.SQLAuthentication.Enable -eq "true") -or ($serviceConfig.Database.SQLAuthentication.UseFarmSetting -eq "false" -and ![string]::IsNullOrEmpty($serviceConfig.Database.SQLAuthentication.SQLUserName)))
+            if ($usingSQLAuthentication)
+            {
+                Write-Host -ForegroundColor White " - Creating SQL credential object..."
+                $SqlCredential = Get-SQLCredentials -SqlAccount $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLUserName -SqlPass $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLPassword
+                $databaseCredentialsParameter = @{DatabaseCredentials = $SqlCredential}
+            }
+            else # Otherwise assume Windows integrated and no database credentials provided
+            {
+                $databaseCredentialsParameter = @{}
+            }
+             $metadataServiceName = $serviceConfig.Name
+            $metadataServiceProxyName = $serviceConfig.ProxyName
             If($metadataServiceName -eq $null) {$metadataServiceName = "Metadata Service Application"}
             If($metadataServiceProxyName -eq $null) {$metadataServiceProxyName = $metadataServiceName}
             Write-Host -ForegroundColor White " - Provisioning Managed Metadata Service Application"
@@ -2527,7 +2572,7 @@ Function CreateMetadataServiceApp ([xml]$xmlInput)
             {
                 # Create Service App
                 Write-Host -ForegroundColor White " - Creating Metadata Service Application..."
-                $metaDataServiceApp = New-SPMetadataServiceApplication -Name $metadataServiceName -ApplicationPool $applicationPool -DatabaseServer $dbServer -DatabaseName $metaDataDB
+                $metaDataServiceApp = New-SPMetadataServiceApplication -Name $metadataServiceName -ApplicationPool $applicationPool -DatabaseServer $dbServer -DatabaseName $metaDataDB @databaseCredentialsParameter
                 If (-not $?) { Throw " - Failed to create Metadata Service Application" }
             }
             Else
@@ -2747,6 +2792,19 @@ Function CreateWebApp ([System.Xml.XmlElement]$webApp)
     $dbPrefix = Get-DBPrefix $xmlInput
     $database = $dbPrefix+$webApp.Database.Name
     $dbServer = $webApp.Database.DBServer
+    # Check if we've specified SQL authentication instead of the default Windows integrated authentication, and prepare the credentials
+    $usingSQLAuthentication = (($webApp.Database.SQLAuthentication.UseFarmSetting -eq "true" -and $xmlInput.Configuration.Farm.Database.SQLAuthentication.Enable -eq "true") -or ($webApp.Database.SQLAuthentication.UseFarmSetting -eq "false" -and ![string]::IsNullOrEmpty($webApp.Database.SQLAuthentication.SQLUserName)))
+    if ($usingSQLAuthentication)
+    {
+        Write-Host -ForegroundColor White " - Creating SQL credential object..."
+        $SqlCredential = Get-SQLCredentials -SqlAccount $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLUserName -SqlPass $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLPassword
+        $databaseCredentialsParameter = @{DatabaseCredentials = $SqlCredential}
+    }
+    else # Otherwise assume Windows integrated and no database credentials provided
+    {
+        $databaseCredentialsParameter = @{}
+    }
+
     # Check for an existing App Pool
     $existingWebApp = Get-SPWebApplication | Where-Object { ($_.ApplicationPool).Name -eq $appPool }
     $appPoolExists = ($existingWebApp -ne $null)
@@ -2825,7 +2883,7 @@ Function CreateWebApp ([System.Xml.XmlElement]$webApp)
     If ($null -eq $getSPWebApplication)
     {
         Write-Host -ForegroundColor White " - Creating Web App `"$webAppName`""
-        New-SPWebApplication -Name $webAppName -ApplicationPool $appPool -DatabaseServer $dbServer -DatabaseName $database -Url $url -Port $port -SecureSocketsLayer:$useSSL @hostHeaderSwitch @appPoolAccountSwitch @authProviderSwitch @pathSwitch | Out-Null
+        New-SPWebApplication -Name $webAppName -ApplicationPool $appPool -DatabaseServer $dbServer -DatabaseName $database -Url $url -Port $port -SecureSocketsLayer:$useSSL @hostHeaderSwitch @appPoolAccountSwitch @authProviderSwitch @pathSwitch @databaseCredentialsParameter | Out-Null
         If (-not $?) { Throw " - Failed to create web application" }
     }
     Else {Write-Host -ForegroundColor White " - Web app '$fullUrl' already provisioned."}
@@ -2933,7 +2991,7 @@ Function CreateWebApp ([System.Xml.XmlElement]$webApp)
                     if (!$siteDatabaseExists)
                     {
                         Write-Host -ForegroundColor White " - Creating/attaching/upgrading content database `"$siteDatabase`"..."
-                        New-SPContentDatabase -Name $siteDatabase -WebApplication (Get-SPWebApplication -Identity $fullUrl) | Out-Null
+                        New-SPContentDatabase -Name $siteDatabase -WebApplication (Get-SPWebApplication -Identity $fullUrl) @databaseCredentialsParameter | Out-Null
                     }
                     Write-Host -ForegroundColor White " - Creating Site Collection `"$siteURL`"..."
                     $site = New-SPSite -Url $siteURL -OwnerAlias $ownerAlias -SecondaryOwner $env:USERDOMAIN\$env:USERNAME -ContentDatabase $siteDatabase -Description $siteCollectionName -Name $siteCollectionName -Language $LCID @templateSwitch @hostHeaderWebAppSwitch @CompatibilityLevelSwitch -ErrorAction Stop
@@ -3220,12 +3278,24 @@ Function CreateUserProfileServiceApplication ([xml]$xmlInput)
             # Create a Profile Service Application
             If ((Get-SPServiceApplication | Where-Object {$_.GetType().ToString() -eq "Microsoft.Office.Server.Administration.UserProfileApplication"}) -eq $null)
             {
+                # Check if we've specified SQL authentication instead of the default Windows integrated authentication, and prepare the credentials
+                $usingSQLAuthentication = (($userProfile.Database.SQLAuthentication.UseFarmSetting -eq "true" -and $xmlInput.Configuration.Farm.Database.SQLAuthentication.Enable -eq "true") -or ($userProfile.Database.SQLAuthentication.UseFarmSetting -eq "false" -and ![string]::IsNullOrEmpty($userProfile.Database.SQLAuthentication.SQLUserName)))
+                if ($usingSQLAuthentication)
+                {
+                    Write-Host -ForegroundColor White " - Creating SQL credential object..."
+                    $SqlCredential = Get-SQLCredentials -SqlAccount $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLUserName -SqlPass $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLPassword
+                    $databaseCredentialsParameter = @{DatabaseCredentials = $SqlCredential}
+                }
+                else # Otherwise assume Windows integrated and no database credentials provided
+                {
+                    $databaseCredentialsParameter = @{}
+                }
                 # Create MySites Web Application if it doesn't already exist, and we've specified to create one
                 $getSPWebApplication = Get-SPWebApplication -Identity $mySiteURL -ErrorAction SilentlyContinue
                 If ($null -eq $getSPWebApplication -and ($mySiteWebApp))
                 {
                     Write-Host -ForegroundColor White " - Creating Web App `"$mySiteName`"..."
-                    New-SPWebApplication -Name $mySiteName -ApplicationPoolAccount $($mySiteAppPoolAcct.username) -ApplicationPool $mySiteAppPool -DatabaseServer $mySiteDBServer -DatabaseName $mySiteDB -Url $mySiteURL -Port $mySitePort -SecureSocketsLayer:$mySiteUseSSL @hostHeaderSwitch @pathSwitch | Out-Null
+                    New-SPWebApplication -Name $mySiteName -ApplicationPoolAccount $($mySiteAppPoolAcct.username) -ApplicationPool $mySiteAppPool -DatabaseServer $mySiteDBServer -DatabaseName $mySiteDB -Url $mySiteURL -Port $mySitePort -SecureSocketsLayer:$mySiteUseSSL @hostHeaderSwitch @pathSwitch @databaseCredentialsParameter | Out-Null
                 }
                 Else
                 {
@@ -3236,7 +3306,7 @@ Function CreateUserProfileServiceApplication ([xml]$xmlInput)
                 If ((Get-SPContentDatabase | Where-Object {$_.Name -eq $mySiteDB})-eq $null -and ($mySiteWebApp))
                 {
                     Write-Host -ForegroundColor White " - Creating My Sites content DB..."
-                    New-SPContentDatabase -DatabaseServer $mySiteDBServer -Name $mySiteDB -WebApplication "$mySiteURL`:$mySitePort" | Out-Null
+                    New-SPContentDatabase -DatabaseServer $mySiteDBServer -Name $mySiteDB -WebApplication "$mySiteURL`:$mySitePort" @databaseCredentialsParameter | Out-Null
                     If (-not $?) { Throw " - Failed to create My Sites content DB" }
                 }
                 If (!(Get-SPSite -Limit ALL | Where-Object {(($_.Url -like "$mySiteURL*") -and ($_.Port -eq "$mySitePort"))}) -and ($mySiteWebApp))
@@ -3360,7 +3430,7 @@ Function CreateUserProfileServiceApplication ([xml]$xmlInput)
                 # Add link to resources list
                 AddResourcesLink "User Profile Administration" ("_layouts/ManageUserProfileServiceApplication.aspx?ApplicationID=" +  $profileServiceApp.Id)
 
-                If ($portalAppPoolAcct)
+                If ($portalAppPoolAcct -and !$usingSQLAuthentication)
                 {
                     # Grant the Portal App Pool account rights to the Profile and Social DBs
                     $profileDB = $dbPrefix+$userProfile.Database.ProfileDB
@@ -3603,14 +3673,32 @@ Function CreateUPSAsAdmin ([xml]$xmlInput)
         # Write the script block, with expanded variables to a temporary script file that the Farm Account can get at
         Write-Output "Write-Host -ForegroundColor White `"Creating $userProfileServiceName as $farmAcct...`"" | Out-File $scriptFile -Width 400
         Write-Output "Add-PsSnapin Microsoft.SharePoint.PowerShell" | Out-File $scriptFile -Width 400 -Append
-        Write-Output "`$newProfileServiceApp = New-SPProfileServiceApplication -Name `"$userProfileServiceName`" -ApplicationPool `"$($applicationPool.Name)`" -ProfileDBServer $profileDBServer -ProfileDBName $profileDB -ProfileSyncDBServer $syncDBServer -ProfileSyncDBName $syncDB -SocialDBServer $socialDBServer -SocialDBName $socialDB $mySiteHostLocationSwitch $mySiteManagedPathSwitch" | Out-File $scriptFile -Width 400 -Append
+        # Check if we've specified SQL authentication instead of the default Windows integrated authentication, and prepare the credentials
+        if ($usingSQLAuthentication)
+        {
+            Write-Output "`$SqlCredential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $($xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLUserName),(ConvertTo-SecureString -String '$($xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLPassword)' -AsPlainText -Force)" | Out-File $scriptFile -Width 400 -Append
+            Write-Output "`$ProfileDBCredentialsParameter = @{ProfileDBCredentials = `$SqlCredential}" | Out-File $scriptFile -Width 400 -Append
+            Write-Output "`$SocialDBCredentialsParameter = @{SocialDBCredentials = `$SqlCredential}" | Out-File $scriptFile -Width 400 -Append
+            Write-Output "`$ProfileSyncDBCredentialsParameter = @{ProfileSyncDBCredentials = `$SqlCredential}" | Out-File $scriptFile -Width 400 -Append
+        }
+        else
+        {
+            Write-Output "`$ProfileDBCredentialsParameter = @{}" | Out-File $scriptFile -Width 400 -Append
+            Write-Output "`$SocialDBCredentialsParameter = @{}" | Out-File $scriptFile -Width 400 -Append
+            Write-Output "`$ProfileSyncDBCredentialsParameter = @{}" | Out-File $scriptFile -Width 400 -Append
+        }
+        Write-Output "`$newProfileServiceApp = New-SPProfileServiceApplication -Name `"$userProfileServiceName`" -ApplicationPool `"$($applicationPool.Name)`" -ProfileDBServer $profileDBServer -ProfileDBName $profileDB @ProfileDBCredentialsParameter -ProfileSyncDBServer $syncDBServer -ProfileSyncDBName $syncDB @ProfileSyncDBCredentialsParameter -SocialDBServer $socialDBServer -SocialDBName $socialDB @SocialDBCredentialsParameter $mySiteHostLocationSwitch $mySiteManagedPathSwitch" | Out-File $scriptFile -Width 400 -Append
         Write-Output "If (-not `$?) {Write-Error `" - Failed to create $userProfileServiceName`"; Write-Host `"Press any key to exit...`"; `$null = `$host.UI.RawUI.ReadKey`(`"NoEcho,IncludeKeyDown`"`)}" | Out-File $scriptFile -Width 400 -Append
-        # Grant the current install account rights to the newly-created Profile DB - needed since it's going to be running PowerShell commands against it
-        Write-Output "`$profileDBId = Get-SPDatabase | Where-Object {`$_.Name -eq `"$profileDB`"}" | Out-File $scriptFile -Width 400 -Append
-        Write-Output "Add-SPShellAdmin -UserName `"$env:USERDOMAIN\$env:USERNAME`" -database `$profileDBId" | Out-File $scriptFile -Width 400 -Append
-        # Grant the current install account rights to the newly-created Social DB as well
-        Write-Output "`$socialDBId = Get-SPDatabase | Where-Object {`$_.Name -eq `"$socialDB`"}" | Out-File $scriptFile -Width 400 -Append
-        Write-Output "Add-SPShellAdmin -UserName `"$env:USERDOMAIN\$env:USERNAME`" -database `$socialDBId" | Out-File $scriptFile -Width 400 -Append
+        # Need a better way to determine if we're not requesting SQL auth for the service application
+        if (!$usingSQLAuthentication)
+        {
+            # Grant the current install account rights to the newly-created Profile DB - needed since it's going to be running PowerShell commands against it
+            Write-Output "`$profileDBId = Get-SPDatabase | Where-Object {`$_.Name -eq `"$profileDB`"}" | Out-File $scriptFile -Width 400 -Append
+            Write-Output "Add-SPShellAdmin -UserName `"$env:USERDOMAIN\$env:USERNAME`" -database `$profileDBId" | Out-File $scriptFile -Width 400 -Append
+            # Grant the current install account rights to the newly-created Social DB as well
+            Write-Output "`$socialDBId = Get-SPDatabase | Where-Object {`$_.Name -eq `"$socialDB`"}" | Out-File $scriptFile -Width 400 -Append
+            Write-Output "Add-SPShellAdmin -UserName `"$env:USERDOMAIN\$env:USERNAME`" -database `$socialDBId" | Out-File $scriptFile -Width 400 -Append
+        }
         # Add the -Version 2 switch in case we are installing SP2010 on Windows Server 2012 or 2012 R2
         if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($spYear -eq 2010))
         {
@@ -3659,33 +3747,46 @@ Function CreateUPSAsAdmin ([xml]$xmlInput)
 #region Create State Service Application
 Function CreateStateServiceApp ([xml]$xmlInput)
 {
+    $spVer = Get-MajorVersionNumber $spYear
     If ((ShouldIProvision $xmlInput.Configuration.ServiceApps.StateService -eq $true) -or `
         (ShouldIProvision $xmlInput.Configuration.EnterpriseServiceApps.AccessService -eq $true) -or `
         (ShouldIProvision $xmlInput.Configuration.EnterpriseServiceApps.VisioService -eq $true) -or `
         (ShouldIProvision $xmlInput.Configuration.EnterpriseServiceApps.AccessServices -eq $true) -or `
-        (ShouldIProvision $xmlInput.Configuration.ServiceApps.WebAnalyticsService -eq $true))
+        (ShouldIProvision $xmlInput.Configuration.ServiceApps.WebAnalyticsService -eq $true -and $spVer -eq 2010))
     {
         WriteLine
         Try
         {
-            $stateService = $xmlInput.Configuration.ServiceApps.StateService
-            $dbServer = $stateService.Database.DBServer
+            $serviceConfig = $xmlInput.Configuration.ServiceApps.StateService
+            $dbServer = $serviceConfig.Database.DBServer
             # If we haven't specified a DB Server then just use the default used by the Farm
             If ([string]::IsNullOrEmpty($dbServer))
             {
                 $dbServer = $xmlInput.Configuration.Farm.Database.DBServer
             }
             $dbPrefix = Get-DBPrefix $xmlInput
-            $stateServiceDB = $dbPrefix+$stateService.Database.Name
-            $stateServiceName = $stateService.Name
-            $stateServiceProxyName = $stateService.ProxyName
+            $stateServiceDB = $dbPrefix+$serviceConfig.Database.Name
+            # Check if we've specified SQL authentication instead of the default Windows integrated authentication, and prepare the credentials
+            $usingSQLAuthentication = (($serviceConfig.Database.SQLAuthentication.UseFarmSetting -eq "true" -and $xmlInput.Configuration.Farm.Database.SQLAuthentication.Enable -eq "true") -or ($serviceConfig.Database.SQLAuthentication.UseFarmSetting -eq "false" -and ![string]::IsNullOrEmpty($serviceConfig.Database.SQLAuthentication.SQLUserName)))
+            if ($usingSQLAuthentication)
+            {
+                Write-Host -ForegroundColor White " - Creating SQL credential object..."
+                $SqlCredential = Get-SQLCredentials -SqlAccount $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLUserName -SqlPass $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLPassword
+                $databaseCredentialsParameter = @{DatabaseCredentials = $SqlCredential}
+            }
+            else # Otherwise assume Windows integrated and no database credentials provided
+            {
+                $databaseCredentialsParameter = @{}
+            }
+            $stateServiceName = $serviceConfig.Name
+            $stateServiceProxyName = $serviceConfig.ProxyName
             If ($stateServiceName -eq $null) {$stateServiceName = "State Service Application"}
             If ($stateServiceProxyName -eq $null) {$stateServiceProxyName = $stateServiceName}
             $getSPStateServiceApplication = Get-SPStateServiceApplication
             If ($getSPStateServiceApplication -eq $null)
             {
                 Write-Host -ForegroundColor White " - Provisioning State Service Application..."
-                New-SPStateServiceDatabase -DatabaseServer $dbServer -Name $stateServiceDB | Out-Null
+                New-SPStateServiceDatabase -DatabaseServer $dbServer -Name $stateServiceDB @databaseCredentialsParameter | Out-Null
                 New-SPStateServiceApplication -Name $stateServiceName -Database $stateServiceDB | Out-Null
                 Get-SPStateServiceDatabase | Initialize-SPStateServiceDatabase | Out-Null
                 Write-Host -ForegroundColor White " - Creating State Service Application Proxy..."
@@ -3725,11 +3826,22 @@ Function CreateSPUsageApp ([xml]$xmlInput)
             $spUsageApplicationName = $xmlInput.Configuration.ServiceApps.SPUsageService.Name
             $dbPrefix = Get-DBPrefix $xmlInput
             $spUsageDB = $dbPrefix+$xmlInput.Configuration.ServiceApps.SPUsageService.Database.Name
+            # Check if we've specified SQL authentication instead of the default Windows integrated authentication, and prepare the credentials
+            if ($xmlInput.Configuration.ServiceApps.SPUsageService.Database.SQLAuthentication.UseFarmSetting -eq "true" -and $xmlInput.Configuration.Farm.Database.SQLAuthentication.Enable -eq "true")
+            {
+                $databaseUsernameParameter = @{DatabaseUsername = $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLUserName}
+                $databasePasswordParameter = @{DatabasePassword = ConvertTo-SecureString -String $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLPassword -AsPlainText -Force}
+            }
+            else # Otherwise assume Windows integrated and no database credentials provided
+            {
+                $databaseUsernameParameter = @{}
+                $databasePasswordParameter = @{}
+            }
             $getSPUsageApplication = Get-SPUsageApplication
             If ($getSPUsageApplication -eq $null)
             {
                 Write-Host -ForegroundColor White " - Provisioning SP Usage Application..."
-                New-SPUsageApplication -Name $spUsageApplicationName -DatabaseServer $dbServer -DatabaseName $spUsageDB | Out-Null
+                New-SPUsageApplication -Name $spUsageApplicationName -DatabaseServer $dbServer -DatabaseName $spUsageDB @databaseUsernameParameter @databasePasswordParameter | Out-Null
                 # Need this to resolve a known issue with the Usage Application Proxy not automatically starting/provisioning
                 # Thanks and credit to Jesper Nygaard Schi?tt (jesper@schioett.dk) per http://autospinstaller.codeplex.com/Thread/View.aspx?ThreadId=237578 !
                 Write-Host -ForegroundColor White " - Fixing Usage and Health Data Collection Proxy..."
@@ -4026,6 +4138,7 @@ Function CreateSecureStoreServiceApp ($xmlInput)
         WriteLine
         Try
         {
+            $serviceConfig = $xmlInput.Configuration.ServiceApps.SecureStoreService
             If (!($farmPassphrase) -or ($farmPassphrase -eq ""))
             {
                 $farmPassphrase = GetFarmPassPhrase $xmlInput
@@ -4042,6 +4155,18 @@ Function CreateSecureStoreServiceApp ($xmlInput)
             }
             $dbPrefix = Get-DBPrefix $xmlInput
             $secureStoreDB = $dbPrefix+$xmlInput.Configuration.ServiceApps.SecureStoreService.Database.Name
+            # Check if we've specified SQL authentication instead of the default Windows integrated authentication, and prepare the credentials
+            $usingSQLAuthentication = (($serviceConfig.Database.SQLAuthentication.UseFarmSetting -eq "true" -and $xmlInput.Configuration.Farm.Database.SQLAuthentication.Enable -eq "true") -or ($serviceConfig.Database.SQLAuthentication.UseFarmSetting -eq "false" -and ![string]::IsNullOrEmpty($serviceConfig.Database.SQLAuthentication.SQLUserName)))
+            if ($usingSQLAuthentication)
+            {
+                Write-Host -ForegroundColor White " - Creating SQL credential object..."
+                $SqlCredential = Get-SQLCredentials -SqlAccount $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLUserName -SqlPass $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLPassword
+                $databaseCredentialsParameter = @{DatabaseCredentials = $SqlCredential}
+            }
+            else # Otherwise assume Windows integrated and no database credentials provided
+            {
+                $databaseCredentialsParameter = @{}
+            }
             Write-Host -ForegroundColor White " - Provisioning Secure Store Service Application..."
             $applicationPool = Get-HostedServicesAppPool $xmlInput
             # Get the service instance
@@ -4070,7 +4195,7 @@ Function CreateSecureStoreServiceApp ($xmlInput)
             If ($getSPSecureStoreServiceApplication -eq $null)
             {
                 Write-Host -ForegroundColor White " - Creating Secure Store Service Application..."
-                New-SPSecureStoreServiceApplication -Name $secureStoreServiceAppName -PartitionMode:$false -Sharing:$false -DatabaseServer $dbServer -DatabaseName $secureStoreDB -ApplicationPool $($applicationPool.Name) -AuditingEnabled:$true -AuditLogMaxSize 30 | Out-Null
+                New-SPSecureStoreServiceApplication -Name $secureStoreServiceAppName -PartitionMode:$false -Sharing:$false -DatabaseServer $dbServer -DatabaseName $secureStoreDB -ApplicationPool $($applicationPool.Name) -AuditingEnabled:$true -AuditLogMaxSize 30 @databaseCredentialsParameter | Out-Null
                 Write-Host -ForegroundColor White " - Creating Secure Store Service Application Proxy..."
                 Get-SPServiceApplication | Where-Object {$_.GetType().Equals([Microsoft.Office.SecureStoreService.Server.SecureStoreServiceApplication])} | New-SPSecureStoreServiceApplicationProxy -Name $secureStoreServiceAppProxyName -DefaultProxyGroup | Out-Null
                 Write-Host -ForegroundColor White " - Done creating Secure Store Service Application."
@@ -4550,6 +4675,17 @@ function CreateEnterpriseSearchServiceApp ([xml]$xmlInput)
                 {
                     $dbServer = $xmlInput.Configuration.Farm.Database.DBServer
                 }
+                # Check if we've specified SQL authentication instead of the default Windows integrated authentication, and prepare the credentials
+                if ($appConfig.Database.SQLAuthentication.UseFarmSetting -eq "true" -and $xmlInput.Configuration.Farm.Database.SQLAuthentication.Enable -eq "true")
+                {
+                    $databaseUsernameParameter = @{DatabaseUsername = $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLUserName}
+                    $databasePasswordParameter = @{DatabasePassword = ConvertTo-SecureString -String $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLPassword -AsPlainText -Force}
+                }
+                else # Otherwise assume Windows integrated and no database credentials provided
+                {
+                    $databaseUsernameParameter = @{}
+                    $databasePasswordParameter = @{}
+                }
                 $secContentAccessAcctPWD = ConvertTo-SecureString -String $appConfig.ContentAccessAccountPassword -AsPlainText -Force
                 # Try and get the application pool if it already exists
                 $pool = Get-ApplicationPool $appConfig.ApplicationPool
@@ -4565,7 +4701,9 @@ function CreateEnterpriseSearchServiceApp ([xml]$xmlInput)
                         -ApplicationPool $pool `
                         -AdminApplicationPool $adminPool `
                         -Partitioned:([bool]::Parse($appConfig.Partitioned)) `
-                        -SearchApplicationType $appConfig.SearchServiceApplicationType
+                        -SearchApplicationType $appConfig.SearchServiceApplicationType `
+                        @databaseUsernameParameter `
+                        @databasePasswordParameter
                 }
                 Else
                 {
@@ -4796,6 +4934,17 @@ function CreateEnterpriseSearchServiceApp ([xml]$xmlInput)
                 {
                     $dbServer = $xmlInput.Configuration.Farm.Database.DBServer
                 }
+                # Check if we've specified SQL authentication instead of the default Windows integrated authentication, and prepare the credentials
+                if ($appConfig.Database.SQLAuthentication.UseFarmSetting -eq "true" -and $xmlInput.Configuration.Farm.Database.SQLAuthentication.Enable -eq "true")
+                {
+                    $databaseUsernameParameter = @{DatabaseUsername = $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLUserName}
+                    $databasePasswordParameter = @{DatabasePassword = ConvertTo-SecureString -String $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLPassword -AsPlainText -Force}
+                }
+                else # Otherwise assume Windows integrated and no database credentials provided
+                {
+                    $databaseUsernameParameter = @{}
+                    $databasePasswordParameter = @{}
+                }
                 $secContentAccessAcctPWD = ConvertTo-SecureString -String $appConfig.ContentAccessAccountPassword -AsPlainText -Force
 
                 # Finally using ShouldIProvision here like everywhere else in the script...
@@ -4891,7 +5040,9 @@ function CreateEnterpriseSearchServiceApp ([xml]$xmlInput)
                         -FailoverDatabaseServer $appConfig.FailoverDatabaseServer `
                         -ApplicationPool $pool `
                         -AdminApplicationPool $adminPool `
-                        -Partitioned:([bool]::Parse($appConfig.Partitioned))
+                        -Partitioned:([bool]::Parse($appConfig.Partitioned)) `
+                        @databaseUsernameParameter `
+                        @databasePasswordParameter
                     If (!$?) {Throw "  - An error occurred creating the $($appConfig.Name) application."}
                     Write-Host -ForegroundColor Green "Done."
                 }
@@ -5456,6 +5607,7 @@ Function CreateBusinessDataConnectivityServiceApp ([xml]$xmlInput)
         WriteLine
         Try
         {
+            $serviceConfig = $xmlInput.Configuration.ServiceApps.BusinessDataConnectivity
             $dbServer = $xmlInput.Configuration.ServiceApps.BusinessDataConnectivity.Database.DBServer
             # If we haven't specified a DB Server then just use the default used by the Farm
             If ([string]::IsNullOrEmpty($dbServer))
@@ -5465,6 +5617,18 @@ Function CreateBusinessDataConnectivityServiceApp ([xml]$xmlInput)
             $bdcAppName = $xmlInput.Configuration.ServiceApps.BusinessDataConnectivity.Name
             $dbPrefix = Get-DBPrefix $xmlInput
             $bdcDataDB = $dbPrefix+$($xmlInput.Configuration.ServiceApps.BusinessDataConnectivity.Database.Name)
+            # Check if we've specified SQL authentication instead of the default Windows integrated authentication, and prepare the credentials
+            $usingSQLAuthentication = (($serviceConfig.Database.SQLAuthentication.UseFarmSetting -eq "true" -and $xmlInput.Configuration.Farm.Database.SQLAuthentication.Enable -eq "true") -or ($serviceConfig.Database.SQLAuthentication.UseFarmSetting -eq "false" -and ![string]::IsNullOrEmpty($serviceConfig.Database.SQLAuthentication.SQLUserName)))
+            if ($usingSQLAuthentication)
+            {
+                Write-Host -ForegroundColor White " - Creating SQL credential object..."
+                $SqlCredential = Get-SQLCredentials -SqlAccount $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLUserName -SqlPass $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLPassword
+                $databaseCredentialsParameter = @{DatabaseCredentials = $SqlCredential}
+            }
+            else # Otherwise assume Windows integrated and no database credentials provided
+            {
+                $databaseCredentialsParameter = @{}
+            }
             Write-Host -ForegroundColor White " - Provisioning $bdcAppName"
             $applicationPool = Get-HostedServicesAppPool $xmlInput
             Write-Host -ForegroundColor White " - Checking local service instance..."
@@ -5498,7 +5662,7 @@ Function CreateBusinessDataConnectivityServiceApp ([xml]$xmlInput)
             {
                 # Create Service App
                 Write-Host -ForegroundColor White " - Creating $bdcAppName..."
-                New-SPBusinessDataCatalogServiceApplication -Name $bdcAppName -ApplicationPool $applicationPool -DatabaseServer $dbServer -DatabaseName $bdcDataDB | Out-Null
+                New-SPBusinessDataCatalogServiceApplication -Name $bdcAppName -ApplicationPool $applicationPool -DatabaseServer $dbServer -DatabaseName $bdcDataDB @databaseCredentialsParameter | Out-Null
                 If (-not $?) { Throw " - Failed to create $bdcAppName" }
             }
             Else
@@ -5529,6 +5693,18 @@ Function CreateWordAutomationServiceApp ([xml]$xmlInput)
     }
     $dbPrefix = Get-DBPrefix $xmlInput
     $serviceDB = $dbPrefix+$($serviceConfig.Database.Name)
+    # Check if we've specified SQL authentication instead of the default Windows integrated authentication, and prepare the credentials
+    $usingSQLAuthentication = (($serviceConfig.Database.SQLAuthentication.UseFarmSetting -eq "true" -and $xmlInput.Configuration.Farm.Database.SQLAuthentication.Enable -eq "true") -or ($serviceConfig.Database.SQLAuthentication.UseFarmSetting -eq "false" -and ![string]::IsNullOrEmpty($serviceConfig.Database.SQLAuthentication.SQLUserName)))
+    if ($usingSQLAuthentication)
+    {
+        Write-Host -ForegroundColor White " - Creating SQL credential object..."
+        $SqlCredential = Get-SQLCredentials -SqlAccount $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLUserName -SqlPass $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLPassword
+        $databaseCredentialsParameter = @{DatabaseCredential = $SqlCredential}
+    }
+    else # Otherwise assume Windows integrated and no database credentials provided
+    {
+        $databaseCredentialsParameter = @{}
+    }
     If ((ShouldIProvision $serviceConfig -eq $true) -and (Get-Command -Name New-SPWordConversionServiceApplication -ErrorAction SilentlyContinue))
     {
         WriteLine
@@ -5539,7 +5715,7 @@ Function CreateWordAutomationServiceApp ([xml]$xmlInput)
                                         -ServiceProxyName $serviceConfig.ProxyName `
                                         -ServiceGetCmdlet "Get-SPServiceApplication" `
                                         -ServiceProxyGetCmdlet "Get-SPServiceApplicationProxy" `
-                                        -ServiceNewCmdlet "New-SPWordConversionServiceApplication -DatabaseServer $dbServer -DatabaseName $serviceDB -Default" `
+                                        -ServiceNewCmdlet "New-SPWordConversionServiceApplication -DatabaseServer $dbServer -DatabaseName $serviceDB -Default @databaseCredentialsParameter" `
                                         -ServiceProxyNewCmdlet "New-SPWordConversionServiceApplicationProxy" # Fake cmdlet, but the CreateGenericServiceApplication function expects something
         # Run the Word Automation Timer Job immediately; otherwise we will have a Health Analyzer error condition until the job runs as scheduled
         If (Get-SPServiceApplication | Where-Object {$_.DisplayName -eq $($serviceConfig.Name)})
@@ -5833,6 +6009,18 @@ Function CreatePerformancePointServiceApp ([xml]$xmlInput)
             }
             $dbPrefix = Get-DBPrefix $xmlInput
             $serviceDB = $dbPrefix+$serviceConfig.Database.Name
+            # Check if we've specified SQL authentication instead of the default Windows integrated authentication, and prepare the credentials
+            $usingSQLAuthentication = (($serviceConfig.Database.SQLAuthentication.UseFarmSetting -eq "true" -and $xmlInput.Configuration.Farm.Database.SQLAuthentication.Enable -eq "true") -or ($serviceConfig.Database.SQLAuthentication.UseFarmSetting -eq "false" -and ![string]::IsNullOrEmpty($serviceConfig.Database.SQLAuthentication.SQLUserName)))
+            if ($usingSQLAuthentication)
+            {
+                Write-Host -ForegroundColor White " - Creating SQL credential object..."
+                $SqlCredential = Get-SQLCredentials -SqlAccount $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLUserName -SqlPass $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLPassword
+                $databaseCredentialsParameter = @{DatabaseSQLAuthenticationCredential = $SqlCredential}
+            }
+            else # Otherwise assume Windows integrated and no database credentials provided
+            {
+                $databaseCredentialsParameter = @{}
+            }
             $serviceInstanceType = "Microsoft.PerformancePoint.Scorecards.BIMonitoringServiceInstance"
             CreateGenericServiceApplication -ServiceConfig $serviceConfig `
                                             -ServiceInstanceType $serviceInstanceType `
@@ -5846,9 +6034,14 @@ Function CreatePerformancePointServiceApp ([xml]$xmlInput)
             $application = Get-SPPerformancePointServiceApplication | Where-Object {$_.Name -eq $serviceConfig.Name}
             If ($application)
             {
-                $farmAcct = $xmlInput.Configuration.Farm.Account.Username
-                Write-Host -ForegroundColor White " - Granting $farmAcct rights to database $serviceDB..."
-                Get-SPDatabase | Where-Object {$_.Name -eq $serviceDB} | Add-SPShellAdmin -UserName $farmAcct
+                # Need a better way to determine if we're not requesting SQL auth for the service application
+                # Only run Add-SPShellAdmin if we are using Windows integrated auth to connect to SQL
+                if (!$usingSQLAuthentication)
+                {
+                    $farmAcct = $xmlInput.Configuration.Farm.Account.Username
+                    Write-Host -ForegroundColor White " - Granting $farmAcct rights to database $serviceDB..."
+                    Get-SPDatabase | Where-Object {$_.Name -eq $serviceDB} | Add-SPShellAdmin -UserName $farmAcct
+                }
                 Write-Host -ForegroundColor White " - Setting PerformancePoint Data Source Unattended Service Account..."
                 $performancePointAcct = $serviceConfig.UnattendedIDUser
                 $performancePointAcctPWD = $serviceConfig.UnattendedIDPassword
@@ -6015,6 +6208,18 @@ Function CreateAppManagementServiceApp ([xml]$xmlInput)
         {
             $dbServer = $xmlInput.Configuration.Farm.Database.DBServer
         }
+        # Check if we've specified SQL authentication instead of the default Windows integrated authentication, and prepare the credentials
+        $usingSQLAuthentication = (($serviceConfig.Database.SQLAuthentication.UseFarmSetting -eq "true" -and $xmlInput.Configuration.Farm.Database.SQLAuthentication.Enable -eq "true") -or ($serviceConfig.Database.SQLAuthentication.UseFarmSetting -eq "false" -and ![string]::IsNullOrEmpty($serviceConfig.Database.SQLAuthentication.SQLUserName)))
+        if ($usingSQLAuthentication)
+        {
+            Write-Host -ForegroundColor White " - Creating SQL credential object..."
+            $SqlCredential = Get-SQLCredentials -SqlAccount $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLUserName -SqlPass $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLPassword
+            $databaseCredentialsParameter = @{DatabaseCredentials = $SqlCredential}
+        }
+        else # Otherwise assume Windows integrated and no database credentials provided
+        {
+            $databaseCredentialsParameter = @{}
+        }
         $serviceInstanceType = "Microsoft.SharePoint.AppManagement.AppManagementServiceInstance"
         CreateGenericServiceApplication -ServiceConfig $serviceConfig `
                                         -ServiceInstanceType $serviceInstanceType `
@@ -6022,7 +6227,7 @@ Function CreateAppManagementServiceApp ([xml]$xmlInput)
                                         -ServiceProxyName $serviceConfig.ProxyName `
                                         -ServiceGetCmdlet "Get-SPServiceApplication" `
                                         -ServiceProxyGetCmdlet "Get-SPServiceApplicationProxy" `
-                                        -ServiceNewCmdlet "New-SPAppManagementServiceApplication -DatabaseServer $dbServer -DatabaseName $serviceDB" `
+                                        -ServiceNewCmdlet "New-SPAppManagementServiceApplication -DatabaseServer $dbServer -DatabaseName $serviceDB @databaseCredentialsParameter" `
                                         -ServiceProxyNewCmdlet "New-SPAppManagementServiceApplicationProxy"
 
         # Configure your app domain and location
@@ -6046,13 +6251,25 @@ Function CreateSubscriptionSettingsServiceApp ([xml]$xmlInput)
         {
             $dbServer = $xmlInput.Configuration.Farm.Database.DBServer
         }
+        # Check if we've specified SQL authentication instead of the default Windows integrated authentication, and prepare the credentials
+        $usingSQLAuthentication = (($serviceConfig.Database.SQLAuthentication.UseFarmSetting -eq "true" -and $xmlInput.Configuration.Farm.Database.SQLAuthentication.Enable -eq "true") -or ($serviceConfig.Database.SQLAuthentication.UseFarmSetting -eq "false" -and ![string]::IsNullOrEmpty($serviceConfig.Database.SQLAuthentication.SQLUserName)))
+        if ($usingSQLAuthentication)
+        {
+            Write-Host -ForegroundColor White " - Creating SQL credential object..."
+            $SqlCredential = Get-SQLCredentials -SqlAccount $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLUserName -SqlPass $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLPassword
+            $databaseCredentialsParameter = @{DatabaseCredentials = $SqlCredential}
+        }
+        else # Otherwise assume Windows integrated and no database credentials provided
+        {
+            $databaseCredentialsParameter = @{}
+        }
         $serviceInstanceType = "Microsoft.SharePoint.SPSubscriptionSettingsServiceInstance"
         CreateGenericServiceApplication -ServiceConfig $serviceConfig `
                                         -ServiceInstanceType $serviceInstanceType `
                                         -ServiceName $serviceConfig.Name `
                                         -ServiceGetCmdlet "Get-SPServiceApplication" `
                                         -ServiceProxyGetCmdlet "Get-SPServiceApplicationProxy" `
-                                        -ServiceNewCmdlet "New-SPSubscriptionSettingsServiceApplication -DatabaseServer $dbServer -DatabaseName $serviceDB" `
+                                        -ServiceNewCmdlet "New-SPSubscriptionSettingsServiceApplication -DatabaseServer $dbServer -DatabaseName $serviceDB @databaseCredentialsParameter" `
                                         -ServiceProxyNewCmdlet "New-SPSubscriptionSettingsServiceApplicationProxy"
 
         Write-Host -ForegroundColor White " - Setting Site Subscription name `"$($serviceConfig.AppSiteSubscriptionName)`"..."
@@ -6066,6 +6283,7 @@ Function CreateSubscriptionSettingsServiceApp ([xml]$xmlInput)
 Function CreateAccessServicesApp ([xml]$xmlInput)
 {
     $officeServerPremium = $xmlInput.Configuration.Install.SKU -replace "Enterprise","1" -replace "Standard","0"
+    $serviceConfig = $xmlInput.Configuration.EnterpriseServiceApps.AccessServices
     $dbServer = $serviceConfig.Database.DBServer
     # If we haven't specified a DB Server then just use the default used by the Farm
     If ([string]::IsNullOrEmpty($dbServer))
@@ -6074,7 +6292,18 @@ Function CreateAccessServicesApp ([xml]$xmlInput)
     }
     ##$dbPrefix = Get-DBPrefix $xmlInput
     ##$serviceDB = $dbPrefix+$($serviceConfig.Database.Name)
-    $serviceConfig = $xmlInput.Configuration.EnterpriseServiceApps.AccessServices
+    # Check if we've specified SQL authentication instead of the default Windows integrated authentication, and prepare the credentials
+    $usingSQLAuthentication = (($serviceConfig.Database.SQLAuthentication.UseFarmSetting -eq "true" -and $xmlInput.Configuration.Farm.Database.SQLAuthentication.Enable -eq "true") -or ($serviceConfig.Database.SQLAuthentication.UseFarmSetting -eq "false" -and ![string]::IsNullOrEmpty($serviceConfig.Database.SQLAuthentication.SQLUserName)))
+    if ($usingSQLAuthentication)
+    {
+        Write-Host -ForegroundColor White " - Creating SQL credential object..."
+        $SqlCredential = Get-SQLCredentials -SqlAccount $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLUserName -SqlPass $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLPassword
+        $databaseCredentialsParameter = @{DatabaseServerCredentials = $SqlCredential}
+    }
+    else # Otherwise assume Windows integrated and no database credentials provided
+    {
+        $databaseCredentialsParameter = @{}
+    }
     If ((ShouldIProvision $serviceConfig -eq $true) -and (Get-Command -Name New-SPAccessServicesApplication -ErrorAction SilentlyContinue))
     {
         WriteLine
@@ -6087,7 +6316,7 @@ Function CreateAccessServicesApp ([xml]$xmlInput)
                                             -ServiceProxyName $serviceConfig.ProxyName `
                                             -ServiceGetCmdlet "Get-SPAccessServicesApplication" `
                                             -ServiceProxyGetCmdlet "Get-SPServicesApplicationProxy" `
-                                            -ServiceNewCmdlet "New-SPAccessServicesApplication -DatabaseServer $dbServer -Default" `
+                                            -ServiceNewCmdlet "New-SPAccessServicesApplication -DatabaseServer $dbServer -Default @databaseCredentialsParameter" `
                                             -ServiceProxyNewCmdlet "New-SPAccessServicesApplicationProxy"
         }
         else
@@ -6133,6 +6362,18 @@ Function CreateMachineTranslationServiceApp ([xml]$xmlInput)
     }
     $dbPrefix = Get-DBPrefix $xmlInput
     $translationDatabase = $dbPrefix+$($serviceConfig.Database.Name)
+    # Check if we've specified SQL authentication instead of the default Windows integrated authentication, and prepare the credentials
+    $usingSQLAuthentication = (($serviceConfig.Database.SQLAuthentication.UseFarmSetting -eq "true" -and $xmlInput.Configuration.Farm.Database.SQLAuthentication.Enable -eq "true") -or ($serviceConfig.Database.SQLAuthentication.UseFarmSetting -eq "false" -and ![string]::IsNullOrEmpty($serviceConfig.Database.SQLAuthentication.SQLUserName)))
+    if ($usingSQLAuthentication)
+    {
+        Write-Host -ForegroundColor White " - Creating SQL credential object..."
+        $SqlCredential = Get-SQLCredentials -SqlAccount $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLUserName -SqlPass $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLPassword
+        $databaseCredentialsParameter = @{DatabaseCredential = $SqlCredential}
+    }
+    else # Otherwise assume Windows integrated and no database credentials provided
+    {
+        $databaseCredentialsParameter = @{}
+    }
     If ((ShouldIProvision $serviceConfig -eq $true) -and (Get-Command -Name New-SPTranslationServiceApplication -ErrorAction SilentlyContinue))
     {
         WriteLine
@@ -6143,7 +6384,7 @@ Function CreateMachineTranslationServiceApp ([xml]$xmlInput)
                                         -ServiceProxyName $serviceConfig.ProxyName `
                                         -ServiceGetCmdlet "Get-SPServiceApplication" `
                                         -ServiceProxyGetCmdlet "Get-SPServiceApplicationProxy" `
-                                        -ServiceNewCmdlet "New-SPTranslationServiceApplication -DatabaseServer $dbServer -DatabaseName $translationDatabase -Default" `
+                                        -ServiceNewCmdlet "New-SPTranslationServiceApplication -DatabaseServer $dbServer -DatabaseName $translationDatabase -Default @databaseCredentialsParameter" `
                                         -ServiceProxyNewCmdlet "New-SPTranslationServiceApplicationProxy"
         WriteLine
     }
@@ -6189,6 +6430,18 @@ Function CreateProjectServerServiceApp ([xml]$xmlInput)
         {
             $dbServer = $xmlInput.Configuration.Farm.Database.DBServer
         }
+        # Check if we've specified SQL authentication instead of the default Windows integrated authentication, and prepare the credentials
+        $usingSQLAuthentication = (($serviceConfig.Database.SQLAuthentication.UseFarmSetting -eq "true" -and $xmlInput.Configuration.Farm.Database.SQLAuthentication.Enable -eq "true") -or ($serviceConfig.Database.SQLAuthentication.UseFarmSetting -eq "false" -and ![string]::IsNullOrEmpty($serviceConfig.Database.SQLAuthentication.SQLUserName)))
+        if ($usingSQLAuthentication)
+        {
+            Write-Host -ForegroundColor White " - Creating SQL credential object..."
+            $SqlCredential = Get-SQLCredentials -SqlAccount $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLUserName -SqlPass $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLPassword
+            $databaseCredentialsParameter = @{DatabaseCredentials = $SqlCredential}
+        }
+        else # Otherwise assume Windows integrated and no database credentials provided
+        {
+            $databaseCredentialsParameter = @{}
+        }
         $serviceInstanceType = "Microsoft.Office.Project.Server.Administration.PsiServiceInstance"
         CreateGenericServiceApplication -ServiceConfig $serviceConfig `
                                         -ServiceInstanceType $serviceInstanceType `
@@ -6216,7 +6469,7 @@ Function CreateProjectServerServiceApp ([xml]$xmlInput)
             if (Get-Command -Name New-SPProjectDatabase -ErrorAction SilentlyContinue) # Check for this since it no longer exists in SP2016+
             {
                Write-Host -ForegroundColor White " - Creating Project Server database `"$serviceDB`"..." -NoNewline
-               New-SPProjectDatabase -Name $serviceDB -ServiceApplication (Get-SPServiceApplication | Where-Object {$_.Name -eq $serviceConfig.Name}) -DatabaseServer $dbServer | Out-Null
+               New-SPProjectDatabase -Name $serviceDB -ServiceApplication (Get-SPServiceApplication | Where-Object {$_.Name -eq $serviceConfig.Name}) -DatabaseServer $dbServer @databaseCredentialsParameter | Out-Null
                 if ($?) {Write-Host -ForegroundColor Black -BackgroundColor Cyan "Done."}
                 else
                 {
@@ -7010,7 +7263,7 @@ Function Add-SQLAlias ()
 # From: http://sharemypoint.in/2011/04/18/powershell-script-to-check-sql-server-connectivity-version-custering-status-user-permissions/
 # Adapted for use in AutoSPInstaller by @brianlala
 # ====================================================================================
-Function CheckSQLAccess ([xml]$xmlInput)
+Function CheckSQLAccess ([xml]$xmlInput, $SqlAccount, $SqlPass)
 {
     WriteLine
     # Look for references to DB Servers, Aliases, etc. in the XML
@@ -7039,7 +7292,6 @@ Function CheckSQLAccess ([xml]$xmlInput)
         $dbServers += @($dbServer)
     }
 
-    $currentUser = "$env:USERDOMAIN\$env:USERNAME"
     $serverRolesToCheck = "dbcreator","securityadmin"
     # If we are provisioning PerformancePoint but aren't running SharePoint 2010 Service Pack 1 yet, we need sysadmin in order to run the RenameDatabase function
     # We also evidently need sysadmin in order to configure MaxDOP on the SQL instance if we are installing SharePoint 2013
@@ -7056,9 +7308,20 @@ Function CheckSQLAccess ([xml]$xmlInput)
             $objSQLCommand = New-Object System.Data.SqlClient.SqlCommand
             Try
             {
-                $objSQLConnection.ConnectionString = "Server=$sqlServer;Integrated Security=SSPI;"
+                # If a SQL username and password were provided then check access using those, otherwise use Windows integrated authentication
+                if (!([string]::IsNullOrEmpty($SqlAccount)) -and !([string]::IsNullOrEmpty($SqlPass)))
+                {
+                    $currentUser = $SqlAccount
+                    $objSQLConnection.ConnectionString = "Server=$sqlServer;Persist Security Info=False;User ID=$SqlAccount;Password=$SqlPass;"
+                }
+                else
+                {
+                    $currentUser = "$env:USERDOMAIN\$env:USERNAME"
+                    $objSQLConnection.ConnectionString = "Server=$sqlServer;Integrated Security=SSPI;"
+                }
                 Write-Host -ForegroundColor White " - Testing access to SQL server/instance/alias:" $sqlServer
-                Write-Host -ForegroundColor White " - Trying to connect to `"$sqlServer`"..." -NoNewline
+                Write-Host -ForegroundColor White "  - Trying to connect to '$sqlServer'"
+                Write-Host -ForegroundColor White "  - Using connection string '$($objSQLConnection.ConnectionString)'..." -NoNewline
                 $objSQLConnection.Open() | Out-Null
                 Write-Host -ForegroundColor Black -BackgroundColor Green "Success"
                 $strCmdSvrDetails = "SELECT SERVERPROPERTY('productversion') as Version"
@@ -7068,21 +7331,21 @@ Function CheckSQLAccess ([xml]$xmlInput)
                 $objSQLDataReader = $objSQLCommand.ExecuteReader()
                 If ($objSQLDataReader.Read())
                 {
-                    Write-Host -ForegroundColor White (" - SQL Server version is: {0}" -f $objSQLDataReader.GetValue(0))
+                    Write-Host -ForegroundColor White ("  - SQL Server version is: {0}" -f $objSQLDataReader.GetValue(0))
                     $SQLVersion = $objSQLDataReader.GetValue(0)
                     [int]$SQLMajorVersion,[int]$SQLMinorVersion,[int]$SQLBuild,$null = $SQLVersion -split "\."
                     # SharePoint needs minimum SQL 2008 10.0.2714.0 or SQL 2005 9.0.4220.0 per http://support.microsoft.com/kb/976215
                     If ((($SQLMajorVersion -eq 10) -and ($SQLMinorVersion -lt 5) -and ($SQLBuild -lt 2714)) -or (($SQLMajorVersion -eq 9) -and ($SQLBuild -lt 4220)))
                     {
-                        Throw " - Unsupported SQL version!"
+                        Throw "  - Unsupported SQL version!"
                     }
                     If ($objSQLDataReader.GetValue(1) -eq 1)
                     {
-                        Write-Host -ForegroundColor White " - This instance of SQL Server is clustered"
+                        Write-Host -ForegroundColor White "  - This instance of SQL Server is clustered"
                     }
                     Else
                     {
-                        Write-Host -ForegroundColor White " - This instance of SQL Server is not clustered"
+                        Write-Host -ForegroundColor White "  - This instance of SQL Server is not clustered"
                     }
                 }
                 $objSQLDataReader.Close()
@@ -7090,15 +7353,15 @@ Function CheckSQLAccess ([xml]$xmlInput)
                 {
                     $objSQLCommand.CommandText = "SELECT IS_SRVROLEMEMBER('$serverRole')"
                     $objSQLCommand.Connection = $objSQLConnection
-                    Write-Host -ForegroundColor White " - Check if $currentUser has $serverRole server role..." -NoNewline
+                    Write-Host -ForegroundColor White "  - Check if $currentUser has $serverRole server role..." -NoNewline
                     $objSQLDataReader = $objSQLCommand.ExecuteReader()
                     If ($objSQLDataReader.Read() -and $objSQLDataReader.GetValue(0) -eq 1)
                     {
-                        Write-Host -ForegroundColor Black -BackgroundColor Green "Pass"
+                        Write-Host -ForegroundColor Black -BackgroundColor Green "Passed"
                     }
                     ElseIf($objSQLDataReader.GetValue(0) -eq 0)
                     {
-                        Throw " - $currentUser does not have `'$serverRole`' role!"
+                        Throw "  - $currentUser does not have `'$serverRole`' role!"
                     }
                     Else
                     {
@@ -7110,29 +7373,29 @@ Function CheckSQLAccess ([xml]$xmlInput)
             }
             Catch
             {
-                Write-Host -ForegroundColor Red " - Fail"
-                $errText = $error[0].ToString()
-                If ($errText.Contains("network-related"))
+                Write-Host -ForegroundColor Red "Failed"
+                $errText = $_
+                If ($errText -like "*network-related*")
                 {
                     Write-Warning "Connection Error. Check server name, port, firewall."
-                    Write-Host -ForegroundColor White " - This may be expected if e.g. SQL server isn't installed yet, and you are just installing SharePoint binaries for now."
+                    Write-Host -ForegroundColor White "  - This may be expected if e.g. SQL server isn't installed yet, and you are just installing SharePoint binaries for now."
                     Pause "continue without checking SQL Server connection, or Ctrl-C to exit" "y"
                 }
-                ElseIf ($errText.Contains("Login failed"))
+                ElseIf ($errText -like "*login failed*")
                 {
-                    Throw " - Not able to login. SQL Server login not created."
+                    Throw "  - Not able to login. SQL Server login not created."
                 }
-                ElseIf ($errText.Contains("Unsupported SQL version"))
+                ElseIf ($errText -like "*Unsupported SQL version*")
                 {
-                    Throw " - SharePoint 2010 requires SQL 2005 SP3+CU3, SQL 2008 SP1+CU2, or SQL 2008 R2."
+                    Throw "  - SharePoint 2010 requires SQL 2005 SP3+CU3, SQL 2008 SP1+CU2, or SQL 2008 R2."
                 }
                 Else
                 {
                     If (!([string]::IsNullOrEmpty($serverRole)))
                     {
-                        Throw " - $currentUser does not have `'$serverRole`' role!"
+                        Throw "  - $currentUser does not have `'$serverRole`' role!"
                     }
-                    Else {Throw " - $errText"}
+                    Else {Throw "  - $errText"}
                 }
             }
         }

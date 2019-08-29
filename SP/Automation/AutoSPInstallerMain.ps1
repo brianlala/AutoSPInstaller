@@ -171,7 +171,16 @@ Function PrepForInstall
     ValidateCredentials $xmlInput
     ValidatePassphrase $xmlInput
     CheckConfigFiles $xmlInput
-    CheckSQLAccess $xmlInput
+    # Pass SQL username and password to the CheckSQLAccess function if we are using SQL auth
+    if ($xmlInput.Configuration.Farm.Database.SQLAuthentication.Enable -eq "true")
+    {
+        CheckSQLAccess -xmlinput $xmlInput -SqlAccount $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLUserName -SqlPass $xmlInput.Configuration.Farm.Database.SQLAuthentication.SQLPassword
+    }
+    # Otherwise just assume Windows integrated authentication and skip passing SQL login info
+    else
+    {
+        CheckSQLAccess -xmlinput $xmlInput
+    }
 }
 #endregion
 
