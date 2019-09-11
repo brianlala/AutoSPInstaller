@@ -21,11 +21,11 @@
 <!-- The Environment attribute below appears at the top of the installation transcript, and will now also appear at the top of the SharePoint 2013+ Central Administration top-left branding bar. It does not affect the SharePoint 2010 installation though.
      Simply leave the Environment attribute blank if you do not want to alter the branding bar in SP2013+ Central Admin.
      The Version attribute is now used for comparing the XML schema version with the version of the script (specifically, AutoSPInstallerFunctions.ps1), as there may be dependencies between XML and script elements. -->
-<Configuration Environment="Dev" Version="3.99.60">
+<Configuration Environment="Dev" Version="3.99.70">
     <!-- The Install section controls what modifications are made to the Windows OS prior to installation and how the SharePoint installation is run.
-         You can also explicitly state the SPVersion of SharePoint being installed, (in case you have binaries for SP2010/SP2013/SP2016 in your folder structure).
-         Allowed values are "2010", "2013" or "2016". If you omit this, the script will attempt to determine the version anyhow, and default to 2013 if multiple sets of install files are present. -->
-    <Install SPVersion="2016">
+         You can also explicitly state the SPVersion of SharePoint being installed, (in case you have binaries for SP2010/SP2013/SP2016/SP2019 in your folder structure).
+         Allowed values are "2010", "2013", "2016" or "2019". If you omit this, the script will attempt to determine the version anyhow, and default to 2013 if multiple sets of install files are present. -->
+    <Install SPVersion="2019">
         <!-- The following few elements are parameters for the file containing the unattended install settings for SharePoint's setup.exe. Normally this is called config.xml.
              AutoSPInstaller can now create this file if it doesn't already exist (based on the ConfigFile name), and use the values below for PIDKey and SKU. -->
         <ConfigFile>config-AutoSPInstaller.xml</ConfigFile>
@@ -89,13 +89,18 @@
         <!-- Which server(s) to provision CentralAdmin on. Specify "true" or a list of servers -->
         <CentralAdmin Provision="localhost">
             <Database>Content_CentralAdmin</Database>
-            <Port>2016</Port>
+            <Port>2019</Port>
             <UseSSL>true</UseSSL>
         </CentralAdmin>
         <Database>
             <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                  If you leave <DBServer> blank or specify localhost, script will assume the local server for SQL databases -->
             <DBServer></DBServer>
+            <!-- In most cases you will want to leave SQLAuthentication Enable as "false". Exceptions include e.g. using an Azure SQL Managed Instance which doesn't support Windows integrated authentication. -->
+            <SQLAuthentication Enable="false">
+                <SQLUserName></SQLUserName>
+                <SQLPassword></SQLPassword>
+            </SQLAuthentication>
             <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
             <DBAlias Create="true">
                 <DBInstance>SERVER\INSTANCE</DBInstance>
@@ -133,8 +138,8 @@
                  *Note* if you want to remotely install dedicated WFEs in your farm (i.e. RemoteInstall Enable="true") you should name the servers here, in a comma separated list - e.g. Start="WFE1,WFE2,WFEx" -->
             <FoundationWebApplication Start="localhost" />
         </Services>
-      <!-- ServerRoles is for SharePoint 2016 only. Valid choices are: WebFrontEnd, Application, DistributedCache, Search, Custom, and SingleServerFarm.
-           If you have slipstreamed or are applying SharePoint 2016 Feature Pack 1 at install time, you also have WebFrontEndWithDistributedCache and ApplicationWithSearch to choose from.
+      <!-- ServerRoles is for SharePoint 2016+ only. Valid choices are: WebFrontEnd, Application, DistributedCache, Search, Custom, and SingleServerFarm.
+           If you have slipstreamed or are applying SharePoint 2016 Feature Pack 1 at install time or are using SharePoint 2019, you also have WebFrontEndWithDistributedCache and ApplicationWithSearch to choose from.
            A server name can only be provisioned in ONE role, so make sure you don't repeat server names within the elements below. If you don't specify a role for a server, Custom will be assumed. -->
       <ServerRoles>
         <WebFrontEnd Provision="false" />
@@ -244,6 +249,12 @@
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
+                <!-- In most cases you will want to leave SQLAuthentication UseFarmSetting as "true", meaning that whatever the settings for SQL auth specified at the farm level are (Enabled or not, credentials) should be used here as well.
+                     However since you can use a different SQL server here, you can specify different SQL credentials as well. -->
+                <SQLAuthentication UseFarmSetting="true">
+                    <SQLUserName></SQLUserName>
+                    <SQLPassword></SQLPassword>
+                </SQLAuthentication>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
                 <DBAlias Create="false">
                     <DBInstance>SERVER\INSTANCE</DBInstance>
@@ -300,6 +311,12 @@
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
+                <!-- In most cases you will want to leave SQLAuthentication UseFarmSetting as "true", meaning that whatever the settings for SQL auth specified at the farm level are (Enabled or not, credentials) should be used here as well.
+                     However since you can use a different SQL server here, you can specify different SQL credentials as well. -->
+                <SQLAuthentication UseFarmSetting="true">
+                    <SQLUserName></SQLUserName>
+                    <SQLPassword></SQLPassword>
+                </SQLAuthentication>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
                 <DBAlias Create="false">
                     <DBInstance>SERVER\INSTANCE</DBInstance>
@@ -341,6 +358,12 @@
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
+                <!-- In most cases you will want to leave SQLAuthentication UseFarmSetting as "true", meaning that whatever the settings for SQL auth specified at the farm level are (Enabled or not, credentials) should be used here as well.
+                     However since you can use a different SQL server here, you can specify different SQL credentials as well. -->
+                <SQLAuthentication UseFarmSetting="true">
+                    <SQLUserName></SQLUserName>
+                    <SQLPassword></SQLPassword>
+                </SQLAuthentication>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
                 <DBAlias Create="false">
                     <DBInstance>SERVER\INSTANCE</DBInstance>
@@ -376,6 +399,12 @@
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
+                <!-- In most cases you will want to leave SQLAuthentication UseFarmSetting as "true", meaning that whatever the settings for SQL auth specified at the farm level are (Enabled or not, credentials) should be used here as well.
+                     However since you can use a different SQL server here, you can specify different SQL credentials as well. -->
+                <SQLAuthentication UseFarmSetting="true">
+                    <SQLUserName></SQLUserName>
+                    <SQLPassword></SQLPassword>
+                </SQLAuthentication>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
                 <DBAlias Create="false">
                     <DBInstance>SERVER\INSTANCE</DBInstance>
@@ -408,6 +437,12 @@
                         <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                              If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                         <DBServer></DBServer>
+                        <!-- In most cases you will want to leave SQLAuthentication UseFarmSetting as "true", meaning that whatever the settings for SQL auth specified at the farm level are (Enabled or not, credentials) should be used here as well.
+                            However since you can use a different SQL server here, you can specify different SQL credentials as well. -->
+                        <SQLAuthentication UseFarmSetting="true">
+                            <SQLUserName></SQLUserName>
+                            <SQLPassword></SQLPassword>
+                        </SQLAuthentication>
                         <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
                         <DBAlias Create="false">
                             <DBInstance>SERVER\INSTANCE</DBInstance>
@@ -450,6 +485,12 @@
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
+                <!-- In most cases you will want to leave SQLAuthentication UseFarmSetting as "true", meaning that whatever the settings for SQL auth specified at the farm level are (Enabled or not, credentials) should be used here as well.
+                     However since you can use a different SQL server here, you can specify different SQL credentials as well. -->
+                <SQLAuthentication UseFarmSetting="true">
+                    <SQLUserName></SQLUserName>
+                    <SQLPassword></SQLPassword>
+                </SQLAuthentication>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
                 <DBAlias Create="false">
                     <DBInstance>SERVER\INSTANCE</DBInstance>
@@ -468,6 +509,12 @@
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
+                <!-- In most cases you will want to leave SQLAuthentication UseFarmSetting as "true", meaning that whatever the settings for SQL auth specified at the farm level are (Enabled or not, credentials) should be used here as well.
+                     However since you can use a different SQL server here, you can specify different SQL credentials as well. -->
+                <SQLAuthentication UseFarmSetting="true">
+                    <SQLUserName></SQLUserName>
+                    <SQLPassword></SQLPassword>
+                </SQLAuthentication>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
                 <DBAlias Create="false">
                     <DBInstance>SERVER\INSTANCE</DBInstance>
@@ -484,6 +531,12 @@
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
+                <!-- In most cases you will want to leave SQLAuthentication UseFarmSetting as "true", meaning that whatever the settings for SQL auth specified at the farm level are (Enabled or not, credentials) should be used here as well.
+                     However since you can use a different SQL server here, you can specify different SQL credentials as well. -->
+                <SQLAuthentication UseFarmSetting="true">
+                    <SQLUserName></SQLUserName>
+                    <SQLPassword></SQLPassword>
+                </SQLAuthentication>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
                 <DBAlias Create="false">
                     <DBInstance>SERVER\INSTANCE</DBInstance>
@@ -501,6 +554,12 @@
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
+                <!-- In most cases you will want to leave SQLAuthentication UseFarmSetting as "true", meaning that whatever the settings for SQL auth specified at the farm level are (Enabled or not, credentials) should be used here as well.
+                     However since you can use a different SQL server here, you can specify different SQL credentials as well. -->
+                <SQLAuthentication UseFarmSetting="true">
+                    <SQLUserName></SQLUserName>
+                    <SQLPassword></SQLPassword>
+                </SQLAuthentication>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
                 <DBAlias Create="false">
                     <DBInstance>SERVER\INSTANCE</DBInstance>
@@ -518,6 +577,12 @@
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
+                <!-- In most cases you will want to leave SQLAuthentication UseFarmSetting as "true", meaning that whatever the settings for SQL auth specified at the farm level are (Enabled or not, credentials) should be used here as well.
+                     However since you can use a different SQL server here, you can specify different SQL credentials as well. -->
+                <SQLAuthentication UseFarmSetting="true">
+                    <SQLUserName></SQLUserName>
+                    <SQLPassword></SQLPassword>
+                </SQLAuthentication>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
                 <DBAlias Create="false">
                     <DBInstance>SERVER\INSTANCE</DBInstance>
@@ -535,6 +600,12 @@
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
+                <!-- In most cases you will want to leave SQLAuthentication UseFarmSetting as "true", meaning that whatever the settings for SQL auth specified at the farm level are (Enabled or not, credentials) should be used here as well.
+                     However since you can use a different SQL server here, you can specify different SQL credentials as well. -->
+                <SQLAuthentication UseFarmSetting="true">
+                    <SQLUserName></SQLUserName>
+                    <SQLPassword></SQLPassword>
+                </SQLAuthentication>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
                 <DBAlias Create="false">
                     <DBInstance>SERVER\INSTANCE</DBInstance>
@@ -554,6 +625,12 @@
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
+                <!-- In most cases you will want to leave SQLAuthentication UseFarmSetting as "true", meaning that whatever the settings for SQL auth specified at the farm level are (Enabled or not, credentials) should be used here as well.
+                     However since you can use a different SQL server here, you can specify different SQL credentials as well. -->
+                <SQLAuthentication UseFarmSetting="true">
+                    <SQLUserName></SQLUserName>
+                    <SQLPassword></SQLPassword>
+                </SQLAuthentication>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
                 <DBAlias Create="false">
                     <DBInstance>SERVER\INSTANCE</DBInstance>
@@ -572,6 +649,12 @@
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
+                <!-- In most cases you will want to leave SQLAuthentication UseFarmSetting as "true", meaning that whatever the settings for SQL auth specified at the farm level are (Enabled or not, credentials) should be used here as well.
+                     However since you can use a different SQL server here, you can specify different SQL credentials as well. -->
+                <SQLAuthentication UseFarmSetting="true">
+                    <SQLUserName></SQLUserName>
+                    <SQLPassword></SQLPassword>
+                </SQLAuthentication>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
                 <DBAlias Create="false">
                     <DBInstance>SERVER\INSTANCE</DBInstance>
@@ -595,6 +678,12 @@
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
+                <!-- In most cases you will want to leave SQLAuthentication UseFarmSetting as "true", meaning that whatever the settings for SQL auth specified at the farm level are (Enabled or not, credentials) should be used here as well.
+                     However since you can use a different SQL server here, you can specify different SQL credentials as well. -->
+                <SQLAuthentication UseFarmSetting="true">
+                    <SQLUserName></SQLUserName>
+                    <SQLPassword></SQLPassword>
+                </SQLAuthentication>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
                 <DBAlias Create="false">
                     <DBInstance>SERVER\INSTANCE</DBInstance>
@@ -640,6 +729,12 @@
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
+                <!-- In most cases you will want to leave SQLAuthentication UseFarmSetting as "true", meaning that whatever the settings for SQL auth specified at the farm level are (Enabled or not, credentials) should be used here as well.
+                     However since you can use a different SQL server here, you can specify different SQL credentials as well. -->
+                <SQLAuthentication UseFarmSetting="true">
+                    <SQLUserName></SQLUserName>
+                    <SQLPassword></SQLPassword>
+                </SQLAuthentication>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
                 <DBAlias Create="false">
                     <DBInstance>SERVER\INSTANCE</DBInstance>
@@ -660,6 +755,12 @@
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
+                <!-- In most cases you will want to leave SQLAuthentication UseFarmSetting as "true", meaning that whatever the settings for SQL auth specified at the farm level are (Enabled or not, credentials) should be used here as well.
+                     However since you can use a different SQL server here, you can specify different SQL credentials as well. -->
+                <SQLAuthentication UseFarmSetting="true">
+                    <SQLUserName></SQLUserName>
+                    <SQLPassword></SQLPassword>
+                </SQLAuthentication>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
                 <DBAlias Create="false">
                     <DBInstance>SERVER\INSTANCE</DBInstance>
@@ -707,6 +808,12 @@
                 <!-- If you are creating an alias (recommended!), <DBServer> is actually the value of the SQL alias; otherwise it's the NetBIOS name of the SQL server or instance.
                      If you leave <DBServer> blank, the default DBServer value for the farm is used -->
                 <DBServer></DBServer>
+                <!-- In most cases you will want to leave SQLAuthentication UseFarmSetting as "true", meaning that whatever the settings for SQL auth specified at the farm level are (Enabled or not, credentials) should be used here as well.
+                     However since you can use a different SQL server here, you can specify different SQL credentials as well. -->
+                <SQLAuthentication UseFarmSetting="true">
+                    <SQLUserName></SQLUserName>
+                    <SQLPassword></SQLPassword>
+                </SQLAuthentication>
                 <!-- The script can create a SQL alias for you. Enter the DBInstance, and if you leave <DBPort> blank, script will assume default port value of 1433 -->
                 <DBAlias Create="false">
                     <DBInstance>SERVER\INSTANCE</DBInstance>
