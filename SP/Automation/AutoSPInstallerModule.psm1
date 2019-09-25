@@ -3747,6 +3747,7 @@ Function CreateUPSAsAdmin ([xml]$xmlInput)
 #region Create State Service Application
 Function CreateStateServiceApp ([xml]$xmlInput)
 {
+	$spYear = $xmlInput.Configuration.Install.SPVersion
     $spVer = Get-MajorVersionNumber $spYear
     If ((ShouldIProvision $xmlInput.Configuration.ServiceApps.StateService -eq $true) -or `
         (ShouldIProvision $xmlInput.Configuration.EnterpriseServiceApps.AccessService -eq $true) -or `
