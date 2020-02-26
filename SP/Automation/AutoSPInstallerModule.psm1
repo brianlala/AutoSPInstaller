@@ -285,8 +285,8 @@ Function CheckConfigFiles ([xml]$xmlInput)
         $spVer = Get-MajorVersionNumber $spYear
         # Write out a new config file based on defaults and the values provided in $inputFile
         $pidKey = $xmlInput.Configuration.Install.PIDKey
-        # Do a rudimentary check on the presence and format of the product key
-        if ($pidKey -notlike "?????-?????-?????-?????-?????")
+        # Do a rudimentary check on the presence and format of the product key, only if we're not installing Foundation
+        if ($xmlInput.Configuration.Install.SKU -ne "Foundation" -and $pidKey -notlike "?????-?????-?????-?????-?????")
         {
             throw " - The Product ID (PIDKey) is missing or badly formatted.`n - Check the value of <PIDKey> in `"$(Split-Path -Path $inputFile -Leaf)`" and try again."
         }
@@ -7685,7 +7685,7 @@ Function CheckIfUpgradeNeeded ([xml]$xmlInput)
 Function Get-SharePointInstall
 {
     # New(er), faster way courtesy of SPRambler (https://www.codeplex.com/site/users/view/SpRambler)
-    if ((Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*) | Where-Object {$_.DisplayName -like "Microsoft SharePoint Server*"})
+    if ((Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*) | Where-Object {$_.DisplayName -like "Microsoft SharePoint Server*" -or $_.DisplayName -like "Microsoft SharePoint Foundation*"})
     {
         return $true
     }
