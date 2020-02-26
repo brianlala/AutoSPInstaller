@@ -1769,7 +1769,7 @@ Function UpdateProcessIdentity ($serviceToUpdate)
 # Func: CreateOrJoinFarm
 # Desc: Check if the farm is created
 # ===================================================================================
-Function CreateOrJoinFarm ([xml]$xmlInput, [SecureString]$secPhrase, [System.Management.Automation.PsCredential]$farmCredential)
+Function CreateOrJoinFarm ([xml]$xmlInput, [System.Security.SecureString]$secPhrase, [System.Management.Automation.PsCredential]$farmCredential)
 {
     WriteLine
     $spYear = $xmlInput.Configuration.Install.SPVersion
