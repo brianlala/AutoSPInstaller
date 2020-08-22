@@ -7794,8 +7794,19 @@ Function Add-LocalIntranetURL ($url)
         # Thanks to CodePlex user Eulenspiegel for the updates $urlDomain syntax (https://autospinstaller.codeplex.com/workitem/20486)
         $urlDomain = $url.Substring($splitURL[0].Length + 1)
         Write-Host -ForegroundColor White " - Adding *.$urlDomain to local Intranet security zone..."
-        New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ZoneMap\Domains" -Name $urlDomain -ItemType Leaf -Force | Out-Null
-        New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ZoneMap\Domains\$urlDomain" -Name '*' -value "1" -PropertyType dword -Force | Out-Null
+        if ($splitUrl.Count -gt 3) # To handle subdomains
+        {
+            $subDomainString,$null = $urlDomain -split "\."
+            $urlDomain = $urlDomain -replace "$subDomainString\.",""
+            $wildCardHost = "*." + $subDomainString
+            $targetKey = New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ZoneMap\Domains\$urlDomain" -Name $wildCardHost -ItemType Leaf -Force
+        }
+        else
+        {
+            $targetKey = New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ZoneMap\Domains" -Name $urlDomain -ItemType Leaf -Force
+        }
+        $targetKeyPath = $targetKey.Name -replace "HKEY_CURRENT_USER","HKCU:"
+        New-ItemProperty -Path $targetKeyPath -Name '*' -value "1" -PropertyType dword -Force | Out-Null
     }
 }
 #endregion

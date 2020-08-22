@@ -82,7 +82,7 @@ else
 $PSConfigUI = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$spVer\BIN\psconfigui.exe"
 
 $script:DBPrefix = $xmlInput.Configuration.Farm.Database.DBPrefix
-If (($dbPrefix -ne "") -and ($dbPrefix -ne $null)) {$script:DBPrefix += "_"}
+If (($dbPrefix -ne "") -and ($null -ne $dbPrefix)) {$script:DBPrefix += "_"}
 If ($dbPrefix -like "*localhost*") {$script:DBPrefix = $dbPrefix -replace "localhost","$env:COMPUTERNAME"}
 
 if ($xmlInput.Configuration.Install.RemoteInstall.Enable -eq $true)
@@ -279,7 +279,7 @@ Function Set-ServiceConfig  ([xml]$xmlInput)
         CreatePowerPointConversionServiceApp $xmlInput
         ConfigureDistributedCacheService $xmlInput
     }
-    if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($spVer -eq 14))
+    if (((Get-CimInstance -ClassName Win32_OperatingSystem).Version -like "6.2*" -or (Get-CimInstance -ClassName Win32_OperatingSystem).Version -like "6.3*") -and ($spVer -eq 14))
     {
         Write-Host -ForegroundColor White " - Installing SMTP Windows feature in a separate PowerShell window..."
         Start-Process -FilePath "$PSHOME\powershell.exe" -Verb Runas -ArgumentList "-Command `"Import-Module -Name $env:dp0\AutoSPInstallerModule.psm1 -Force; InstallSMTP (Get-Content $inputFile); Start-Sleep 5`"" -Wait
@@ -365,7 +365,7 @@ If (($enableRemoteInstall -and !([string]::IsNullOrEmpty($remoteFarmServers))) -
             }
             $currentDomain = "LDAP://" + ([ADSI]"").distinguishedName
             $null,$user = $credential.Username -split "\\"
-            If (($user -ne $null) -and ($credential.Password -ne $null)) {$password = ConvertTo-PlainText $credential.Password}
+            If (($null -ne $user) -and ($null -ne $credential.Password)) {$password = ConvertTo-PlainText $credential.Password}
             Else
             {
                 If ($enableRemoteInstall -and !([string]::IsNullOrEmpty($remoteFarmServers))) {Write-Error " - Credentials are required for remote authentication."; Pause "exit"; Throw}
@@ -373,7 +373,7 @@ If (($enableRemoteInstall -and !([string]::IsNullOrEmpty($remoteFarmServers))) -
             }
             Write-Host -ForegroundColor White " - Checking credentials: `"$($credential.Username)`"..." -NoNewline
             $dom = New-Object System.DirectoryServices.DirectoryEntry($currentDomain,$user,$password)
-            If ($dom.Path -ne $null)
+            If ($null -ne $dom.Path)
             {
                 Write-Host -ForegroundColor Black -BackgroundColor Green "Verified."
                 $credentialVerified = $true
@@ -412,7 +412,7 @@ If (MatchComputerName $farmServers $env:COMPUTERNAME)
         #region Re-Launch Script under PowerShell v2
         # Check for SharePoint 2010 on Windows Server 2012, and re-launch script under PowerShell version 2 if it's not already
         # Required for compatibility
-        if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($host.Version.Major -gt 2) -and ($spVer -eq 14))
+        if (((Get-CimInstance -ClassName Win32_OperatingSystem).Version -like "6.2*" -or (Get-CimInstance -ClassName Win32_OperatingSystem).Version -like "6.3*") -and ($host.Version.Major -gt 2) -and ($spVer -eq 14))
         {
             Write-Host -ForegroundColor Yellow " - A version of PowerShell greater than 2.0 was detected."
             Write-Host -ForegroundColor Yellow " - We need to re-launch the script to enable PowerShell version 2 for SharePoint $spYear."
@@ -445,7 +445,7 @@ If (MatchComputerName $farmServers $env:COMPUTERNAME)
     {
         WriteLine
         Write-Host -ForegroundColor Yellow " - Script halted!"
-        If ($_.FullyQualifiedErrorId -ne $null -and $_.FullyQualifiedErrorId.StartsWith(" - "))
+        If ($null -ne $_.FullyQualifiedErrorId -and $_.FullyQualifiedErrorId.StartsWith(" - "))
         {
             # Error messages starting with " - " are thrown directly from this script
             Write-Host -ForegroundColor Red $_.FullyQualifiedErrorId
@@ -553,7 +553,7 @@ If (MatchComputerName $farmServers $env:COMPUTERNAME)
                     ForEach ($siteCollection in $webApp.SiteCollections.SiteCollection)
                     {
                         $siteURL = $siteCollection.siteURL
-                        If ($siteURL -ne $null)
+                        If ($null -ne $siteURL)
                         {
                             Start-Sleep 30 # Wait for the previous site to load before trying to load this site
                             Write-Host -ForegroundColor White " - Launching $siteURL..."
@@ -583,7 +583,7 @@ If (!$aborted)
         Write-Host -ForegroundColor White "-----------------------------------"
         If ($isTracing) {Stop-Transcript; $script:isTracing = $false}
         Pause "exit"
-        If ((-not $unattended) -and (-not (Get-WmiObject Win32_OperatingSystem).Version -eq "6.1.7601")) {Invoke-Item $logFile} # We don't want to automatically open the log Win 2008 with SP2013, due to a nasty bug causing BSODs! See https://autospinstaller.codeplex.com/workitem/19491 for more info.
+        If ((-not $unattended) -and (-not (Get-CimInstance -ClassName Win32_OperatingSystem).Version -eq "6.1.7601")) {Invoke-Item $logFile} # We don't want to automatically open the log Win 2008 with SP2013, due to a nasty bug causing BSODs! See https://autospinstaller.codeplex.com/workitem/19491 for more info.
     }
     # Remove any lingering LogTime values in the registry
     Remove-ItemProperty -Path "HKLM:\SOFTWARE\AutoSPInstaller\" -Name "LogTime" -ErrorAction SilentlyContinue
