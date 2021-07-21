@@ -7,7 +7,7 @@ Function CheckXMLVersion ([xml]$xmlInput)
 {
     $getXMLVersion = $xmlInput.Configuration.Version
     # The value below will increment whenever there is an update to the format of the AutoSPInstallerInput XML file
-    $scriptCurrentVersion = "3.99.70"
+    $scriptCurrentVersion = "3.99.85"
     $scriptPreviousVersion = "3.99.60"
     if ($getXMLVersion -ne $scriptCurrentVersion)
     {
@@ -165,9 +165,13 @@ Function RemoveIEEnhancedSecurity ([xml]$xmlInput)
         Write-Host -ForegroundColor White " - Disabling IE Enhanced Security..."
         Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}" -Name isinstalled -Value 0 -ErrorAction SilentlyContinue
         Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A8-37EF-4b3f-8CFC-4F3A74704073}" -Name isinstalled -Value 0 -ErrorAction SilentlyContinue
-        Rundll32 iesetup.dll, IEHardenLMSettings,1,True
-        Rundll32 iesetup.dll, IEHardenUser,1,True
-        Rundll32 iesetup.dll, IEHardenAdmin,1,True
+        # Stuff below doesn't work on Server Core as IE is not installed
+        if (!(Get-ItemProperty -Path "HKLM:\Software\Microsoft\Windows NT/Currentversion").InstallationType -eq "Server Core")
+        {
+            Rundll32 iesetup.dll, IEHardenLMSettings,1,True
+            Rundll32 iesetup.dll, IEHardenUser,1,True
+            Rundll32 iesetup.dll, IEHardenAdmin,1,True
+        }
         If (Test-Path "HKCU:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}" -ErrorAction SilentlyContinue)
         {
             Remove-Item -Path "HKCU:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}"
@@ -641,7 +645,7 @@ Function InstallPrerequisites ([xml]$xmlInput)
             If ($xmlInput.Configuration.Install.OfflineInstall -eq $true) # Install all prerequisites from local folder
             {
                 # Try to pre-install .Net Framework 3.5.1 on Windows Server 2012, 2012 R2 or 2016
-                if ((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.4*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "10.0*")
+                if ((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.4*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "10.0*" -and $spYear -ne "SE")
                 {
                     if (Test-Path -Path "$env:SPbits\PrerequisiteInstallerFiles\sxs")
                     {
@@ -761,6 +765,17 @@ Function InstallPrerequisites ([xml]$xmlInput)
                                                                                          /DotNet472:`"$env:SPbits\PrerequisiteInstallerFiles\NDP472-KB4054530-x86-x64-AllOS-ENU.exe`" `
                                                                                          /MSVCRT11:`"$env:SPbits\PrerequisiteInstallerFiles\vcredist_x64.exe`" `
                                                                                          /MSVCRT141:`"$env:SPbits\PrerequisiteInstallerFiles\vc_redist.x64.exe`" `
+                                                                                        "
+                    If (-not $?) {Throw}
+                }
+                elseif ($spYear -eq "SE") # SharePoint Subscription Edition (SPSE)
+                {
+                    Write-Host -ForegroundColor Cyan "  - Running Prerequisite Installer (offline mode)..." -NoNewline
+                    $startTime = Get-Date
+                    Start-Process "$env:SPbits\PrerequisiteInstaller.exe" -ArgumentList "/unattended `
+                                                                                         /WCFDataServices56:`"$env:SPbits\PrerequisiteInstallerFiles\WcfDataServices.exe`" `
+                                                                                         /DotNet48:`"$env:SPbits\PrerequisiteInstallerFiles\ndp48-web.exe`" `
+                                                                                         /MSVCRT142:`"$env:SPbits\PrerequisiteInstallerFiles\VC_redist.x64.exe`" `
                                                                                         "
                     If (-not $?) {Throw}
                 }
@@ -893,7 +908,7 @@ Function InstallPrerequisites ([xml]$xmlInput)
         }
         # Parsing most recent PreRequisiteInstaller log for errors or restart requirements, since $LASTEXITCODE doesn't seem to work...
         $preReqLog = Get-ChildItem -Path (Get-Item $env:TEMP).FullName | Where-Object {$_.Name -like "PrerequisiteInstaller.*"} | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
-        If ($preReqLog -eq $null)
+        If ($null -eq $preReqLog)
         {
             Write-Warning "Could not find PrerequisiteInstaller log file"
         }
@@ -1011,16 +1026,17 @@ Function InstallSharePoint ([xml]$xmlInput)
             {
                 Throw " - SharePoint setup requires a restart. Run the script again after restarting to continue."
             }
-
+            # Now wait up to 30 seconds for PSConfigUI to launch
             Write-Host -ForegroundColor Cyan " - Waiting for SharePoint Products and Technologies Wizard to launch..." -NoNewline
-            While ((Get-Process | Where-Object {$_.ProcessName -like "psconfigui*"}) -eq $null)
+            While ($null -eq (Get-Process | Where-Object {$_.ProcessName -like "psconfigui*"}) -and $counter -le 30)
             {
                 Write-Host -ForegroundColor Cyan "." -NoNewline
                 Start-Sleep 1
+                $counter++
             }
             Write-Host -ForegroundColor Green "Done."
             Write-Host -ForegroundColor White " - Exiting Products and Technologies Wizard - using PowerShell instead!"
-            Stop-Process -Name psconfigui
+            Stop-Process -Name psconfigui -ErrorAction SilentlyContinue
         }
         Else
         {
@@ -2227,13 +2243,13 @@ Function AddManagedAccounts ([xml]$xmlInput)
         {
             $username = $account.username
 
-			if([string]::IsNullOrEmpty($account.Password)) {
-				$password = (Get-Credential -Message "Enter Password for Managed Account" -UserName $account.username).Password
-			}
-			else {
-				$password = $account.Password
-				$password = ConvertTo-SecureString "$password" -AsPlaintext -Force
-			}
+            if([string]::IsNullOrEmpty($account.Password)) {
+                $password = (Get-Credential -Message "Enter Password for Managed Account" -UserName $account.username).Password
+            }
+            else {
+                $password = $account.Password
+                $password = ConvertTo-SecureString "$password" -AsPlaintext -Force
+            }
             $alreadyAdmin = $false
             # The following was suggested by Matthias Einig (http://www.codeplex.com/site/users/view/matein78)
             # And inspired by http://toddcarter.net/post/2010/05/03/give-your-application-pool-accounts-a-profile/ & http://blog.brainlitter.com/archive/2010/06/08/how-to-revolve-event-id-1511-windows-cannot-find-the-local-profile-on-windows-server-2008.aspx
@@ -2397,8 +2413,8 @@ Function CreateGenericServiceApplication()
         {
             Write-Host -ForegroundColor White " - $($serviceInstance.TypeName) instance already started."
         }
-        # Check if our new cmdlets are available yet,  if not, re-load the SharePoint PS Snapin
-        If (!(Get-Command $serviceGetCmdlet -ErrorAction SilentlyContinue))
+        # Check if our new cmdlets are available yet,  if not, re-load the SharePoint PS Snapin in versions 2019 and older
+        If (!(Get-Command $serviceGetCmdlet -ErrorAction SilentlyContinue) -and $spyear -le 2019)
         {
             Write-Host -ForegroundColor White " - Re-importing SP PowerShell Snapin to enable new cmdlets..."
             Remove-PSSnapin Microsoft.SharePoint.PowerShell
@@ -3540,7 +3556,7 @@ Function CreateUserProfileServiceApplication ([xml]$xmlInput)
                             $connectionSyncOU = "DC="+$env:USERDNSDOMAIN -replace "\.",",DC="
                             $syncConnectionDomain,$syncConnectionAcct = ($userProfile.SyncConnectionAccount) -split "\\"
                             $addProfileSyncCmd = @"
-Add-PsSnapin Microsoft.SharePoint.PowerShell
+Add-PsSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue
 Write-Host -ForegroundColor White " - Creating default Sync connection..."
 `$syncConnectionAcctPWD = (ConvertTo-SecureString -String `'$($userProfile.SyncConnectionAccountPassword)`' -AsPlainText -Force)
 Add-SPProfileSyncConnection -ProfileServiceApplication $($profileServiceApp.Id) -ConnectionForestName $env:USERDNSDOMAIN -ConnectionDomain $syncConnectionDomain -ConnectionUserName "$syncConnectionAcct" -ConnectionSynchronizationOU "$connectionSyncOU" -ConnectionPassword `$syncConnectionAcctPWD
@@ -3672,7 +3688,7 @@ Function CreateUPSAsAdmin ([xml]$xmlInput)
         $scriptFile = "$((Get-Item $env:TEMP).FullName)\AutoSPInstaller-ScriptBlock.ps1"
         # Write the script block, with expanded variables to a temporary script file that the Farm Account can get at
         Write-Output "Write-Host -ForegroundColor White `"Creating $userProfileServiceName as $farmAcct...`"" | Out-File $scriptFile -Width 400
-        Write-Output "Add-PsSnapin Microsoft.SharePoint.PowerShell" | Out-File $scriptFile -Width 400 -Append
+        Write-Output "Add-PsSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue" | Out-File $scriptFile -Width 400 -Append
         # Check if we've specified SQL authentication instead of the default Windows integrated authentication, and prepare the credentials
         if ($usingSQLAuthentication)
         {
@@ -3747,7 +3763,7 @@ Function CreateUPSAsAdmin ([xml]$xmlInput)
 #region Create State Service Application
 Function CreateStateServiceApp ([xml]$xmlInput)
 {
-	$spYear = $xmlInput.Configuration.Install.SPVersion
+    $spYear = $xmlInput.Configuration.Install.SPVersion
     $spVer = Get-MajorVersionNumber $spYear
     If ((ShouldIProvision $xmlInput.Configuration.ServiceApps.StateService -eq $true) -or `
         (ShouldIProvision $xmlInput.Configuration.EnterpriseServiceApps.AccessService -eq $true) -or `
@@ -4308,6 +4324,7 @@ Function ConfigureClaimsToWindowsTokenService ([xml]$xmlInput)
                     }
                 }
                 $claimsService.Provision()
+                $claimsService | Start-SPServiceInstance
                 If (-not $?) {throw " - Failed to start $($claimsService.DisplayName)"}
             }
             Catch
@@ -4492,6 +4509,10 @@ Function ConfigureDistributedCacheService ([xml]$xmlInput)
         WriteLine
         $spservice = Get-SPManagedAccountXML $xmlInput -CommonName "spservice"
         $distributedCachingSvc = (Get-SPFarm).Services | Where-Object {$_.Name -eq "AppFabricCachingService"}
+        if ($null -eq $distributedCachingSvc)
+        {
+            $distributedCachingSvc = (Get-SPFarm).Services | Where-Object {$_.Name -eq "SPCache"}
+        }
         # Check if we should disable the Distributed Cache service on the local server
         # Ensure the node exists in the XML first as we don't want to inadvertently disable the service if it wasn't explicitly specified
         $serviceInstances = Get-SPServiceInstance | Where-Object {$_.GetType().ToString() -eq "Microsoft.SharePoint.DistributedCaching.Utilities.SPDistributedCacheServiceInstance"}
@@ -5781,7 +5802,7 @@ Function CreateExcelServiceApp ([xml]$xmlInput)
                     # Create Service App
                     Write-Host -ForegroundColor White " - Creating $excelAppName..."
                     # Check if our new cmdlets are available yet,  if not, re-load the SharePoint PS Snapin
-                    If (!(Get-Command New-SPExcelServiceApplication -ErrorAction SilentlyContinue))
+                    If (!(Get-Command New-SPExcelServiceApplication -ErrorAction SilentlyContinue) -and $spyear -le 2019)
                     {
                         Write-Host -ForegroundColor White " - Re-importing SP PowerShell Snapin to enable new cmdlets..."
                         Remove-PSSnapin Microsoft.SharePoint.PowerShell
@@ -6701,7 +6722,7 @@ Function Set-PDFSearchAndIcon ([xml]$xmlInput)
             Start-Process -FilePath "msiexec.exe" -ArgumentList "/i `"$iFilterInstaller`" /passive /norestart" -NoNewWindow -Wait
         }
         Catch {$_}
-        If ((Get-PsSnapin | Where-Object {$_.Name -eq "Microsoft.SharePoint.PowerShell"})-eq $null)
+        If ($null -eq (Get-PsSnapin | Where-Object {$_.Name -eq "Microsoft.SharePoint.PowerShell"}))
         {
             Write-Host -ForegroundColor White " - Loading SharePoint PowerShell Snapin..."
             Add-PsSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null
@@ -7109,13 +7130,13 @@ Function Confirm-LocalSession
 # ===================================================================================
 Function Add-SharePointPSSnapin
 {
-    If ((Get-PsSnapin | Where-Object {$_.Name -eq "Microsoft.SharePoint.PowerShell"})-eq $null)
+    If ($null -eq (Get-PsSnapin | Where-Object {$_.Name -eq "Microsoft.SharePoint.PowerShell"}))
     {
         WriteLine
         Write-Host -ForegroundColor White " - Loading SharePoint PowerShell Snapin..."
         # Added the line below to match what the SharePoint.ps1 file implements (normally called via the SharePoint Management Shell Start Menu shortcut)
         If (Confirm-LocalSession) {$Host.Runspace.ThreadOptions = "ReuseThread"}
-        Add-PsSnapin Microsoft.SharePoint.PowerShell -ErrorAction Stop | Out-Null
+        Add-PsSnapin Microsoft.SharePoint.PowerShell -ErrorAction Inquire | Out-Null
         WriteLine
     }
 }
@@ -8049,7 +8070,7 @@ Function Stop-DefaultWebsite ()
 function Get-MajorVersionNumber ($spYear)
 {
     # Create hash tables with major version to product year mappings & vice-versa
-    $spVersions = @{"2010" = "14"; "2013" = "15"; "2016" = "16"; "2019" = "16"} # SharePoint 2019 still uses major build 16
+    $spVersions = @{"2010" = "14"; "2013" = "15"; "2016" = "16"; "2019" = "16"; "SE" = "16"} # SharePoint 2019 and SPSE still use major build 16
     $spVer = $spVersions.$spYear
     return $spVer
 }

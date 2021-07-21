@@ -3,7 +3,7 @@
     [string]$inputFile = $(throw '- Need parameter input file (e.g. "\\SPSERVER01\C$\SP\AutoSPInstaller\AutoSPInstallerInput.xml")'),
     [string]$targetServer = "",
     [string]$remoteAuthPassword = "",
-    [switch]$unattended
+    [switch]$Unattended
 )
 
 # Globally update all instances of "localhost" in the input file to actual local server name
@@ -195,14 +195,17 @@ Function Start-Install
     InstallPrerequisites $xmlInput
     ConfigureIISLogging $xmlInput
     InstallSharePoint $xmlInput
-    # Try to apply a recent CU for the AppFabric Caching Service if we're installing at least SP2013
-    if ($spVer -ge 15) {Install-AppFabricCU $xmlInput}
+    # Try to apply a recent CU for the AppFabric Caching Service if we're installing at least SP2013 but less than 2019. Note, this check works even if the $spYear is "SE".
+    if ($spYear -ge 2013 -and $spyear -lt 2019) {Install-AppFabricCU $xmlInput}
     InstallOfficeWebApps2010 $xmlInput
     InstallProjectServer $xmlInput
     InstallLanguagePacks $xmlInput
     InstallUpdates $xmlInput
     FixTaxonomyPickerBug $xmlInput
-    Set-ShortcutRunAsAdmin -shortcutFile "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Microsoft SharePoint $spYear Products\SharePoint $spYear Management Shell.lnk"
+    if ($spYear -le 2019) # Note, this check works even if the $spYear is "SE".
+    {
+        Set-ShortcutRunAsAdmin -shortcutFile "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Microsoft SharePoint $spYear Products\SharePoint $spYear Management Shell.lnk"
+    }
 }
 #endregion
 
@@ -212,7 +215,10 @@ Function Set-FarmConfig ([xml]$xmlInput)
     [System.Management.Automation.PsCredential]$farmCredential = GetFarmCredentials $xmlInput
     [security.securestring]$secPhrase = GetSecureFarmPassphrase $xmlInput
     ConfigureFarmAdmin $xmlInput
-    Add-SharePointPSSnapin
+    if ($spYear -le 2019) # No longer need the snapin in SPSE (2021) plus as it uses a module instead. Note, this check works even if the $spYear is "SE".
+    {
+        Add-SharePointPSSnapin
+    }
     CreateOrJoinFarm $xmlInput ([security.securestring]$secPhrase) ([System.Management.Automation.PsCredential]$farmCredential)
     CheckFarmTopology $xmlInput
     ConfigureFarm $xmlInput
@@ -246,7 +252,11 @@ Function Set-ServiceConfig  ([xml]$xmlInput)
     ConfigureSandboxedCodeService $xmlInput
     CreateStateServiceApp $xmlInput
     CreateMetadataServiceApp $xmlInput
-    ConfigureClaimsToWindowsTokenService $xmlInput
+    # Temporary fix as service gets stuck in 'Provisioning" status for SPSE
+    if ($spYear -le 2019)
+    {
+        ConfigureClaimsToWindowsTokenService $xmlInput
+    }
     CreateUserProfileServiceApplication $xmlInput
     CreateSPUsageApp $xmlInput
     ConfigureUsageLogging $xmlInput
@@ -257,9 +267,16 @@ Function Set-ServiceConfig  ([xml]$xmlInput)
     CreateEnterpriseSearchServiceApp $xmlInput
     CreateBusinessDataConnectivityServiceApp $xmlInput
     CreateExcelServiceApp $xmlInput
-    CreateAccess2010ServiceApp $xmlInput
     CreateVisioServiceApp $xmlInput
-    CreatePerformancePointServiceApp $xmlInput
+    if ($spYear -le 2019) # Only for versions prior to Subscription Edition. Note, this check works even if the $spYear is "SE".
+    {
+        CreateAccess2010ServiceApp $xmlInput
+        if ($spVer -ge 15) # Only for SP2013+ only
+        {
+            CreateAccessServicesApp $xmlInput
+        }
+        CreatePerformancePointServiceApp $xmlInput
+    }
     CreateWordAutomationServiceApp $xmlInput
     CreateProjectServerServiceApp $xmlInput
     ConfigureWorkflowTimerService $xmlInput
@@ -275,7 +292,6 @@ Function Set-ServiceConfig  ([xml]$xmlInput)
         CreateSubscriptionSettingsServiceApp $xmlInput
         CreateWorkManagementServiceApp $xmlInput
         CreateMachineTranslationServiceApp $xmlInput
-        CreateAccessServicesApp $xmlInput
         CreatePowerPointConversionServiceApp $xmlInput
         ConfigureDistributedCacheService $xmlInput
     }
@@ -535,9 +551,9 @@ If (MatchComputerName $farmServers $env:COMPUTERNAME)
     }
     Finally
     {
-        # Only do this stuff if this was a local session and it succeeded, and if we aren't attempting a remote install;
+        # Only do this stuff if this was a local session and it succeeded, not running Server Core, and if we aren't attempting a remote install;
         # Otherwise these sites may not be available or 'complete' yet
-        If ((Confirm-LocalSession) -and !$aborted -and !($enableRemoteInstall))
+        If ((Confirm-LocalSession) -and !$aborted -and !($enableRemoteInstall) -and !((Get-ItemProperty -Path "HKLM:\Software\Microsoft\Windows NT/Currentversion").InstallationType -eq "Server Core"))
         {
             # Launch Central Admin
             If (ShouldIProvision($xmlInput.Configuration.Farm.CentralAdmin) -eq $true)
@@ -583,7 +599,7 @@ If (!$aborted)
         Write-Host -ForegroundColor White "-----------------------------------"
         If ($isTracing) {Stop-Transcript; $script:isTracing = $false}
         Pause "exit"
-        If ((-not $unattended) -and (-not (Get-CimInstance -ClassName Win32_OperatingSystem).Version -eq "6.1.7601")) {Invoke-Item $logFile} # We don't want to automatically open the log Win 2008 with SP2013, due to a nasty bug causing BSODs! See https://autospinstaller.codeplex.com/workitem/19491 for more info.
+        If ((-not $Unattended) -and (-not (Get-CimInstance -ClassName Win32_OperatingSystem).Version -eq "6.1.7601")) {Invoke-Item $logFile} # We don't want to automatically open the log Win 2008 with SP2013, due to a nasty bug causing BSODs! See https://autospinstaller.codeplex.com/workitem/19491 for more info.
     }
     # Remove any lingering LogTime values in the registry
     Remove-ItemProperty -Path "HKLM:\SOFTWARE\AutoSPInstaller\" -Name "LogTime" -ErrorAction SilentlyContinue
