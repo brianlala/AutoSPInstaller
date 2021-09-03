@@ -4330,7 +4330,8 @@ Function ConfigureClaimsToWindowsTokenService ([xml]$xmlInput)
             }
             Catch
             {
-                Throw " - An error occurred starting $($claimsService.DisplayName)"
+				Write-Output $_
+                Throw " - An error occurred starting $($claimsService.DisplayName)"				
             }
             #Wait
             Write-Host -ForegroundColor Cyan " - Waiting for $($claimsService.DisplayName)..." -NoNewline
@@ -7721,7 +7722,7 @@ Function Get-SharePointInstall
 # ===================================================================================
 Function MatchComputerName ($computersList, $computerName)
 {
-    If ($computersList -like "*$computerName*") { Return $true; }
+    If (",$($computersList)," -like "*,$computerName,*") { Return $true; }
     foreach ($v in $computersList) {
       If ($v.Contains("*") -or $v.Contains("#")) {
             # wildcard processing
