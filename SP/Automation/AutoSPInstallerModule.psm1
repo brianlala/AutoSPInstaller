@@ -4312,7 +4312,7 @@ Function ConfigureClaimsToWindowsTokenService ([xml]$xmlInput)
                     $adminGroup = ([ADSI]"WinNT://$env:COMPUTERNAME/$builtinAdminGroup,group")
                     # This syntax comes from Ying Li (http://myitforum.com/cs2/blogs/yli628/archive/2007/08/30/powershell-script-to-add-remove-a-domain-user-to-the-local-administrators-group-on-a-remote-machine.aspx)
                     $localAdmins = $adminGroup.psbase.invoke("Members") | ForEach-Object {$_.GetType().InvokeMember("Name", 'GetProperty', $null, $_, $null)}
-                    $spservice = Get-SPManagedAccountXML $xmlInput -CommonName "spservice"
+                    $spservice = Get-SPManagedAccountXML $xmlInput -CommonName "spclaims"
                     $managedAccountGen = Get-SPManagedAccount | Where-Object {$_.UserName -eq $($spservice.username)}
                     $managedAccountDomain,$managedAccountUser = $managedAccountGen.UserName -split "\\"
                     If (!($localAdmins -contains $managedAccountUser))
@@ -4321,7 +4321,7 @@ Function ConfigureClaimsToWindowsTokenService ([xml]$xmlInput)
                         ([ADSI]"WinNT://$env:COMPUTERNAME/$builtinAdminGroup,group").Add("WinNT://$managedAccountDomain/$managedAccountUser")
                     }
 					
-                    UpdateProcessIdentity -serviceToUpdate $claimsService -managedAccountName $spservice
+                    UpdateProcessIdentity -serviceToUpdate $claimsService -managedAccountName "spclaims"
                     $claimsService.Update()
                 }
                 $claimsService.Provision()
