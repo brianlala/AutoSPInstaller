@@ -7722,7 +7722,9 @@ Function Get-SharePointInstall
 # ===================================================================================
 Function MatchComputerName ($computersList, $computerName)
 {
-    If (",$($computersList)," -like "*,$computerName,*") { Return $true; }
+	$listString = $computersList
+	if ($computersList -is [array]) { $listString = $computersList -join "," }
+    If (",$($listString)," -like "*,$($computerName),*") { Return $true; }
     foreach ($v in $computersList) {
       If ($v.Contains("*") -or $v.Contains("#")) {
             # wildcard processing
