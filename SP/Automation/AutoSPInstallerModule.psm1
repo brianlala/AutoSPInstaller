@@ -1759,9 +1759,9 @@ Function GetSecureFarmPassphrase ([xml]$xmlInput)
 # Func: UpdateProcessIdentity
 # Desc: Updates the account a specified service runs under to the general app pool account
 # ====================================================================================
-Function UpdateProcessIdentity ($serviceToUpdate)
-{
-    $spservice = Get-SPManagedAccountXML $xmlInput -CommonName "spservice"
+Function UpdateProcessIdentity ($serviceToUpdate, $managedAccountName = "spservice")
+{	
+    $spservice = Get-SPManagedAccountXML $xmlInput -CommonName $managedAccountName
     # Managed Account
     $managedAccountGen = Get-SPManagedAccount | Where-Object {$_.UserName -eq $($spservice.username)}
     if ($managedAccountGen -eq $null) { Throw " - Managed Account $($spservice.username) not found" }
@@ -2489,7 +2489,7 @@ Function ConfigureSandboxedCodeService ([xml]$xmlInput)
             Try
             {
                 Write-Host -ForegroundColor White " - Starting Microsoft SharePoint Foundation Sandboxed Code Service..."
-                UpdateProcessIdentity $sandboxedCodeService
+                UpdateProcessIdentity -serviceToUpdate $sandboxedCodeService
                 $sandboxedCodeService.Update()
                 $sandboxedCodeService.Provision()
                 If (-not $?) {Throw " - Failed to start Sandboxed Code Service"}
@@ -3498,7 +3498,7 @@ Function CreateUserProfileServiceApplication ([xml]$xmlInput)
                             Write-Host -ForegroundColor White " - Deleting existing sync credentials timer job..."
                             $UPSCredentialsJob.Delete()
                         }
-                        UpdateProcessIdentity $profileSyncService
+                        UpdateProcessIdentity -serviceToUpdate $profileSyncService
                         $profileSyncService.Update()
                         Write-Host -ForegroundColor White " - Waiting for User Profile Synchronization Service..." -NoNewline
                         # Provision the User Profile Sync Service
@@ -4113,7 +4113,7 @@ Function CreateWebAnalyticsApp ([xml]$xmlInput)
             $analyticsDataProcessingInstances = Get-SPServiceInstance | Where-Object {$_.GetType().ToString() -eq "Microsoft.Office.Server.WebAnalytics.Administration.WebAnalyticsServiceInstance"}
             $analyticsDataProcessingInstance = $analyticsDataProcessingInstances | Where-Object {MatchComputerName $_.Server.Address $env:COMPUTERNAME}
             If (-not $?) { Throw " - Failed to find Analytics Data Processing Service instance" }
-            UpdateProcessIdentity $analyticsDataProcessingInstance
+            UpdateProcessIdentity -serviceToUpdate $analyticsDataProcessingInstance
             $analyticsDataProcessingInstance.Update()
             Write-Host -ForegroundColor White " - Starting local Analytics Data Processing Service instance..."
             $analyticsDataProcessingInstance.Provision()
@@ -4307,14 +4307,12 @@ Function ConfigureClaimsToWindowsTokenService ([xml]$xmlInput)
                 Write-Host -ForegroundColor White " - Starting $($claimsService.DisplayName)..."
                 if ($xmlInput.Configuration.Farm.Services.ClaimsToWindowsTokenService.UpdateAccount -eq $true)
                 {
-                    UpdateProcessIdentity $claimsService
-                    $claimsService.Update()
-                    # Add C2WTS account (currently the generic service account) to local admins
+					# Add C2WTS account to local admins
                     $builtinAdminGroup = Get-AdministratorsGroup
                     $adminGroup = ([ADSI]"WinNT://$env:COMPUTERNAME/$builtinAdminGroup,group")
                     # This syntax comes from Ying Li (http://myitforum.com/cs2/blogs/yli628/archive/2007/08/30/powershell-script-to-add-remove-a-domain-user-to-the-local-administrators-group-on-a-remote-machine.aspx)
                     $localAdmins = $adminGroup.psbase.invoke("Members") | ForEach-Object {$_.GetType().InvokeMember("Name", 'GetProperty', $null, $_, $null)}
-                    $spservice = Get-SPManagedAccountXML $xmlInput -CommonName "spservice"
+                    $spservice = Get-SPManagedAccountXML $xmlInput -CommonName "spclaims"
                     $managedAccountGen = Get-SPManagedAccount | Where-Object {$_.UserName -eq $($spservice.username)}
                     $managedAccountDomain,$managedAccountUser = $managedAccountGen.UserName -split "\\"
                     If (!($localAdmins -contains $managedAccountUser))
@@ -4322,6 +4320,9 @@ Function ConfigureClaimsToWindowsTokenService ([xml]$xmlInput)
                         Write-Host -ForegroundColor White " - Adding $($managedAccountGen.Username) to local Administrators..."
                         ([ADSI]"WinNT://$env:COMPUTERNAME/$builtinAdminGroup,group").Add("WinNT://$managedAccountDomain/$managedAccountUser")
                     }
+					
+                    UpdateProcessIdentity -serviceToUpdate $claimsService -managedAccountName "spclaims"
+                    $claimsService.Update()
                 }
                 $claimsService.Provision()
                 $claimsService | Start-SPServiceInstance
@@ -4329,7 +4330,8 @@ Function ConfigureClaimsToWindowsTokenService ([xml]$xmlInput)
             }
             Catch
             {
-                Throw " - An error occurred starting $($claimsService.DisplayName)"
+				Write-Output $_
+                Throw " - An error occurred starting $($claimsService.DisplayName)"				
             }
             #Wait
             Write-Host -ForegroundColor Cyan " - Waiting for $($claimsService.DisplayName)..." -NoNewline
@@ -4416,7 +4418,7 @@ Function ConfigureFoundationSearch ([xml]$xmlInput)
         Try
         {
             $foundationSearchService = (Get-SPFarm).Services | Where-Object {$_.Name -eq "SPSearch4"}
-            UpdateProcessIdentity $foundationSearchService
+            UpdateProcessIdentity -serviceToUpdate $foundationSearchService
         }
         Catch
         {
@@ -4472,7 +4474,7 @@ Function ConfigureTracing ([xml]$xmlInput)
         }
         Try
         {
-            UpdateProcessIdentity $spTraceV4
+            UpdateProcessIdentity -serviceToUpdate $spTraceV4
         }
         Catch
         {
@@ -4586,7 +4588,7 @@ Function ConfigureDistributedCacheService ([xml]$xmlInput)
             Write-Host -ForegroundColor White " - Applying service account $($spservice.username) to service AppFabricCachingService..."
             Try
             {
-                UpdateProcessIdentity $distributedCachingSvc
+                UpdateProcessIdentity -serviceToUpdate $distributedCachingSvc
             }
             Catch
             {
@@ -6481,7 +6483,7 @@ Function CreateProjectServerServiceApp ([xml]$xmlInput)
             $projectServiceInstances = (Get-SPFarm).Services | Where-Object {$_.GetType().ToString() -eq $projectService}
             foreach ($projectServiceInstance in $projectServiceInstances)
             {
-                UpdateProcessIdentity $projectServiceInstance
+                UpdateProcessIdentity -serviceToUpdate $projectServiceInstance
             }
         }
         # Create a Project Server DB (2013 only)
@@ -7720,7 +7722,9 @@ Function Get-SharePointInstall
 # ===================================================================================
 Function MatchComputerName ($computersList, $computerName)
 {
-    If ($computersList -like "*$computerName*") { Return $true; }
+	$listString = $computersList
+	if ($computersList -is [array]) { $listString = $computersList -join "," }
+    If (",$($listString)," -like "*,$($computerName),*") { Return $true; }
     foreach ($v in $computersList) {
       If ($v.Contains("*") -or $v.Contains("#")) {
             # wildcard processing

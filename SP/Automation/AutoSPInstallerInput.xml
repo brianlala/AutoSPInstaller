@@ -153,11 +153,30 @@
       </ServerRoles>
         <!-- The ManagedAccounts section configures all accounts that will be added to SharePoint as managed accounts. -->
         <ManagedAccounts>
-            <!-- The CommonName values should remain unchanged for these first 4 accounts; you can add additional managed accounts, but the script expects certain static values for the CommonName of these 4 managed accounts.
+            <!-- The CommonName values should remain unchanged for these first 5 accounts; you can add additional managed accounts, but the script expects certain static values for the CommonName of these 4 managed accounts.
                  If you are creating additional web applications, use a new account for each web application with a new common name, unless you are creating a large number
                  of web applications, in which case the additional memory consumption this requires outweighs the security benefits. -->
             <ManagedAccount CommonName="spservice">
                 <Username>CONTOSO\SP_Services</Username>
+                <Password></Password>
+            </ManagedAccount>
+			<!-- 
+				The Claims to Windows Token Service requires special permissions on each server.
+				
+				Member of Local Administrators (Handled by AutoSPInstaller)
+				
+				The following is a manual process to be done by you, the API To adjust these is not yet available.
+				
+				Local Security Policies (secpol.msc):
+					Act as part of the operating system.
+					Impersonate a user after authentication.
+					Log on as a service.
+					
+				SharePoint will not automatically grant these for you, you must set them yourself.
+				This account is a HIGH privilege account and should be kept very safe.
+			-->
+			<ManagedAccount CommonName="spclaims">
+                <Username>CONTOSO\SP_Claims</Username>
                 <Password></Password>
             </ManagedAccount>
             <ManagedAccount CommonName="Portal">
