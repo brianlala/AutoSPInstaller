@@ -2227,13 +2227,13 @@ Function AddManagedAccounts ([xml]$xmlInput)
         {
             $username = $account.username
 
-			if([string]::IsNullOrEmpty($account.Password)) {
-				$password = (Get-Credential -Message "Enter Password for Managed Account" -UserName $account.username).Password
-			}
-			else {
-				$password = $account.Password
-				$password = ConvertTo-SecureString "$password" -AsPlaintext -Force
-			}
+            if([string]::IsNullOrEmpty($account.Password)) {
+                $password = (Get-Credential -Message "Enter Password for Managed Account" -UserName $account.username).Password
+            }
+            else {
+                $password = $account.Password
+                $password = ConvertTo-SecureString "$password" -AsPlaintext -Force
+            }
             $alreadyAdmin = $false
             # The following was suggested by Matthias Einig (http://www.codeplex.com/site/users/view/matein78)
             # And inspired by http://toddcarter.net/post/2010/05/03/give-your-application-pool-accounts-a-profile/ & http://blog.brainlitter.com/archive/2010/06/08/how-to-revolve-event-id-1511-windows-cannot-find-the-local-profile-on-windows-server-2008.aspx
@@ -2660,15 +2660,14 @@ Function AssignCert ($SSLHostHeader, $SSLPort, $SSLSiteName)
             $certCommonName = "*.$topDomain"
         }
         Write-Host -ForegroundColor White " - Looking for existing `"$certCommonName`" wildcard certificate..."
-        $cert = Get-ChildItem cert:\LocalMachine\My | Where-Object {$_.Subject -eq "CN=$certCommonName"}
     }
     Else
     {
         # Just create a cert that matches the SSL host header
         $certCommonName = $SSLHostHeader
         Write-Host -ForegroundColor White " - Looking for existing `"$certCommonName`" certificate..."
-        $cert = Get-ChildItem cert:\LocalMachine\My | Where-Object {$_.Subject -eq "CN=$certCommonName"}
     }
+    $cert = Get-ChildItem cert:\LocalMachine\My | Where-Object {$_.Subject -eq "CN=$certCommonName"}
     If (!$cert)
     {
         Write-Host -ForegroundColor White " - None found."
@@ -2725,24 +2724,50 @@ Function AssignCert ($SSLHostHeader, $SSLPort, $SSLSiteName)
         $store.Add($pfx)
         $store.Close()
         Write-Host -ForegroundColor White " - Assigning certificate `"$certSubject`" to SSL-enabled site..."
-        #Set-Location IIS:\SslBindings -ErrorAction Inquire
-        if (!(Get-Item IIS:\SslBindings\0.0.0.0!$SSLPort -ErrorAction SilentlyContinue))
+        if ($spYear -eq "SE") # SharePoint Subscription Edition (SPSE) way using native cmdlets
         {
-            $cert | New-Item IIS:\SslBindings\0.0.0.0!$SSLPort -ErrorAction SilentlyContinue | Out-Null
+            Write-Host -ForegroundColor White "  - Using SPSE native cmdlets..."
+            # First export the cert again to a pfx that SharePoint SE can use
+            Write-Host -ForegroundColor White "  - Exporting the cert as a pfx to '$((Get-Item $env:TEMP).FullName)\$certSubjectName.pfx'..."
+            Export-PfxCertificate -Cert $cert -FilePath "$((Get-Item $env:TEMP).FullName)\$certSubjectName.pfx" -ProtectTo "$env:USERDOMAIN\$env:USERNAME" -Force | Out-Null
+            Write-Host -ForegroundColor White "  - Importing the certificate to SharePoint..."
+            Import-SPCertificate -Path "$((Get-Item $env:TEMP).FullName)\$certSubjectName.pfx" -Exportable -Replace | Out-Null
+            $seCert = Get-SPCertificate | Where-Object {$_.Subject -eq $certSubject}
+            Write-Host -ForegroundColor White "  - Binding certificate to web app '$SSLSiteName'..."
+            if ((Get-SPWebApplication -IncludeCentralAdministration | Where-Object {$_.IsAdministrationWebApplication -eq $true} | Select-Object DisplayName).DisplayName -eq $SSLSiteName)
+            {
+                # Since this is central admin, use Set-SPCentralAdministration instead
+                Set-SPCentralAdministration -Port $SSLPort -SecureSocketsLayer -Certificate $seCert -Confirm:$false
+            }
+            else # Use method for a regular web app
+            {
+                Set-SPWebApplication -Identity $SSLSiteName -Zone Default -Port $SSLPort -SecureSocketsLayer -HostHeader $SSLHostHeader -Certificate $seCert
+            }
         }
-        # Check if we have specified no host header
-        if (!([string]::IsNullOrEmpty($webApp.UseHostHeader)) -and $webApp.UseHostHeader -eq $false)
+        else # Classic way
         {
-            Set-ItemProperty IIS:\Sites\$SSLSiteName -Name bindings -Value @{protocol="https";bindingInformation="*:$($SSLPort):"} -ErrorAction SilentlyContinue
-        }
-        else # Set the binding to the host header
-        {
-            Set-ItemProperty IIS:\Sites\$SSLSiteName -Name bindings -Value @{protocol="https";bindingInformation="*:$($SSLPort):$($SSLHostHeader)"} -ErrorAction SilentlyContinue
+            Write-Host -ForegroundColor White "  - Using classic method..."
+            if (!(Get-Item IIS:\SslBindings\0.0.0.0!$SSLPort -ErrorAction SilentlyContinue))
+            {
+                $cert | New-Item IIS:\SslBindings\0.0.0.0!$SSLPort -ErrorAction SilentlyContinue | Out-Null
+            }
+            # Check if we have specified no host header
+            if (!([string]::IsNullOrEmpty($webApp.UseHostHeader)) -and $webApp.UseHostHeader -eq $false)
+            {
+                Set-ItemProperty IIS:\Sites\$SSLSiteName -Name bindings -Value @{protocol="https";bindingInformation="*:$($SSLPort):"} -ErrorAction SilentlyContinue
+            }
+            else # Set the binding to the host header
+            {
+                Set-ItemProperty IIS:\Sites\$SSLSiteName -Name bindings -Value @{protocol="https";bindingInformation="*:$($SSLPort):$($SSLHostHeader)"} -ErrorAction SilentlyContinue
+            }
         }
         ## Set-WebBinding -Name $SSLSiteName -BindingInformation ":$($SSLPort):" -PropertyName Port -Value $SSLPort -PropertyName Protocol -Value https
         Write-Host -ForegroundColor White " - Certificate has been assigned to site `"https://$SSLHostHeader`:$SSLPort`""
     }
-    Else {Write-Host -ForegroundColor White " - No certificates were found, and none could be created."}
+    else
+    {
+        Write-Host -ForegroundColor White " - No certificates were found, and none could be created."
+    }
     $cert = $null
 }
 #endregion
@@ -3747,7 +3772,7 @@ Function CreateUPSAsAdmin ([xml]$xmlInput)
 #region Create State Service Application
 Function CreateStateServiceApp ([xml]$xmlInput)
 {
-	$spYear = $xmlInput.Configuration.Install.SPVersion
+    $spYear = $xmlInput.Configuration.Install.SPVersion
     $spVer = Get-MajorVersionNumber $spYear
     If ((ShouldIProvision $xmlInput.Configuration.ServiceApps.StateService -eq $true) -or `
         (ShouldIProvision $xmlInput.Configuration.EnterpriseServiceApps.AccessService -eq $true) -or `
