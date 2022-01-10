@@ -5,7 +5,7 @@
 \SP\Automation\AutoSPInstallerConfigureRemoteTarget.ps1
 \SP\Automation\README.md
 
-\SP\201x (SharePoint 2010, 2013, 2016 or 2019 binary files - e.g. \2016\ or \2019\ - in different folders)
+\SP\201x (SharePoint 2010, 2013, 2016, 2019, or SE binary files - e.g. \2019\ or \SE\ - in different folders)
 
 \SP\201x\LanguagePacks\xx-xx\ (optional)
 \SP\201x\LanguagePacks\xx-xx\Updates\ (extract Language Pack Service Pack / Cumulative/Public Updates here) (optional)
