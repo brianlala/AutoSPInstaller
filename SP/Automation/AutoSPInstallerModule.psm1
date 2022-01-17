@@ -1948,8 +1948,8 @@ Function CreateOrJoinFarm ([xml]$xmlInput, [System.Security.SecureString]$secPhr
             elseif (ShouldIProvision ($xmlInput.Configuration.Farm.ServerRoles.Search)) {$serverRole = "Search"}
             elseif (ShouldIProvision ($xmlInput.Configuration.Farm.ServerRoles.Application)) {$serverRole = "Application"}
             elseif (ShouldIProvision ($xmlInput.Configuration.Farm.ServerRoles.DistributedCache)) {$serverRole = "DistributedCache"}
-            elseif (ShouldIProvision ($xmlInput.Configuration.Farm.ServerRoles.SingleServerFarm)) {$serverRole = "SingleServerFarm"}
-            elseif (ShouldIProvision ($xmlInput.Configuration.Farm.ServerRoles.SingleServer)) {$serverRole = "SingleServerFarm"}
+            elseif (ShouldIProvision ($xmlInput.Configuration.Farm.ServerRoles.SingleServerFarm)) {$serverRole = "SingleServer"}
+            elseif (ShouldIProvision ($xmlInput.Configuration.Farm.ServerRoles.SingleServer)) {$serverRole = "SingleServer"}
             # Only process this stuff if we are running SP2016 with Feature Pack 1
             if (CheckForSP2016FeaturePack1 -xmlInput $xmlInput)
             {
