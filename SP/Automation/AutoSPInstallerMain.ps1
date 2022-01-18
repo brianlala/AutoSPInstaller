@@ -30,7 +30,7 @@ Import-Module -Name "$env:dp0\AutoSPInstallerModule.psm1" -Force
 #endregion
 
 # Create hash table with product year to major version mappings
-$spVersions = @{"2010" = "14"; "2013" = "15"; "2016" = "16"; "2019" = "16"} # SharePoint 2019 still uses major build 16
+$spVersions = @{"2010" = "14"; "2013" = "15"; "2016" = "16"; "2019" = "16"; "SE" = "16"} # SharePoint 2019 and SE still use major build 16
 $spYear = $xmlInput.Configuration.Install.SPVersion
 if ([string]::IsNullOrEmpty($spYear))
 {
