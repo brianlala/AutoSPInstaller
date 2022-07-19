@@ -3501,6 +3501,12 @@ Function CreateUserProfileServiceApplication ([xml]$xmlInput)
             $mySiteName = $mySiteWebApp.name
             $mySiteURL = ($mySiteWebApp.url).TrimEnd("/")
             $mySitePort = $mySiteWebApp.port
+            $mySiteAppPool = $mySiteWebApp.ApplicationPool
+            $mySiteUseSSL = $false
+            If ($mySiteURL -like "https://*")
+            {
+                $mySiteUseSSL = $true
+            }
             $mySiteDBServer = $mySiteWebApp.Database.DBServer
             # If we haven't specified a DB Server then just use the default used by the Farm
             If ([string]::IsNullOrEmpty($mySiteDBServer))
