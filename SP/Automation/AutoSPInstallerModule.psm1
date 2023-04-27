@@ -1632,7 +1632,7 @@ Function InstallUpdates ([xml]$xmlInput)
         }
     }
     # Get all CUs except the March 2013 PU for SharePoint / Project Server 2013 and the June 2013 CU for SharePoint 2010
-    $cumulativeUpdates = Get-ChildItem -Path "$env:bits\$spYear\Updates" -Include office2010*.exe, ubersrv*.exe, ubersts*.exe, *pjsrv*.exe, sharepointsp2013*.exe, coreserver201*.exe, sts201*.exe, wssloc201*.exe, svrproofloc201*.exe -Recurse -ErrorAction SilentlyContinue | Where-Object {$_ -notlike "*ubersrvsp2013-kb2767999-fullfile-x64-glb.exe" -and $_ -notlike "*ubersrvprjsp2013-kb2768001-fullfile-x64-glb.exe" -and $_ -notlike "*ubersrv2010-kb2817527-fullfile-x64-glb.exe"} | Sort-Object -Descending
+    $cumulativeUpdates = Get-ChildItem -Path "$env:bits\$spYear\Updates" -Include office2010*.exe, ubersrv*.exe, uber-*.exe, ubersts*.exe, *pjsrv*.exe, sharepointsp2013*.exe, coreserver201*.exe, sts201*.exe, wssloc201*.exe, wssloc-*.exe, svrproofloc201*.exe -Recurse -ErrorAction SilentlyContinue | Where-Object {$_ -notlike "*ubersrvsp2013-kb2767999-fullfile-x64-glb.exe" -and $_ -notlike "*ubersrvprjsp2013-kb2768001-fullfile-x64-glb.exe" -and $_ -notlike "*ubersrv2010-kb2817527-fullfile-x64-glb.exe"} | Sort-Object -Descending
     # Filter out Project Server updates if we aren't installing Project Server
     if ($xmlInput.Configuration.ProjectServer.Install -ne $true)
     {
@@ -2071,6 +2071,7 @@ Function CreateCentralAdmin ([xml]$xmlInput)
     {
         Try
         {
+			Write-Host "Thinking about creation - first validation invalid! -> $(ShouldIProvision $xmlInput.Configuration.Farm.CentralAdmin)";
             # Check if there is already a Central Admin provisioned in the farm; if not, create one
             If (!(Get-SPWebApplication -IncludeCentralAdministration | Where-Object {$_.IsAdministrationWebApplication}) -or $centralAdminServicesOnline.Count -lt 1)
             {
@@ -8176,15 +8177,17 @@ Function Get-SharePointInstall
 # ===================================================================================
 Function MatchComputerName ($computersList, $computerName)
 {
-    If ($computersList -like "*$computerName*") { Return $true; }
     foreach ($v in $computersList) {
-      If ($v.Contains("*") -or $v.Contains("#")) {
-            # wildcard processing
-            foreach ($item in -split $v) {
+		foreach ($item in -split $v) {
+			If ($v.Contains("*") -or $v.Contains("#")) {
+				# wildcard processing
                 $item = $item -replace "#", "[\d]"
                 $item = $item -replace "\*", "[\S]*"
                 if ($computerName -match $item) {return $true;}
             }
+			else {
+				if ($computerName -match $item) {return $true;}
+			}
         }
     }
 }
