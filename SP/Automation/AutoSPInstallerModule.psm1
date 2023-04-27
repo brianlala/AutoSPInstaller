@@ -2071,7 +2071,6 @@ Function CreateCentralAdmin ([xml]$xmlInput)
     {
         Try
         {
-			Write-Host "Thinking about creation - first validation invalid! -> $(ShouldIProvision $xmlInput.Configuration.Farm.CentralAdmin)";
             # Check if there is already a Central Admin provisioned in the farm; if not, create one
             If (!(Get-SPWebApplication -IncludeCentralAdministration | Where-Object {$_.IsAdministrationWebApplication}) -or $centralAdminServicesOnline.Count -lt 1)
             {
